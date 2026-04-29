@@ -1,85 +1,84 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository.
 
-The parent workspace `CLAUDE.md` (at `/Users/yvestorres/Repositories/viterex/CLAUDE.md`) covers the multi-repo Viterex roadmap and the relationship between `viterex_addon`, `redaxo-massif`, and `viterex-installer`. This file is the addon-specific supplement.
+## What this is
 
-## What this repo is
+**MASSIF Media** — a standalone REDAXO 5 addon (`package: massif_media`, PHP namespace `Ynamite\Media\` → `lib/`) for responsive image and video rendering. Greenfield, separated from the original `redaxo-massif` kitchen-sink addon.
 
-A Redaxo 5 addon (`package: massif`, namespace `Ynamite\Massif\` → `lib/`) by MASSIF Web Studio. It has **two halves**:
+Design spec: `/Users/yvestorres/.claude/plans/this-directory-is-a-luminous-candy.md`.
 
-1. **Backend tools** that work standalone on any Redaxo install (media helpers with AVIF/WebP + lazy-load + breakpoint sets, navigation builder, YForm list/form helpers, MASSIF Settings, R4→R5 converter, MarkItUp/Redactor parsing, file uploads, a `MASSIF Auto-Effekt` media manager effect).
-2. **Frontend stubs** under `frontend/` (templates, modules, asset sources, npm dep declarations) that are scaffolded into the user's project root by `viterex_addon`'s `StubsInstaller`. Only activates when `viterex_addon` is available.
+The addon **coexists with `redaxo-massif`**. There's no migration shim — old call sites in legacy projects keep using `Ynamite\Massif\Media\...` from `redaxo-massif`; new code uses `Ynamite\Media\...` from this addon.
 
-**Hard rule from the workspace CLAUDE.md:** redaxo-massif must remain usable *without* viterex_addon. The backend half must keep working standalone; the frontend half degrades gracefully (the `MASSIF Frontend` settings page hides itself, `install.php` no-ops).
+## What it does
 
-## How the addon boots
+- Emits modern `<picture>` markup (AVIF/WebP/JPG) with browser-side format negotiation. SVG/GIF passthrough.
+- On-demand resizing via `league/glide` (Imagick driver, sRGB normalization manipulator).
+- Cache lives at `rex_path::addonAssets('massif_media', 'cache/')` — Apache serves direct on hits, PHP shim runs only on misses.
+- HMAC-SHA256 signed URLs prevent disk-fill abuse.
+- Blurhash via `kornrunner/blurhash` cached in `_meta/` sidecars.
+- Optional CDN override (ImageKit / Cloudinary / Imgix template).
+- Backend settings page under **AddOns → MASSIF Media → Einstellungen**.
+- `REX_PIC[src="..." alt="..." ...]` placeholder parsed via `OUTPUT_FILTER` for content editors.
+- Preload via `<link rel="preload">` injected into `<head>` via `OUTPUT_FILTER`.
+- Focal-point support via the optional `focuspoint` addon's `med_focuspoint` field.
 
-- `boot.php` registers API functions (`massif_meta_get`, `massif_image_get`, `upload_files`), backend CSS/JS, fragment dirs, the `rex_effect_auto` media manager effect, YForm template path (gated on `yform`), and several `PAGES_PREPARED` / `OUTPUT_FILTER` extension points that re-bucket addon pages into `high_addons` / `low_addons` / `z_addons` blocks.
-- `install.php` runs on **first activation only** — gated by both `rex_addon::get('viterex_addon')->isAvailable()` and the idempotency marker `rex_config('massif','frontend_installed_at')`. It scaffolds `frontend/` via `StubsInstaller::installFromDir(...)`, appends live-reload globs (`src/addons/massif/{fragments,lib}/**/*.php`) to viterex's `refresh_globs`, then sets the marker. Failures are logged via `rex_logger::logException`; activation must NOT fail because the backend half doesn't depend on the frontend.
-- `boot.php` subscribes to **`VITEREX_INSTALL_STUBS`** so that when the user clicks "Install stubs" inside viterex's settings, this addon's frontend is re-installed in the same operation. Bypasses the marker — the click is the consent.
-
-## Frontend stub installation flow
-
-```
-frontend/stubs-map.php  →  walks frontend/{templates,modules,assets}/
-                           resolves target prefixes via Ynamite\ViteRex\Config
-                           (so paths land correctly in modern / classic / classic+theme)
-
-frontend/package-deps.json →  npm deps merged additively (higher-version-wins)
-                              into the project's package.json by viterex_addon
-```
-
-Three buckets, three target prefixes:
-- `templates/* → src/templates/*` (developer-addon convention)
-- `modules/*   → src/modules/*` (developer-addon convention)
-- `assets/*    → <viterex.assets_source_dir>/*` (e.g. `src/assets/*`)
-
-Folders matching `Foo [N]` (e.g. `Default [1]`, `Meta [5]`) carry the Redaxo template/module ID in brackets — **don't rename or renumber these**, they're consumed by the developer addon to pin DB IDs across upgrades.
-
-## Page template architecture
-
-`frontend/templates/` ships **7 templates**, each composing the next via `REX_TEMPLATE[key="..."]`:
+## Architecture
 
 ```
-Default [1]   → outer shell: Config → Meta → <body>{Header, Main, Footer}</body></html>
-├ Config [3]  → required preamble — sets $lang, $pageClass, useragent flags, URL-manager state
-├ Meta [5]    → <!doctype><html><head>… — all meta tags + favicons + REX_VITE placeholder (single source of asset injection)
-├ Header [8]  → <header> with logo (Assets::inline('img/...')) and skip link
-│ └ Menu [12] → desktop + mobile nav
-├ Main [2]    → <main> wrapper around $this->getArticle(1)
-└ Footer [7]  → <footer>
+lib/
+├── Image.php, Pic.php, Video.php          # public API: static one-liners + ::for() builders
+├── Builder/{Image,Video}Builder.php       # fluent builders
+├── Pipeline/                              # single-purpose units, composable
+│   ├── ImageResolver.php                  # rex_media | filename → ResolvedImage
+│   ├── MetadataReader.php                 # intrinsic dims + blurhash + focal, cached in meta.json
+│   ├── ResolvedImage.php                  # readonly value object
+│   ├── SrcsetBuilder.php                  # next/image dual-pool widths
+│   ├── UrlBuilder.php                     # signed Glide URL or CDN URL
+│   ├── Placeholder.php                    # 32×32 base64 LQIP via Glide
+│   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
+├── View/{Picture,Passthrough}Renderer.php # full HTML emission
+├── Glide/                                 # league/glide integration
+│   ├── Server.php                         # factory, cache path callable
+│   ├── ColorProfile.php                   # custom manipulator (sRGB)
+│   ├── Endpoint.php                       # the /_img/ shim handler
+│   └── Signature.php                      # HMAC sign + verify
+├── Parser/REXPicParser.php                # REX_PIC[...] substitution
+├── BE/SettingsPage.php                    # backend form
+├── Config.php                             # rex_config wrapper
+├── Enum/{Loading,Decoding,FetchPriority}.php
+└── Exception/ImageNotFoundException.php
 ```
 
-Asset injection contract (per workspace CLAUDE.md): a single `REX_VITE` placeholder in `Meta` emits preload + CSS + JS + HMR client. Do **not** reintroduce the legacy `Assets::get()` / `Server::getImg|Css|Js|Font|Assets()` API in templates.
+`assets/_img/index.php` + `assets/.htaccess` handle the URL → cache-or-PHP routing.
 
-Server-side swup `req-with` / `HTTP_X_REQUESTED_WITH` hooks were intentionally removed: `Config` no longer sets the `req-with` rex property and `Default` always emits `</html>`. The swup *JS* integration is still present across `frontend/assets/js/swup/` — only remove if dropping swup entirely.
+## Conventions
 
-## Re-install paths (explicit)
+- **PHP 8.2+** baseline. Uses `readonly` value objects, enums, named args.
+- **PSR-4** via `composer.json`. Run `composer dump-autoload` after adding new files.
+- **`vendor/` is committed** so REDAXO Connect ZIP installs work without `composer install`.
+- **No tests**. Verification is manual — install in a real REDAXO at `~/Herd/primobau/src` (or similar).
+- **German for user-facing strings** (lang file, README, settings page legends, log messages).
+- **English for code identifiers** (class names, method names, vars).
+- **Defaults shipped**: most installs don't need to touch the settings page.
 
-Two ways to re-run the install after first activation:
+## Reference: Statamic addon
 
-1. **Backend page** *AddOns → MASSIF → MASSIF Frontend* (`pages/frontend.php`) — CSRF-protected form with an "Overwrite existing files" checkbox. Overwritten files are backed up as `<file>.bak.<timestamp>` before being replaced. Hidden when viterex_addon isn't available.
-2. **viterex_addon's "Install stubs" button** — fires `VITEREX_INSTALL_STUBS`, the boot.php hook re-installs and merges results into viterex's success summary.
+The pipeline structure mirrors `~/Repositories/statamic/image` (the user's Statamic responsive-images addon). Key patterns ported: `ImageResolver`/`MetadataReader`/`Placeholder`/`SrcsetBuilder`/`UrlBuilder`/`PictureRenderer`/`PassthroughRenderer` split, Glide `setCachePathCallable`, ColorProfile manipulator.
 
-Both paths bypass the `frontend_installed_at` marker because the click itself is consent.
+`_legacy_reference/` is the original `Ynamite\Massif\Media` source from `redaxo-massif`. Kept until the new addon is verified in a live install, then deleted.
 
-## Common conventions in this codebase
+## Common operations
 
-- PSR-4 root: `Ynamite\Massif\` → `lib/` (per `composer.json`); subpackages like `Ynamite\Massif\Media`, `Ynamite\Massif\Nav`, `Ynamite\Massif\BE`, `Ynamite\Massif\Form`, `Ynamite\Massif\Utils`, `Ynamite\Massif\Redactor`, `Ynamite\Massif\MarkItUp`, `Ynamite\Massif\Converter`.
-- Non-namespaced legacy classes live under `lib/api/`, `lib/effects/`, `lib/yform/`, `lib/command/` (loaded by Redaxo's autoloader, not Composer's).
-- `lib/Media/Media.php` is intentionally empty — the abstract base lives at `lib/Media/Abstract.php` (`abstract class Media`). Subclasses are `Media\Image\Image` and `Media\Video\Video`. Use the `Media::factory(...)` static for source-driven instantiation.
-- Backend pages declared in `package.yml` under `page.subpages.*` — supports `customPage: true|false`. The `template` subpage is `hidden: true` and used as a generic YForm-table host (rendered via `lib/BE/Package.php`).
-- Console command: `console massif:exec-php "<code>"` — guarded by `isSecure()` in `lib/command/exec-php.php`. Allowed in: `REDAXO_DEV_MODE=1` env, `var/dev_mode` file, CLI from localhost, or when ydeploy reports `!isDeployed()`. The handler also rejects code matching a long deny-list of `eval`/`exec`/`file_*`/`$_SERVER` patterns. Treat it as dev-only.
-- `installer_ignore` in `package.yml` skips `.DS_Store`, `.git`, `.gitignore`, `node_modules` so they don't leak into Redaxo's installer ZIP.
-- Lang file is German only (`lang/de_de.lang`); README is German.
+- **Add a new public-API method**: add to `lib/Image.php` (or `lib/Video.php`) and the corresponding `lib/Builder/*Builder.php`.
+- **Tweak default config**: `lib/Config.php` `DEFAULTS` map. Don't forget the settings page form fields if user-editable.
+- **Add a Glide manipulator**: add a class in `lib/Glide/`, register in `Glide/Server.php` after the `setCachePathCallable` line.
+- **Add a new extension-point hook**: register in `boot.php`.
 
-## What this repo does NOT have
+## Out of scope (v2 candidates)
 
-- No `package.json` / `vite.config.js` / build pipeline at the repo root — those are owned by `viterex_addon`'s stubs and only exist in the consuming Redaxo project after scaffolding.
-- No test suite, no linter config, no CI. Verification is done by activating in a real Redaxo install (e.g. `~/Herd/primobau/src` per the workspace CLAUDE.md) and exercising the backend pages.
-- No `.cursor/`, no `.github/copilot-instructions.md`.
-
-## Versioning notes
-
-Current `package.yml` is `version: 2.0.0`. The 2.0.0 release was the merge of the standalone `redaxo-frontend-assets` repo into `frontend/` plus the auto-install path; see `CHANGELOG.md` for the migration steps (notably: existing projects must manually delete the obsolete `HTML Head [5]`, `HTML Meta [6]`, `HTML Favicon [11]`, `HTML Scripts [2]` template folders before re-running install with overwrite). Active branch as of writing is `main` (the `v3-frontend-assets` branch was merged via PR #1).
+- Art direction (multiple `<source media="...">` per breakpoint).
+- Image warming (pre-generation of all breakpoints).
+- External URL sources (Glide-fetch from arbitrary URLs).
+- Visual focal-point picker UI in the backend.
+- PHPUnit test suite.
