@@ -1,8 +1,0 @@
-{
-  "name": "ynamite/massif",
-  "autoload": {
-    "psr-4": {
-      "Ynamite\\Massif\\": "src/lib/"
-    }
-  }
-}

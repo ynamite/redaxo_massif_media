@@ -1,41 +1,27 @@
-package: massif
-version: 2.0.0
+package: massif_media
+version: 1.0.0
 author: Yves Torres
 supportpage: massif.ch
 
 requires:
   redaxo: '^5.13.0'
   php:
-    version: '>=8.1'
+    version: '>=8.2'
 
 installer_ignore:
   - .DS_Store
   - .git
   - .gitignore
+  - .vscode
+  - .idea
   - node_modules
+  - _legacy_reference
 
 page:
-  title: 'MASSIF'
-  perm: massif[]
+  title: 'MASSIF Media'
+  perm: massif_media[]
+  icon: rex-icon fa-image
   subpages:
-    converter:
-      title: 'MASSIF Redaxo 4 zu 5 Converter'
-      perm: massif_convert[]
-      icon: rex-icon fa-wrench
-      customPage: true
-    template:
-      title: 'Template'
-      icon: rex-icon fa-newspaper
-      yform/table: ''
-      customPage: false
-      customPagePath:
-      package:
-      pjax: true
-      hidden: true
-    frontend:
-      title: 'MASSIF Frontend'
-      icon: rex-icon fa-rocket
-      customPage: true
-
-console_commands:
-  massif:exec-php: console_massif_execute_php
+    settings:
+      title: 'Einstellungen'
+      icon: rex-icon fa-cog
