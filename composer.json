@@ -1,0 +1,25 @@
+{
+  "name": "ynamite/massif_media",
+  "description": "REDAXO addon for responsive image and video rendering with on-demand Glide pipeline, AVIF/WebP/JPG <picture> markup, LQIP, blurhash, focal point and CDN support.",
+  "type": "redaxo-addon",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Yves Torres",
+      "homepage": "https://massif.ch"
+    }
+  ],
+  "require": {
+    "php": ">=8.2",
+    "league/glide": "^3.0",
+    "kornrunner/blurhash": "^1.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "Ynamite\\Media\\": "lib/"
+    }
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
