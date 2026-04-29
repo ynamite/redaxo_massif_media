@@ -1,23 +1,22 @@
-# Da R5 nur noch mit UTF8 arbeitet, entfällt der "utf8"-Suffix
-# Die Keys sollten mit dem Addonnamen beginnen, da sie so innerhalb des Addons vereinfacht abgefragt
-# werden können
+# MASSIF Media — Sprachdatei
 
-# zusätzliche Texte für neue yform-Feldtypen
-yform_values_tabs_cluster_label
-yform_values_tabs_cluster_desc = Dient der Gruppierung zusammenhängender Tabs in einer Gruppe (Achtung: keine überlappenden Gruppen!)
-yform_values_tabs_description = Tab-Navigation einfügen
+massif_media_title = MASSIF Media
+massif_media_settings_title = MASSIF Media — Einstellungen
 
-# MASSIF Frontend (Settings page)
-massif_frontend_title = MASSIF Frontend
-massif_frontend_viterex_required = Das ViteRex-Addon ist nicht installiert oder nicht aktiviert. Das MASSIF-Frontend wird erst aufgespielt, sobald ViteRex verfügbar ist.
-massif_frontend_installed_at = Frontend zuletzt installiert: %s
-massif_frontend_not_installed = Frontend wurde noch nicht aufgespielt.
-massif_frontend_overwrite_label = Bestehende Dateien überschreiben
-massif_frontend_overwrite_hint = Vorhandene Projektdateien werden vor dem Überschreiben mit Zeitstempel-Suffix gesichert.
-massif_frontend_install_button = MASSIF-Frontend (neu) aufspielen
-massif_frontend_install_success = MASSIF-Frontend erfolgreich aufgespielt.
-massif_frontend_install_error = Fehler beim Aufspielen des MASSIF-Frontends
-massif_frontend_summary_written = geschrieben
-massif_frontend_summary_skipped = übersprungen
-massif_frontend_summary_backed_up = gesichert
-massif_frontend_summary_deps_merged = npm-Deps ergänzt
+massif_media_security_legend = Sicherheit
+massif_media_cache_legend = Cache
+massif_media_formats_legend = Formate
+massif_media_breakpoints_legend = Breakpoints
+massif_media_lqip_legend = Placeholder (LQIP)
+massif_media_blurhash_legend = Blurhash
+massif_media_cdn_legend = CDN (optional)
+massif_media_ttls_legend = Cache TTLs
+
+massif_media_save = Speichern
+massif_media_clear_cache = Addon Cache leeren
+massif_media_regenerate_key = Sign Key neu generieren
+
+massif_media_settings_saved = Einstellungen gespeichert.
+massif_media_key_regenerated = Sign Key neu generiert.
+massif_media_cache_cleared = Addon Cache geleert.
+massif_media_csrf_invalid = CSRF Token ungültig — Formular bitte erneut absenden.
