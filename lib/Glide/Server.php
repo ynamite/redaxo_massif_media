@@ -29,6 +29,13 @@ final class Server
 
         $server->setCachePathCallable(self::cachePathCallable());
 
+        // Append ColorProfile manipulator after Glide's defaults so colorspace
+        // normalization runs on the final pixels before encoding.
+        $api = $server->getApi();
+        $manipulators = $api->getManipulators();
+        $manipulators[] = new ColorProfile();
+        $api->setManipulators($manipulators);
+
         return $server;
     }
 
