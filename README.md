@@ -184,7 +184,7 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus
 |---|---|---|---|
 | `src` | string | — (Pflicht) | Dateiname im REDAXO-Mediapool. |
 | `alt` | string | leer → `aria-hidden="true"` | Alt-Text. Fehlend / leer setzt das Bild semantisch als dekorativ. |
-| `width` | int | intrinsische Breite | Render-Breite in px. Begrenzt das `srcset`, setzt das HTML-`width`-Attribut. Ohne `width` wird die intrinsische Breite des Originals verwendet. |
+| `width` | int | intrinsische Breite | Render-Breite in px für das HTML-`width`-Attribut (Layout-Reservierung, CLS-Schutz). **Begrenzt das `srcset` nicht** — der Browser wählt aus der vollen Breakpoint-Auswahl, damit HiDPI-Screens (2×, 3×) eine schärfere Variante laden können (analog zu `next/image`). Ohne `width` wird die intrinsische Breite des Originals als Layout-Hinweis genutzt. Wer das `srcset` explizit eingrenzen will, nutzt die PHP-API: `Image::for($src)->widths([320, 640, 800])->render()`. |
 | `height` | int | aus `width` × `ratio`, sonst intrinsisch | Render-Höhe in px. Wird normalerweise nicht direkt gesetzt — stattdessen `ratio` mit `width` verwenden. |
 | `ratio` | string | intrinsisches Seitenverhältnis | Aspect-Ratio: `16:9`, `16/9` oder Dezimalwert wie `1.7777`. Berechnet `height` aus `width`. |
 | `sizes` | string | aus den Settings (`default_sizes`, siehe Konfiguration) | `sizes`-Attribut für die responsive Auswahl der Variante. |
