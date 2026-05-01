@@ -18,7 +18,8 @@ The addon **coexists with `redaxo-massif`**. There's no migration shim — old c
 - HMAC-SHA256 signed URLs prevent disk-fill abuse.
 - Blurhash via `kornrunner/blurhash` cached in `_meta/` sidecars.
 - Optional CDN override (ImageKit / Cloudinary / Imgix template).
-- Backend settings page under **AddOns → MASSIF Media → Einstellungen**.
+- Tabbed backend settings page under **AddOns → MASSIF Media → Einstellungen** (sub-tabs: Allgemein / Placeholder / CDN / Sicherheit & Cache).
+- Documentation tab under **AddOns → MASSIF Media → Dokumentation** that renders `README.md` directly via `subPath:` in `package.yml`.
 - `REX_PIC[src="..." alt="..." ...]` placeholder parsed via `OUTPUT_FILTER` for content editors.
 - Preload via `<link rel="preload">` injected into `<head>` via `OUTPUT_FILTER`.
 - Focal-point support via the optional `focuspoint` addon's `med_focuspoint` field.
@@ -44,10 +45,17 @@ lib/
 │   ├── Endpoint.php                       # the /_img/ shim handler
 │   └── Signature.php                      # HMAC sign + verify
 ├── Parser/REXPicParser.php                # REX_PIC[...] substitution
-├── BE/SettingsPage.php                    # backend form
-├── Config.php                             # rex_config wrapper
+├── Config.php                             # rex_config wrapper + typed accessors
 ├── Enum/{Loading,Decoding,FetchPriority}.php
 └── Exception/ImageNotFoundException.php
+
+pages/
+├── index.php                              # parent dispatcher (echoes title, includes current subpage)
+├── settings.php                           # settings tab dispatcher (includes current sub-subpage)
+├── settings.general.php                   # tab: formats, qualities, breakpoints, default sizes
+├── settings.placeholder.php               # tab: LQIP + Blurhash
+├── settings.cdn.php                       # tab: CDN config
+└── settings.security.php                  # tab: sign-key + cache-clear actions + TTLs
 ```
 
 `assets/_img/index.php` + `assets/.htaccess` handle the URL → cache-or-PHP routing.
@@ -61,6 +69,19 @@ lib/
 - **German for user-facing strings** (lang file, README, settings page legends, log messages).
 - **English for code identifiers** (class names, method names, vars).
 - **Defaults shipped**: most installs don't need to touch the settings page.
+- **Settings pages follow the viterex pattern** (see `~/Repositories/viterex/viterex-addon/pages/settings.php`): each tab is a self-contained PHP page that builds a `rex_config_form`, wraps it in a `rex_fragment('core/page/section.php')`, and echoes — no shared SettingsPage class.
+- **Always keep `README.md`, `CHANGELOG.md`, and this `CLAUDE.md` in sync** with code/convention changes. Each as its own commit. (See feedback memory.)
+
+## REDAXO API gotchas (collected the hard way)
+
+- **`pages/index.php` is required** when the addon declares `subpages:` in `package.yml`. Without it, REDAXO throws "page path 'pages/index.php' neither exists as standalone path nor as package subpath" on the parent route. Pattern: echo title + `rex_be_controller::includeCurrentPageSubPath()`.
+- **`pages/settings.php` for nested subpages** does the same dispatch — when settings has its own subpages (Allgemein/Placeholder/…), `pages/settings.php` calls `includeCurrentPageSubPath()` and the sub-tab files are `pages/settings.{name}.php` (dot-separated, phpmailer convention).
+- **`subPath: README.md` in `package.yml` subpages** renders a Markdown file as the page body — no PHP page file needed. Used for the Dokumentation tab.
+- **`rex_request::isPost()` does not exist.** Use the global function `rex_request_method() === 'post'` instead. Same applies to other request method checks.
+- **`rex_config_form::factory($addon)` auto-handles save/validation/styling** for scalar config values (text, number, checkbox, textarea). For complex shapes (arrays, maps), flatten to scalar storage (CSV strings, separate keys per format) and parse on read in `Config.php` typed accessors. Do not hand-roll `<form>` HTML for settings — use this.
+- **`addTextField` auto-injects `class="form-control"`** but `addInputField('number', ...)` does **not**. Always explicitly call `$f->setAttribute('class', 'form-control')` after `setLabel(...)` on number/email/etc. inputs, otherwise they render unstyled next to text fields.
+- **In namespaced files**, REDAXO classes (`rex_url`, `rex_view`, `rex_path`, `rex_dir`, `rex_csrf_token`, `rex_media`, `rex_logger`, etc.) need explicit `use rex_xxx;` imports. Global functions (`rex_post`, `rex_get`, `rex_request_method`, …) do not.
+- **`rex_dir::delete($path, $deleteSelf = false)`** purges contents but keeps the directory itself — use this from the `CACHE_DELETED` hook so the cache dir stays on disk for subsequent writes.
 
 ## Reference: Statamic addon
 
@@ -72,6 +93,8 @@ The pipeline structure mirrors `~/Repositories/statamic/image` (the user's Stata
 
 - **Add a new public-API method**: add to `lib/Image.php` (or `lib/Video.php`) and the corresponding `lib/Builder/*Builder.php`.
 - **Tweak default config**: `lib/Config.php` `DEFAULTS` map. Don't forget the settings page form fields if user-editable.
+- **Add a new settings field**: add the constant + default + typed accessor in `lib/Config.php`, then add the `$form->addXField(...)` call to the appropriate `pages/settings.{tab}.php` file.
+- **Add a new settings tab**: declare it under `subpages:` of `settings:` in `package.yml`, create `pages/settings.{name}.php`, follow the same form-build-and-fragment pattern as the existing tabs.
 - **Add a Glide manipulator**: add a class in `lib/Glide/`, register in `Glide/Server.php` after the `setCachePathCallable` line.
 - **Add a new extension-point hook**: register in `boot.php`.
 
