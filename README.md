@@ -180,20 +180,20 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus
 
 ### Verfügbare Attribute
 
-| Attribut | Typ | Beschreibung |
-|---|---|---|
-| `src` | string | **Pflicht.** Dateiname im REDAXO-Mediapool. |
-| `alt` | string | Alt-Text. Leer oder fehlend → `aria-hidden="true"` wird gesetzt. |
-| `width` | int | Render-Breite in px. Begrenzt das `srcset`, setzt das HTML-`width`-Attribut, reserviert Layout-Box (in Kombination mit `ratio` oder `height`). |
-| `height` | int | Render-Höhe in px. Alternativ `ratio`. |
-| `ratio` | string | Aspect-Ratio: `16:9`, `16/9` oder Dezimalwert wie `1.7777`. Berechnet `height` aus `width`. |
-| `sizes` | string | `sizes`-Attribut für die responsive Auswahl der Variante. Default aus den Settings. |
-| `loading` | string | `lazy` (Default) oder `eager`. |
-| `decoding` | string | `async` (Default), `sync`, `auto`. |
-| `fetchpriority` | string | `auto` (Default), `high`, `low`. |
-| `focal` | string | `X% Y%` oder `0.5,0.3` — überschreibt den asset-level Focal-Point vom `focuspoint`-Addon. |
-| `preload` | bool | `"true"` injiziert ein `<link rel="preload">` in den `<head>`. |
-| `class` | string | CSS-Klasse(n) für das `<img>` bzw. `<picture>`. |
+| Attribut | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `src` | string | — (Pflicht) | Dateiname im REDAXO-Mediapool. |
+| `alt` | string | leer → `aria-hidden="true"` | Alt-Text. Fehlend / leer setzt das Bild semantisch als dekorativ. |
+| `width` | int | intrinsische Breite | Render-Breite in px. Begrenzt das `srcset`, setzt das HTML-`width`-Attribut. Ohne `width` wird die intrinsische Breite des Originals verwendet. |
+| `height` | int | aus `width` × `ratio`, sonst intrinsisch | Render-Höhe in px. Wird normalerweise nicht direkt gesetzt — stattdessen `ratio` mit `width` verwenden. |
+| `ratio` | string | intrinsisches Seitenverhältnis | Aspect-Ratio: `16:9`, `16/9` oder Dezimalwert wie `1.7777`. Berechnet `height` aus `width`. |
+| `sizes` | string | aus den Settings (`default_sizes`, siehe Konfiguration) | `sizes`-Attribut für die responsive Auswahl der Variante. |
+| `loading` | string | `lazy` | `lazy` oder `eager`. |
+| `decoding` | string | `async` | `async`, `sync`, oder `auto`. |
+| `fetchpriority` | string | `auto` | `auto`, `high`, oder `low`. |
+| `focal` | string | aus `focuspoint`-Addon (sonst `50% 50%`) | `X% Y%` oder `0.5,0.3` — überschreibt für diesen Aufruf den asset-level Focal-Point. |
+| `preload` | bool | `false` | `"true"` injiziert ein `<link rel="preload">` in den `<head>`. |
+| `class` | string | — (kein `class`-Attribut) | CSS-Klasse(n) für das `<img>` bzw. `<picture>`. |
 
 ### Scope und Performance
 
