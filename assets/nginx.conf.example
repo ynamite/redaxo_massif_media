@@ -1,0 +1,41 @@
+# MASSIF Media — image cache routing for standalone nginx
+#
+# Equivalent of the `assets/.htaccess` shipped with the addon. Drop the two
+# `location` blocks below into your site's `server { ... }` block, or include
+# this file from there:
+#
+#     include /absolute/path/to/redaxo/src/addons/massif_media/assets/nginx.conf.example;
+#
+# Tested with nginx 1.24+. Requires that the surrounding server block already
+# routes `*.php` to PHP-FPM in the usual way and has a per-site `root` set to
+# the site's public directory (so `try_files $uri` resolves correctly).
+#
+# Laravel Herd users: this file does NOT apply — Herd uses a single shared
+# server block with `root /;` that breaks `try_files`. Use
+# `herd.conf.snippet` next to this file instead.
+
+# Cache directory — direct file serving on hit, PHP shim on miss.
+location ^~ /assets/addons/massif_media/cache/ {
+    # Long-lived caching for served variants. Includes `immutable` per RFC 8246.
+    expires 1y;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+
+    # Cache hit: nginx serves the file directly (no PHP, no signature re-check).
+    # Cache miss: hand off to the named location below for the rewrite.
+    try_files $uri @massif_media_shim;
+}
+
+# PHP shim for cache misses. Strips the cache-prefix and forwards the rest as
+# `?p=...` to `_img/index.php`, preserving the original query string (which
+# carries the HMAC `s=...`).
+location @massif_media_shim {
+    rewrite ^/assets/addons/massif_media/cache/(.+)$ /assets/addons/massif_media/_img/index.php?p=$1 last;
+}
+
+# Note on AVIF: most modern nginx builds know `image/avif`. If your build is
+# older and serves `.avif` files as `application/octet-stream`, add this to
+# your `http { ... }` block (or a `types { ... }` block):
+#
+#     types {
+#         image/avif avif;
+#     }
