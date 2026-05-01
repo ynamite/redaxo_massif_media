@@ -5,6 +5,11 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Changed
+
+- Placeholder-Settings-Tab klargestellt: LQIP und Blurhash sind zwei unabhängige Strategien (LQIP = Inline-Base64-JPEG, JS-frei; Blurhash = kompakter Hash für Client-Side-Rendering oder API). Intro-Hinweis am Panel-Anfang, ausführlichere Notice-Texte unter beiden Toggles. Der Blurhash-Option-Label nennt jetzt explizit „Beim ersten Zugriff auf ein Bild berechnen und in der Asset-Metadata cachen".
+- README: dedizierter Abschnitt **REX_PIC — Placeholder für Inhaltspflege** mit neun Beispielen (minimal, mit `sizes`, mit `ratio`, responsive, mit Preload, mit Focal-Point, mit CSS-Klasse, SVG-Pass-through, eingebettet in Markdown), vollständiger Attribut-Tabelle und Performance-Hinweis. Vorher nur einzeiliger Erwähnung.
+
 ### Fixed
 
 - Number-Inputs auf den Settings-Tabs (AVIF/WebP/JPG-Qualität, LQIP-Maße, Cache-TTLs) fehlte die `form-control` CSS-Klasse — REDAXO's `addTextField` injiziert sie automatisch, `addInputField` jedoch nicht. Inputs werden jetzt konsistent mit den Text-Feldern gerendert.
