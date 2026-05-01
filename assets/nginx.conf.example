@@ -10,9 +10,11 @@
 # routes `*.php` to PHP-FPM in the usual way and has a per-site `root` set to
 # the site's public directory (so `try_files $uri` resolves correctly).
 #
-# Laravel Herd users: this file does NOT apply — Herd uses a single shared
-# server block with `root /;` that breaks `try_files`. Use
-# `herd.conf.snippet` next to this file instead.
+# Laravel Herd users: this file does NOT apply — Herd routes everything
+# through Valet's `server.php`, which ignores nginx-level rewrites. Patch
+# your site's `LocalValetDriver.php` instead — see
+# `assets/LocalValetDriver.snippet.php` next to this file, and the
+# "Laravel Herd" subsection in the README.
 
 # Cache directory — direct file serving on hit, PHP shim on miss.
 location ^~ /assets/addons/massif_media/cache/ {
