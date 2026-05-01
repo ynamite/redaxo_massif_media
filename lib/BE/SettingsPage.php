@@ -21,7 +21,6 @@ final class SettingsPage
         $csrf = rex_csrf_token::factory(self::CSRF_TOKEN);
         $messages = self::handlePost($csrf);
 
-        echo rex_view::title('MASSIF Media — Einstellungen');
         foreach ($messages as $msg) {
             echo $msg;
         }

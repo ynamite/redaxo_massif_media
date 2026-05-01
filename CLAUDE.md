@@ -77,6 +77,7 @@ The pipeline structure mirrors `~/Repositories/statamic/image` (the user's Stata
 
 ## Out of scope (v2 candidates)
 
+- Fully automated Favicon generation (basically what realfavicongenerator.net does).
 - Art direction (multiple `<source media="...">` per breakpoint).
 - Image warming (pre-generation of all breakpoints).
 - External URL sources (Glide-fetch from arbitrary URLs).
