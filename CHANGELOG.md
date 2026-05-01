@@ -8,7 +8,11 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 ### Added
 
 - nginx Support: `assets/nginx.conf.example` als 1:1-Pendant zum `.htaccess` für standalone nginx (per-Site `server`-Block, eigenes `root`) — `try_files`-Fastpath für Cache-Hits, Fallback-Rewrite auf `_img/index.php?p=…` für Misses (Query-String erhalten), Long-lived `Cache-Control` auf Hits, Hinweis zum AVIF-Mime-Type für alte nginx-Builds.
-- Laravel Herd Support: `assets/herd.conf.snippet` mit einem unkonditionalen Server-Level-Rewrite, der direkt in die gemeinsame `~/Library/Application Support/Herd/config/nginx/herd.conf` eingebaut wird (Herd hat keine per-Site Override-Datei, und `try_files` funktioniert mit Herds `root /;` nicht). PHP läuft damit auf jedem Cache-Hit — akzeptabel im Herd-Kontext, da Valets `server.php` ohnehin alle Static-Requests durchschleift. README-Abschnitt **nginx** unter Installation erklärt beide Setups separat. Bisher liefen Cache-URLs auf nginx-Setups stillschweigend ins 404, weil `.htaccess` ignoriert wurde.
+- Laravel Herd Support: `assets/LocalValetDriver.snippet.php` mit einem `frontControllerPath()`-Interceptor, der Cache-Miss-URLs in der per-Site `LocalValetDriver.php` zum Glide-Shim routet. Notwendig, weil Herd alle Requests durch Valets `server.php` schleift, das anhand von `$_SERVER['REQUEST_URI']` dispatcht — und nginx-Level-Rewrites diese Variable nicht aktualisieren. Cache-Hits behalten den Direkt-Auslieferungs-Fastpath via `isStaticFile()`. README-Abschnitt **nginx** unter Installation erklärt beide Setups (standalone vs. Herd) separat. Bisher liefen Cache-URLs auf Herd stillschweigend ins 404.
+
+### Removed
+
+- `assets/herd.conf.snippet` (in Unreleased nie veröffentlicht): der Server-Level-Rewrite-Ansatz funktioniert in Herd nicht — Valets `server.php` ignoriert nginx-`rewrite`-Direktiven, weil sie `$request_uri` nicht anfassen. Ersetzt durch das `LocalValetDriver`-Snippet (siehe oben).
 
 ### Changed
 
