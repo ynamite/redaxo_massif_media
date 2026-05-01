@@ -41,7 +41,10 @@ final class Server
 
     public static function cachePathCallable(): Closure
     {
-        return static fn (string $path, array $params): string => self::cachePath($path, $params);
+        // Not a static closure: Glide binds $this (the Server instance) onto
+        // this callable via Closure::bind() before invoking it, which fails on
+        // static closures. The body doesn't use $this, so binding is a no-op.
+        return fn (string $path, array $params): string => self::cachePath($path, $params);
     }
 
     /**
