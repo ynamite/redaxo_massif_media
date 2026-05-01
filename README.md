@@ -80,13 +80,110 @@ echo Video::for('clip.mp4')
     ->render();
 ```
 
-In Textfeldern / Modulen für Redakteure:
+In Textfeldern / Modulen für Redakteure: das `REX_PIC[…]` Placeholder. Siehe nächster Abschnitt.
+
+## REX_PIC — Placeholder für Inhaltspflege
+
+Für REDAXO-Redakteure und WYSIWYG-Workflows: das `REX_PIC[…]` Placeholder kann direkt in jedem Textfeld, Markdown-Bereich oder Editor verwendet werden. Beim Rendern der Seite expandiert ein `OUTPUT_FILTER` jeden Treffer zu vollständigem `<picture>`-Markup — gleiche Pipeline wie der PHP-Aufruf, nur deklarativ und ohne PHP-Kenntnisse.
+
+### Beispiele
+
+**Einfachster Fall — nur Quelle und Alt-Text:**
+
+```
+REX_PIC[src="hero.jpg" alt="Aussicht über das Tal"]
+```
+
+**Mit Render-Breite und `sizes`-Attribut:**
 
 ```
 REX_PIC[src="hero.jpg" alt="Aussicht" width="1440" sizes="100vw"]
 ```
 
-Wird vom OUTPUT_FILTER zu vollständigem `<picture>`-Markup expandiert.
+**Mit Aspect-Ratio (CLS-sichere Layout-Reservierung):**
+
+```
+REX_PIC[src="banner.jpg" alt="Promo-Banner" width="1920" ratio="21:9"]
+```
+
+`ratio` akzeptiert `16:9`, `16/9` oder einen Dezimalwert wie `1.7777`.
+
+**Innerhalb eines responsiven Layouts:**
+
+```
+REX_PIC[src="card.jpg" alt="Produktbild" width="600" ratio="4:3" sizes="(min-width: 768px) 33vw, 100vw"]
+```
+
+**Above-the-fold mit Preload (LCP-Optimierung):**
+
+```
+REX_PIC[src="hero.jpg" alt="Aussicht" width="1920" preload="true"]
+```
+
+`preload="true"` injiziert ein `<link rel="preload" as="image">` in den `<head>` über den `OUTPUT_FILTER`.
+
+**Eager-Loading + hohe Fetch-Priorität (für das LCP-Bild):**
+
+```
+REX_PIC[src="hero.jpg" alt="Aussicht" width="1920" loading="eager" fetchpriority="high"]
+```
+
+**Mit Focal-Point (Komposition bei `object-fit: cover`):**
+
+```
+REX_PIC[src="portrait.jpg" alt="Portrait" width="800" ratio="3:4" focal="40% 30%"]
+```
+
+`focal` überschreibt für diesen einen Aufruf den Wert vom optionalen `focuspoint`-Addon.
+
+**Mit CSS-Klasse:**
+
+```
+REX_PIC[src="hero.jpg" alt="Aussicht" width="1440" class="rounded shadow-lg"]
+```
+
+**SVG-Logo (Pass-through, kein Resizing):**
+
+```
+REX_PIC[src="logo.svg" alt="Firmenlogo" width="240" height="60"]
+```
+
+SVG und GIF werden direkt durchgereicht — kein `<picture>`, nur ein einfaches `<img>`.
+
+**Innerhalb eines Markdown-Textfeldes:**
+
+```markdown
+## Über uns
+
+Hier eine Aufnahme aus unserem Atelier:
+
+REX_PIC[src="atelier.jpg" alt="Blick ins Atelier" width="1200" ratio="3:2"]
+
+Lorem ipsum …
+```
+
+Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus ein vollständiges `<picture>`-Element mit allen Sources, LQIP und Layout-Reservierung.
+
+### Verfügbare Attribute
+
+| Attribut | Typ | Beschreibung |
+|---|---|---|
+| `src` | string | **Pflicht.** Dateiname im REDAXO-Mediapool. |
+| `alt` | string | Alt-Text. Leer oder fehlend → `aria-hidden="true"` wird gesetzt. |
+| `width` | int | Render-Breite in px. Begrenzt das `srcset`, setzt das HTML-`width`-Attribut, reserviert Layout-Box (in Kombination mit `ratio` oder `height`). |
+| `height` | int | Render-Höhe in px. Alternativ `ratio`. |
+| `ratio` | string | Aspect-Ratio: `16:9`, `16/9` oder Dezimalwert wie `1.7777`. Berechnet `height` aus `width`. |
+| `sizes` | string | `sizes`-Attribut für die responsive Auswahl der Variante. Default aus den Settings. |
+| `loading` | string | `lazy` (Default) oder `eager`. |
+| `decoding` | string | `async` (Default), `sync`, `auto`. |
+| `fetchpriority` | string | `auto` (Default), `high`, `low`. |
+| `focal` | string | `X% Y%` oder `0.5,0.3` — überschreibt den asset-level Focal-Point vom `focuspoint`-Addon. |
+| `preload` | bool | `"true"` injiziert ein `<link rel="preload">` in den `<head>`. |
+| `class` | string | CSS-Klasse(n) für das `<img>` bzw. `<picture>`. |
+
+### Performance-Hinweis
+
+`REX_PIC` wird über `OUTPUT_FILTER` auf jedem Seiten-Render gegen den fertigen HTML-Output regex-matched. Für Seiten mit vielen Treffern kann das spürbar werden. Bei Performance-kritischen Listen / Schleifen ist der direkte PHP-Aufruf (`Image::picture(…)` oder `Image::for(…)->render()`) effizienter — `REX_PIC` ist als deklarative Schreibweise für Redakteure gedacht, nicht als Ersatz für die PHP-API in template-/modul-Code.
 
 ## Erzeugtes Markup
 
