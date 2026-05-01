@@ -7,8 +7,7 @@ namespace Ynamite\Media\BE;
 use rex_csrf_token;
 use rex_dir;
 use rex_path;
-use rex_post;
-use rex_request;
+use rex_url;
 use rex_view;
 use Ynamite\Media\Config;
 
@@ -34,7 +33,7 @@ final class SettingsPage
     private static function handlePost(rex_csrf_token $csrf): array
     {
         $messages = [];
-        if (!rex_request::isPost()) {
+        if (rex_request_method() !== 'post') {
             return $messages;
         }
         if (!$csrf->isValid()) {
