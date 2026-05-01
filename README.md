@@ -4,7 +4,7 @@ REDAXO-Addon für moderne, responsive Bild- und Video-Auslieferung.
 
 - **`<picture>`-Markup** mit AVIF, WebP und JPG Sources — der Browser entscheidet selbst, welches Format er lädt (kein Accept-Header-Sniffing).
 - **On-demand Resizing** über [league/glide](https://glide.thephpleague.com/) — nur die tatsächlich benötigten Varianten werden generiert.
-- **Apache-direkt-Auslieferung** auf Cache-Hits (PHP läuft nur beim ersten Request einer Variante).
+- **Webserver-direkt-Auslieferung** auf Cache-Hits (PHP läuft nur beim ersten Request einer Variante). Apache out of the box via `.htaccess`; nginx / Laravel Herd via mitgelieferter `assets/nginx.conf.example`.
 - **HMAC-signierte URLs** — verhindert, dass beliebige Größen-/Qualitätskombinationen den Speicher fluten können.
 - **LQIP** (Low-Quality Image Placeholder) als inline Base64-JPEG im `background-image` — JS-frei.
 - **Blurhash**-Generierung als Sidecar in den Asset-Metadaten — abrufbar via `Image::blurhash($src)` für Galerien / JSON-APIs, optional auch als `data-blurhash` Attribut.
@@ -33,6 +33,56 @@ Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/re
     - **Placeholder** — LQIP-Tuning, Blurhash-Toggle.
     - **CDN** — optionale CDN-Auslieferung mit Template.
     - **Sicherheit & Cache** — Sign-Key-Anzeige + Regenerieren, Cache leeren, Cache-TTLs.
+
+### nginx
+
+Out of the box liefert das Addon ein `assets/.htaccess` mit — Apache-Setups (XAMPP, MAMP, klassisches Apache+PHP-FPM) funktionieren ohne weiteres Zutun. Auf nginx wird `.htaccess` nicht ausgewertet; ohne zusätzliche Konfiguration liefern Cache-URLs `404` aus (oder fallen auf den Frontend-Index zurück), weil das URL → `_img/index.php`-Rewriting fehlt.
+
+Das Addon enthält zwei nginx-Snippets — welches passt, hängt vom Setup ab:
+
+#### Standalone nginx (Production)
+
+`assets/nginx.conf.example` ist das 1:1-Pendant zum `.htaccess`. Inhalt in den `server { … }` Block der Site einbinden — entweder per `include`:
+
+```nginx
+server {
+    # … bestehende Direktiven, inkl. per-Site `root /pfad/zu/public;` …
+
+    include /absoluter/pfad/zu/redaxo/src/addons/massif_media/assets/nginx.conf.example;
+}
+```
+
+… oder die zwei `location`-Blöcke direkt hineinkopieren. Anschließend `nginx -s reload`.
+
+Logik: Cache-Hits werden direkt von nginx ausgeliefert (PHP läuft nicht), Cache-Misses über `try_files` an `_img/index.php?p=…` weitergeleitet — Query-String (HMAC `s=…`, `v=…`) bleibt erhalten. Long-lived `Cache-Control: public, max-age=31536000, immutable` wird auf Hits gesetzt.
+
+Voraussetzung: der Server-Block hat ein per-Site `root` auf das Public-Verzeichnis gesetzt — sonst kann `try_files $uri` die Cache-Datei nicht finden.
+
+#### Laravel Herd
+
+Herd routet alle geparkten Sites durch **einen** gemeinsamen `server { … }` Block mit `root /;` und einem Fall-through auf Valets `server.php`. Es gibt keine per-Site Override-Datei, und `try_files $uri` funktioniert in dieser Konstellation nicht. Stattdessen das Snippet aus `assets/herd.conf.snippet` direkt in die zentrale Herd-Konfig einbauen:
+
+```
+~/Library/Application Support/Herd/config/nginx/herd.conf
+```
+
+In den `server { … }` Block einfügen — neben dem bestehenden `# YREWRITE START / END` Block ist eine natürliche Stelle. Inhalt:
+
+```nginx
+# MASSIF MEDIA START
+rewrite ^/assets/addons/massif_media/cache/(.+)$ /assets/addons/massif_media/_img/index.php?p=$1&$args last;
+# MASSIF MEDIA END
+```
+
+Anschließend `herd restart`.
+
+Trade-off: dieser Rewrite läuft **immer**, also auch auf Cache-Hits — PHP wird bei jedem Bild-Request angefragt, nicht nur beim ersten. Das ist akzeptabel, weil Herd ohnehin alle statischen Requests durch Valets `server.php` schleift. Auf einem produktiven nginx (per-Site `server`-Block, eigenes `root`) das `nginx.conf.example` nutzen — dort bleibt der Direkt-Auslieferungs-Fastpath erhalten.
+
+⚠️ Herd-Updates können `herd.conf` überschreiben. Falls das Cache-Routing nach einem Herd-Upgrade nicht mehr greift, die Zeile zwischen den Markern erneut einfügen.
+
+#### AVIF-Mime-Type
+
+Falls AVIF-Dateien als `application/octet-stream` ausgeliefert werden (alte nginx-Builds): Mime-Type ergänzen — Hinweis ganz unten in `nginx.conf.example`.
 
 ## Schnellstart
 
@@ -239,8 +289,8 @@ Ausgelieferte URL:
 /assets/addons/massif_media/cache/avif-1080-50/hero.jpg.avif?s={HMAC}&v={mtime}
 ```
 
-- **Cache-Hit**: Apache liefert direkt aus (PHP wird nicht ausgeführt).
-- **Cache-Miss**: `.htaccess`-Rewrite leitet auf `_img/index.php` um — HMAC wird verifiziert, Glide generiert die Variante, ab sofort liegt sie auf Disk und wird beim nächsten Request direkt geliefert.
+- **Cache-Hit**: Apache (oder nginx, siehe Installation) liefert direkt aus — PHP wird nicht ausgeführt.
+- **Cache-Miss**: `.htaccess`-Rewrite (Apache) bzw. `try_files`-Fallback (nginx) leitet auf `_img/index.php` um — HMAC wird verifiziert, Glide generiert die Variante, ab sofort liegt sie auf Disk und wird beim nächsten Request direkt geliefert.
 
 `?s=` ist eine HMAC-SHA256-Signatur über den Cache-Pfad gegen `sign_key` aus den Einstellungen.
 `?v=` ist der `mtime` des Quellbildes — sorgt nur für Browser-/CDN-Cache-Invalidierung.
