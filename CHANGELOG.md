@@ -12,6 +12,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Fixed
 
+- `Image::picture()` löste „Cannot bind an instance to a static closure" in `vendor/league/glide/src/Server.php` aus. Glide ruft `Closure::bind($callable, $this, static::class)` auf der Cache-Path-Callable auf — das schlägt bei `static fn (…)` fehl, weil statische Closures kein `$this` zulassen. `static` aus `Glide\Server::cachePathCallable()` entfernt; der Body nutzt sowieso nur `self::cachePath()`, das Binden ist also faktisch ein No-Op.
 - Number-Inputs auf den Settings-Tabs (AVIF/WebP/JPG-Qualität, LQIP-Maße, Cache-TTLs) fehlte die `form-control` CSS-Klasse — REDAXO's `addTextField` injiziert sie automatisch, `addInputField` jedoch nicht. Inputs werden jetzt konsistent mit den Text-Feldern gerendert.
 - Breite der Number-Inputs auf 100 px (Qualität / LQIP) bzw. 140 px (TTLs) begrenzt — `form-control` setzt sonst 100 % Container-Breite, was bei 1–3-stelligen Werten unverhältnismäßig wirkt.
 - Default-Werte werden auf den Number-Inputs (Qualität / LQIP / TTLs) als `placeholder` angezeigt, damit auf frischen Installationen ohne gespeicherten `rex_config`-Wert ersichtlich ist, was bei leerem Feld als Default greift. Quelle ist `Config::DEFAULTS`, damit Code- und UI-Default nicht auseinanderlaufen.
