@@ -39,7 +39,7 @@ final class Config
         self::KEY_QUALITY_AVIF => 50,
         self::KEY_QUALITY_WEBP => 75,
         self::KEY_QUALITY_JPG => 80,
-        self::KEY_DEVICE_SIZES => '640,750,828,1080,1200,1920,2048,3840',
+        self::KEY_DEVICE_SIZES => '640,750,828,1080,1200,1440,1600,1920,2048,3840',
         self::KEY_IMAGE_SIZES => '16,32,48,64,96,128,256,384',
         self::KEY_DEFAULT_SIZES => '(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw',
         self::KEY_LQIP_ENABLED => 1,
@@ -156,7 +156,7 @@ final class Config
     private static function splitList(string $csv): array
     {
         $items = preg_split('/[\s,;]+/', trim($csv)) ?: [];
-        return array_values(array_filter($items, static fn (string $s): bool => $s !== ''));
+        return array_values(array_filter($items, static fn(string $s): bool => $s !== ''));
     }
 
     /**
@@ -167,6 +167,6 @@ final class Config
     private static function splitIntList(string $csv): array
     {
         $ints = array_map('intval', self::splitList($csv));
-        return array_values(array_filter($ints, static fn (int $i): bool => $i > 0));
+        return array_values(array_filter($ints, static fn(int $i): bool => $i > 0));
     }
 }
