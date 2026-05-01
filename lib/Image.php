@@ -9,6 +9,7 @@ use Throwable;
 use Ynamite\Media\Builder\ImageBuilder;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
+use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
@@ -34,6 +35,7 @@ class Image
         ?string $focal = null,
         bool $preload = false,
         ?string $class = null,
+        Fit|string|null $fit = null,
     ): string {
         $b = self::for($src);
         if ($alt !== null) {
@@ -60,6 +62,9 @@ class Image
         }
         if ($class !== null) {
             $b->class($class);
+        }
+        if ($fit !== null) {
+            $b->fit($fit);
         }
         return $b->render();
     }
