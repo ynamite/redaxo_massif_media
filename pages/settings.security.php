@@ -77,6 +77,7 @@ $f = $form->addInputField('number', Config::KEY_METADATA_TTL_SECONDS);
 $f->setLabel('Metadata TTL');
 $f->setAttribute('class', 'form-control');
 $f->setAttribute('style', 'width: 140px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_METADATA_TTL_SECONDS]);
 $f->setAttribute('min', '60');
 $f->setNotice('Wie lange Asset-Metadaten (intrinsische Maße, Mime, Blurhash, Focal-Point) gecached bleiben.');
 
@@ -84,6 +85,7 @@ $f = $form->addInputField('number', Config::KEY_SENTINEL_TTL_SECONDS);
 $f->setLabel('Sentinel TTL');
 $f->setAttribute('class', 'form-control');
 $f->setAttribute('style', 'width: 140px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_SENTINEL_TTL_SECONDS]);
 $f->setAttribute('min', '5');
 $f->setNotice('Kurze TTL für fehlgeschlagene Reads (verhindert Hammering bei kaputten Assets).');
 
