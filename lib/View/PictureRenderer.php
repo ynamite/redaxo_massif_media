@@ -7,6 +7,7 @@ namespace Ynamite\Media\View;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
+use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\ResolvedImage;
@@ -15,6 +16,8 @@ use Ynamite\Media\Pipeline\UrlBuilder;
 
 final class PictureRenderer
 {
+    private const RATIO_EQUAL_EPSILON = 0.001;
+
     public function __construct(
         private SrcsetBuilder $srcsetBuilder,
         private UrlBuilder $urlBuilder,
@@ -44,11 +47,45 @@ final class PictureRenderer
         FetchPriority $fetchPriority = FetchPriority::AUTO,
         bool $withBlurhashAttr = false,
         ?string $class = null,
+        ?Fit $fit = null,
     ): string {
         $sizes ??= Config::defaultSizes();
         $formats = $this->normalizeFormats($formats ?? Config::formats());
 
-        $widths = $this->srcsetBuilder->build($image->intrinsicWidth, $widthsOverride);
+        // Resolve effective ratio: explicit > derived from width+height > null.
+        $effectiveRatio = $ratio;
+        if ($effectiveRatio === null && $height !== null && $height > 0 && $width !== null && $width > 0) {
+            $effectiveRatio = $width / $height;
+        }
+
+        // Resolve effective fit. Default depends on whether a target box is set.
+        $effectiveFit = $fit ?? ($effectiveRatio !== null ? Fit::COVER : Fit::NONE);
+
+        // Decide whether we actually need to crop for this render. Skip when:
+        // - fit is NONE (caller opted out), or
+        // - no target box (no ratio derived), or
+        // - ratio matches intrinsic within epsilon (no point cropping the same shape).
+        $intrinsicRatio = $image->aspectRatio();
+        $needsCrop = $effectiveFit !== Fit::NONE
+            && $effectiveRatio !== null
+            && $intrinsicRatio > 0
+            && abs($effectiveRatio - $intrinsicRatio) > self::RATIO_EQUAL_EPSILON;
+
+        $fitToken = null;
+        $effectiveMaxWidth = null;
+        if ($needsCrop) {
+            $fitToken = $this->buildFitToken($effectiveFit, $image->focalPoint);
+            // For cover/contain, never ask Glide to upscale beyond what the source
+            // can deliver after cropping. Stretch is exempt — it can squish to any size.
+            if ($effectiveFit !== Fit::STRETCH && $effectiveRatio > 0) {
+                $effectiveMaxWidth = (int) min(
+                    $image->intrinsicWidth,
+                    (int) floor($image->intrinsicHeight * $effectiveRatio),
+                );
+            }
+        }
+
+        $widths = $this->srcsetBuilder->build($image->intrinsicWidth, $widthsOverride, $effectiveMaxWidth);
         if ($widths === []) {
             return '';
         }
@@ -61,7 +98,7 @@ final class PictureRenderer
                 continue;
             }
             $quality = $qualityOverride[$fmt] ?? null;
-            $srcset = $this->buildSrcset($image, $widths, $fmt, $quality);
+            $srcset = $this->buildSrcset($image, $widths, $fmt, $quality, $effectiveRatio, $fitToken);
             $sources[] = sprintf(
                 '<source type="image/%s" srcset="%s" sizes="%s">',
                 self::escape($this->mimeSubtype($fmt)),
@@ -71,13 +108,16 @@ final class PictureRenderer
         }
 
         $fallbackQuality = $qualityOverride[$fallbackFormat] ?? null;
-        $fallbackSrcset = $this->buildSrcset($image, $widths, $fallbackFormat, $fallbackQuality);
+        $fallbackSrcset = $this->buildSrcset($image, $widths, $fallbackFormat, $fallbackQuality, $effectiveRatio, $fitToken);
 
-        // src points at a mid-pool variant; browsers without srcset support pick this.
         $midIdx = (int) floor((count($widths) - 1) / 2);
-        $fallbackSrc = $this->urlBuilder->build($image, $widths[$midIdx], $fallbackFormat, $fallbackQuality);
+        $midWidth = $widths[$midIdx];
+        $midHeight = ($effectiveRatio !== null && $fitToken !== null)
+            ? (int) round($midWidth / $effectiveRatio)
+            : null;
+        $fallbackSrc = $this->urlBuilder->build($image, $midWidth, $fallbackFormat, $fallbackQuality, $midHeight, $fitToken);
 
-        [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $ratio);
+        [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $effectiveRatio);
 
         $lqip = $this->placeholder->generate($image);
 
@@ -119,14 +159,50 @@ final class PictureRenderer
         return '<picture>' . implode('', $sources) . $this->renderImg($imgAttrs) . '</picture>';
     }
 
-    private function buildSrcset(ResolvedImage $image, array $widths, string $format, ?int $quality): string
-    {
+    private function buildSrcset(
+        ResolvedImage $image,
+        array $widths,
+        string $format,
+        ?int $quality,
+        ?float $effectiveRatio,
+        ?string $fitToken,
+    ): string {
         $entries = [];
         foreach ($widths as $w) {
-            $url = $this->urlBuilder->build($image, $w, $format, $quality);
+            $h = ($effectiveRatio !== null && $fitToken !== null) ? (int) round($w / $effectiveRatio) : null;
+            $url = $this->urlBuilder->build($image, $w, $format, $quality, $h, $fitToken);
             $entries[] = $url . ' ' . $w . 'w';
         }
         return implode(', ', $entries);
+    }
+
+    private function buildFitToken(Fit $fit, ?string $focalPoint): string
+    {
+        if ($fit !== Fit::COVER) {
+            return $fit->value;  // 'contain' or 'stretch'
+        }
+
+        // Cover requires focal coordinates as integers (Glide's `crop-X-Y` regex
+        // rejects decimals on the first two coords — vendor/league/glide/src/Manipulators/Size.php:118).
+        [$fx, $fy] = $this->parseFocalToInts($focalPoint);
+        return sprintf('cover-%d-%d', $fx, $fy);
+    }
+
+    /**
+     * Parse "X% Y%" → [int, int] clamped to 0-100. Falls back to [50, 50] on
+     * unparseable / missing input. MetadataReader::normalizeFocal already
+     * produces this format from any focuspoint addon variant.
+     *
+     * @return array{0: int, 1: int}
+     */
+    private function parseFocalToInts(?string $value): array
+    {
+        if ($value === null || !preg_match('/^([\d.]+)%\s+([\d.]+)%$/', $value, $m)) {
+            return [50, 50];
+        }
+        $x = max(0, min(100, (int) round((float) $m[1])));
+        $y = max(0, min(100, (int) round((float) $m[2])));
+        return [$x, $y];
     }
 
     /**
