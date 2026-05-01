@@ -13,6 +13,7 @@ REDAXO-Addon für moderne, responsive Bild- und Video-Auslieferung.
 - **SVG/GIF Pass-through** — keine Transformation, nur ein einfaches `<img>`.
 - **CDN-Override** (ImageKit, Cloudinary, Imgix-kompatibel) als optionale Konfiguration.
 - **REDAXO-natives `REX_PIC[…]` Placeholder** für Inhaltspflege in Textfeldern / WYSIWYG.
+- **Backend-Settings mit Tabs** (Allgemein, Placeholder, CDN, Sicherheit & Cache) und integrierter **Dokumentations-Seite** — diese README wird unter **AddOns → MASSIF Media → Dokumentation** direkt im Backend gerendert.
 
 Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/responsive-images).
 
@@ -27,7 +28,11 @@ Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/re
 
 1. Addon ins REDAXO-System hochladen oder über Connect installieren.
 2. Aktivieren — der HMAC Sign-Key und das Cache-Verzeichnis werden automatisch eingerichtet.
-3. Optional: Einstellungen unter **AddOns → MASSIF Media → Einstellungen** anpassen.
+3. Optional: Einstellungen unter **AddOns → MASSIF Media → Einstellungen** anpassen. Die Tabs gruppieren die Optionen:
+    - **Allgemein** — Formate, Qualität pro Format, Breakpoint-Pools, Default-`sizes`-Attribut.
+    - **Placeholder** — LQIP-Tuning, Blurhash-Toggle.
+    - **CDN** — optionale CDN-Auslieferung mit Template.
+    - **Sicherheit & Cache** — Sign-Key-Anzeige + Regenerieren, Cache leeren, Cache-TTLs.
 
 ## Schnellstart
 
@@ -146,7 +151,7 @@ Ausgelieferte URL:
 ## Cache-Invalidierung
 
 - **Backend "Cache leeren"** (UI oder `console cache:clear`): das Addon hängt sich an `CACHE_DELETED` und leert den eigenen Cache mit.
-- **"Addon Cache leeren"** auf der Settings-Seite: gezielt nur unseren Cache.
+- **"Addon Cache jetzt leeren"** auf dem **Sicherheit & Cache**-Tab: gezielt nur unseren Cache.
 - **Quelländerung**: REDAXO ändert den `mtime`, dadurch ändert sich der `?v=` Parameter — Browser/CDN holen die neue URL. Das Disk-File ist dann zwar noch da, aber Anfragen mit neuem `?v=` bleiben Cache-Hits, weil `?v=` nicht Teil des Datei-Pfades ist. Bei Bedarf das Addon-Cache leeren oder REDAXO-Cache leeren.
 
 ## Sicherheit
