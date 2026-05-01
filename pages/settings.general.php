@@ -16,18 +16,21 @@ $f->setNotice('Komma-separiert. Reihenfolge entspricht der Browser-Präferenz im
 $f = $form->addInputField('number', Config::KEY_QUALITY_AVIF);
 $f->setLabel('AVIF Qualität');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
 
 $f = $form->addInputField('number', Config::KEY_QUALITY_WEBP);
 $f->setLabel('WebP Qualität');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
 
 $f = $form->addInputField('number', Config::KEY_QUALITY_JPG);
 $f->setLabel('JPG Qualität');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
 

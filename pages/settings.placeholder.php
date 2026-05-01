@@ -15,18 +15,21 @@ $f->addOption('Inline-Placeholder erzeugen (32 px Base64-JPEG, JS-frei)', 1);
 $f = $form->addInputField('number', Config::KEY_LQIP_WIDTH);
 $f->setLabel('Breite (px)');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '4');
 $f->setAttribute('max', '256');
 
 $f = $form->addInputField('number', Config::KEY_LQIP_BLUR);
 $f->setLabel('Blur (0–100)');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '0');
 $f->setAttribute('max', '100');
 
 $f = $form->addInputField('number', Config::KEY_LQIP_QUALITY);
 $f->setLabel('Qualität');
 $f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
 
