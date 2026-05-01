@@ -55,13 +55,28 @@ final class Server
 
     /**
      * Compute the cache path for a given source + params.
-     * Pattern: {fmt}-{w}-{q}/{source_path}.{out_ext}
+     *
+     * Two shapes:
+     * - No crop (params['h'] / params['fit'] absent): {fmt}-{w}-{q}/{source_path}.{out_ext}
+     *   (legacy shape, preserved for backward compatibility with existing on-disk cache)
+     * - Crop:    {fmt}-{w}-{h}-{fitToken}-{q}/{source_path}.{out_ext}
+     *
+     * `fitToken` follows our internal vocabulary: `cover-{X}-{Y}` (focal-aware), `contain`, or `stretch`.
+     * Endpoint::parseCachePath understands both shapes and rejects malformed paths.
      */
     public static function cachePath(string $path, array $params): string
     {
         $fmt = strtolower((string) ($params['fm'] ?? pathinfo($path, PATHINFO_EXTENSION)));
         $w = (int) ($params['w'] ?? 0);
         $q = (int) ($params['q'] ?? 80);
+        $h = isset($params['h']) ? (int) $params['h'] : null;
+        $fitToken = isset($params['fit']) && is_string($params['fit']) && $params['fit'] !== ''
+            ? $params['fit']
+            : null;
+
+        if ($h !== null && $h > 0 && $fitToken !== null) {
+            return sprintf('%s-%d-%d-%s-%d/%s.%s', $fmt, $w, $h, $fitToken, $q, $path, $fmt);
+        }
 
         return sprintf('%s-%d-%d/%s.%s', $fmt, $w, $q, $path, $fmt);
     }
