@@ -4,7 +4,7 @@ REDAXO-Addon für moderne, responsive Bild- und Video-Auslieferung.
 
 - **`<picture>`-Markup** mit AVIF, WebP und JPG Sources — der Browser entscheidet selbst, welches Format er lädt (kein Accept-Header-Sniffing).
 - **On-demand Resizing** über [league/glide](https://glide.thephpleague.com/) — nur die tatsächlich benötigten Varianten werden generiert.
-- **Webserver-direkt-Auslieferung** auf Cache-Hits (PHP läuft nur beim ersten Request einer Variante). Apache out of the box via `.htaccess`; nginx / Laravel Herd via mitgelieferter `assets/nginx.conf.example`.
+- **Self-contained, ohne Server-Konfiguration**: ein `PACKAGES_INCLUDED`-Hook fängt Cache-URLs in REDAXOs Frontend ab und liefert die Variante aus — funktioniert überall (Apache, nginx, Laravel Herd, Valet) ohne `.htaccess`/nginx-Tweaks oder Valet-Driver-Patches. Optional: für Cache-**Hits** liefert das mitgelieferte `assets/.htaccess` (Apache) bzw. `assets/nginx.conf.example` (Standalone-nginx) den Fastpath, der PHP komplett umgeht.
 - **HMAC-signierte URLs** — verhindert, dass beliebige Größen-/Qualitätskombinationen den Speicher fluten können.
 - **LQIP** (Low-Quality Image Placeholder) als inline Base64-JPEG im `background-image` — JS-frei.
 - **Blurhash**-Generierung als Sidecar in den Asset-Metadaten — abrufbar via `Image::blurhash($src)` für Galerien / JSON-APIs, optional auch als `data-blurhash` Attribut.
@@ -34,60 +34,17 @@ Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/re
     - **CDN** — optionale CDN-Auslieferung mit Template.
     - **Sicherheit & Cache** — Sign-Key-Anzeige + Regenerieren, Cache leeren, Cache-TTLs.
 
-### nginx
+### Webserver-Konfiguration
 
-Out of the box liefert das Addon ein `assets/.htaccess` mit — Apache-Setups (XAMPP, MAMP, klassisches Apache+PHP-FPM) funktionieren ohne weiteres Zutun. Auf nginx wird `.htaccess` nicht ausgewertet; ohne zusätzliche Konfiguration liefern Cache-URLs `404` aus (oder fallen auf den Frontend-Index zurück), weil das URL → `_img/index.php`-Rewriting fehlt.
+Das Addon ist **self-contained** — es funktioniert auf jedem Webserver, der REDAXO selbst zum Laufen bringt (Apache, nginx, Laravel Herd, Valet, …) **ohne zusätzliche Server-Konfiguration**. Ein `PACKAGES_INCLUDED`-Extension-Point fängt Cache-URLs der Form `/assets/addons/massif_media/cache/…` in REDAXOs Frontend ab, generiert die Variante on-demand und liefert sie aus, bevor `yrewrite` oder Article-Rendering läuft. Pattern aus REDAXOs eigenem `media_manager` adaptiert.
 
-Das Addon enthält zwei nginx-Snippets — welches passt, hängt vom Setup ab:
+Optional: für **Cache-Hits** (Anfragen für bereits generierte Varianten) bringen die mitgelieferten Server-Snippets einen Fastpath, der PHP komplett umgeht.
 
-#### Standalone nginx (Production)
-
-`assets/nginx.conf.example` ist das 1:1-Pendant zum `.htaccess`. Inhalt in den `server { … }` Block der Site einbinden — entweder per `include`:
-
-```nginx
-server {
-    # … bestehende Direktiven, inkl. per-Site `root /pfad/zu/public;` …
-
-    include /absoluter/pfad/zu/redaxo/src/addons/massif_media/assets/nginx.conf.example;
-}
-```
-
-… oder die zwei `location`-Blöcke direkt hineinkopieren. Anschließend `nginx -s reload`.
-
-Logik: Cache-Hits werden direkt von nginx ausgeliefert (PHP läuft nicht), Cache-Misses über `try_files` an `_img/index.php?p=…` weitergeleitet — Query-String (HMAC `s=…`, `v=…`) bleibt erhalten. Long-lived `Cache-Control: public, max-age=31536000, immutable` wird auf Hits gesetzt.
-
-Voraussetzung: der Server-Block hat ein per-Site `root` auf das Public-Verzeichnis gesetzt — sonst kann `try_files $uri` die Cache-Datei nicht finden.
-
-#### Laravel Herd
-
-Herd routet alle geparkten Sites durch Valets `server.php`, das anhand von `$_SERVER['REQUEST_URI']` dispatcht. nginx-Level-Rewrites in `herd.conf` aktualisieren diese Variable **nicht** — eine `rewrite … last;` Zeile bleibt dort wirkungslos. Der korrekte Hook ist die per-Site `LocalValetDriver.php` Ihrer REDAXO-Installation.
-
-In der bestehenden `frontControllerPath()`-Methode den Cache-Pfad-Treffer abfangen, **nach** der `$docRoot = …` Zeile und **vor** dem Candidates-Loop:
-
-```php
-$docRoot = rtrim($this->getPublicPath($sitePath), '/');
-
-// MASSIF Media: route cache-miss URLs through the addon's Glide shim.
-// Cache hits sind durch isStaticFile() abgedeckt und landen nie hier.
-if (preg_match('#^/assets/addons/massif_media/cache/(.+)$#', $uri, $m)) {
-    $shim = $docRoot . '/assets/addons/massif_media/_img/index.php';
-    if ($this->isActualFile($shim)) {
-        $_GET['p'] = $m[1];
-        $_SERVER['SCRIPT_FILENAME'] = $shim;
-        $_SERVER['SCRIPT_NAME'] = '/assets/addons/massif_media/_img/index.php';
-        $_SERVER['DOCUMENT_ROOT'] = $docRoot;
-        return $shim;
-    }
-}
-
-// … bestehender Candidates-Loop bleibt unverändert …
-```
-
-Das Snippet liegt zur Copy-Paste-Verfügbarkeit auch unter `assets/LocalValetDriver.snippet.php`. Anschließend `herd restart`.
-
-Logik: Cache-**Hits** werden weiterhin von Valets `serveStaticFile()` direkt ausgeliefert (PHP läuft nicht), weil `isStaticFile()` die Datei auf Disk findet — der Direkt-Auslieferungs-Fastpath bleibt erhalten. Cache-**Misses** routen wir hier explizit zum Glide-Shim mit injektiertem `$_GET['p']`; die ursprünglichen Query-Parameter (`s`, `v`) bleiben unverändert verfügbar.
-
-#### AVIF-Mime-Type
+| Setup | Was passiert ohne Snippet | Was der Snippet bringt |
+|---|---|---|
+| Apache | Cache-Hit + Cache-Miss laufen über REDAXO. | `assets/.htaccess` ist standardmäßig aktiv und liefert Hits direkt aus Apache. Long-lived `Cache-Control: max-age=31536000, immutable`. Funktioniert ohne weiteres Zutun. |
+| Standalone nginx | Cache-Hit + Cache-Miss laufen über REDAXO. | `assets/nginx.conf.example` einbinden (`include` im `server { … }` Block, vorausgesetzt der Site-Block setzt `root` auf das Public-Verzeichnis). Hits werden direkt von nginx ausgeliefert. Anschließend `nginx -s reload`. |
+| Laravel Herd / Valet | **Cache-Hits** werden bereits direkt aus dem Filesystem geliefert (Valet erkennt Static-Files in `isStaticFile()`). **Cache-Misses** routen über REDAXOs Frontend. Funktioniert ohne weiteres Zutun. | — |
 
 Falls AVIF-Dateien als `application/octet-stream` ausgeliefert werden (alte nginx-Builds): Mime-Type ergänzen — Hinweis ganz unten in `nginx.conf.example`.
 
@@ -141,7 +98,7 @@ In Textfeldern / Modulen für Redakteure: das `REX_PIC[…]` Placeholder. Siehe 
 
 ## REX_PIC — Placeholder für Inhaltspflege
 
-Für REDAXO-Redakteure und WYSIWYG-Workflows: das `REX_PIC[…]` Placeholder kann direkt in jedem Textfeld, Markdown-Bereich oder Editor verwendet werden. Beim Rendern der Seite expandiert ein `OUTPUT_FILTER` jeden Treffer zu vollständigem `<picture>`-Markup — gleiche Pipeline wie der PHP-Aufruf, nur deklarativ und ohne PHP-Kenntnisse.
+Für REDAXO-Redakteure und WYSIWYG-Workflows: das `REX_PIC[…]` Placeholder ist als **natives REDAXO-`rex_var`** registriert und kann direkt in Slice-Inhalten / Modul-Output verwendet werden. Beim Rebuild des Article-Caches expandiert REDAXO jeden Treffer zu PHP-Code, der beim Rendern der Seite das vollständige `<picture>`-Markup erzeugt — gleiche Pipeline wie der PHP-Aufruf, nur deklarativ und ohne PHP-Kenntnisse.
 
 ### Beispiele
 
@@ -238,9 +195,13 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus
 | `preload` | bool | `"true"` injiziert ein `<link rel="preload">` in den `<head>`. |
 | `class` | string | CSS-Klasse(n) für das `<img>` bzw. `<picture>`. |
 
-### Performance-Hinweis
+### Scope und Performance
 
-`REX_PIC` wird über `OUTPUT_FILTER` auf jedem Seiten-Render gegen den fertigen HTML-Output regex-matched. Für Seiten mit vielen Treffern kann das spürbar werden. Bei Performance-kritischen Listen / Schleifen ist der direkte PHP-Aufruf (`Image::picture(…)` oder `Image::for(…)->render()`) effizienter — `REX_PIC` ist als deklarative Schreibweise für Redakteure gedacht, nicht als Ersatz für die PHP-API in template-/modul-Code.
+`REX_PIC` ist ein natives REDAXO-`rex_var` — die Substitution greift in Slice-Content (Modul-Output, Modul-Input, Templates) und wird bei der Article-Cache-Generierung in PHP-Code übersetzt. Pro Render entsteht damit kein Regex-Overhead — der Article-Cache ruft direkt `\\Ynamite\\Media\\Image::picture(…)` auf.
+
+`REX_PIC` greift **nicht** außerhalb von Slice-Content (z. B. nicht in arbiträren Custom-Feldern, Metainfo-Texten, oder im rohen `tt_news`-Output, sofern diese nicht durch `replaceObjectVars()` laufen). In solchen Kontexten direkt die PHP-API benutzen: `Image::picture(…)` oder `Image::for(…)->render()`.
+
+Wenn nach einem Addon-Update ein Slice mit `REX_PIC[…]` plötzlich nicht mehr rendert: REDAXO-Cache leeren, damit der Article-Cache neu gebaut wird. `rex_var`-Substitution ist Article-Cache-bound; geändertes `getOutput()` greift erst nach Cache-Rebuild.
 
 ## Erzeugtes Markup
 
@@ -262,6 +223,22 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus
 ```
 
 SVG / GIF → schlichtes `<img>` ohne `srcset` / Sources.
+
+## Placeholder-Strategien: LQIP vs. Blurhash
+
+Das Addon erzeugt für jedes Bild **zwei** unabhängige Placeholder-Repräsentationen — beide sind kleine, unscharfe Vorschauen, decken aber unterschiedliche Use-Cases ab. Beide sind defaultmäßig aktiv und benötigen keine Anpassung.
+
+| Aspekt | LQIP | Blurhash |
+|---|---|---|
+| Was ist es? | Ein 32 px Mini-JPEG (geblurrt, Q40), als Base64-Data-URL inline ausgeliefert. | Eine ~30-Byte ASCII-Repräsentation (DCT-Approximation der Bildfarben/-struktur). |
+| Wie kommt es zum Browser? | Inline im `style="background-image:url('data:image/jpeg;base64,…')"` Attribut des `<img>`. ~2 KB pro Bild im HTML. | Als `data-blurhash="…"` Attribut (opt-in über `->withBlurhashAttr()`) oder als Rückgabewert von `Image::blurhash($src)` für JSON-APIs. |
+| Wer entschlüsselt? | Browser-nativ (data: URL). Kein JS, keine CPU-Kosten. | JavaScript-Decoder im Browser (Canvas-Rendering) — **oder** server-seitig in PHP via `\\kornrunner\\Blurhash\\Blurhash::decode($hash, $w, $h)`, das eine Pixel-Matrix zurückgibt, die man zu JPEG/PNG enkodieren kann. |
+| Speicherort | Cache-Datei pro Asset unter `cache/_lqip/…`, plus Verweis in der `meta.json` Sidecar. ~2 KB pro Asset auf Disk. | Nur `meta.json` Sidecar pro Asset. ~30 Bytes pro Asset. |
+| Visueller Charakter | Echte Pixel-Reduktion des Originals → farb- und strukturtreu. | Parametrische DCT-Approximation → designed-blur Look, weniger Detail. |
+
+Konzeptionell sind beide kleine Vorschau-Bilder — der Unterschied liegt in **Speicherung** und **Decode-Pfad**. Für klassisches Server-Rendering von HTML ist LQIP der direktere Weg (Browser dekodiert nativ, keine Roundtrips). Blurhash spielt seine Stärke aus, sobald man eine **JSON-API** baut und einem JS-Client einen 30-Byte-Hash schickt, statt 2 KB Base64 — dort übernimmt der Client das Rendering.
+
+Beide Strategien laufen unabhängig und additiv. Default: LQIP rendert inline, Blurhash wird nur berechnet (für `Image::blurhash($src)`) und nicht im HTML mitgeliefert. Soll der Hash auch als `data-blurhash` Attribut erscheinen, dann `->withBlurhashAttr()` in der Builder-Kette aufrufen.
 
 ## Konfiguration
 
@@ -296,8 +273,8 @@ Ausgelieferte URL:
 /assets/addons/massif_media/cache/avif-1080-50/hero.jpg.avif?s={HMAC}&v={mtime}
 ```
 
-- **Cache-Hit**: Apache (oder nginx, siehe Installation) liefert direkt aus — PHP wird nicht ausgeführt.
-- **Cache-Miss**: `.htaccess`-Rewrite (Apache) bzw. `try_files`-Fallback (nginx) leitet auf `_img/index.php` um — HMAC wird verifiziert, Glide generiert die Variante, ab sofort liegt sie auf Disk und wird beim nächsten Request direkt geliefert.
+- **Cache-Hit**: Apache (mit mitgeliefertem `.htaccess`), nginx (mit Snippet) oder Valet/Herd (nativ über `isStaticFile()`) liefert die Datei direkt aus — PHP läuft nicht.
+- **Cache-Miss**: Request landet in REDAXOs Frontend `index.php`. Der `PACKAGES_INCLUDED`-Hook fängt die Cache-URL ab, verifiziert die HMAC, Glide generiert die Variante, der Hook sendet die Bytes und beendet die Request-Verarbeitung. Ab sofort liegt die Variante auf Disk und der nächste Request ist ein Hit.
 
 `?s=` ist eine HMAC-SHA256-Signatur über den Cache-Pfad gegen `sign_key` aus den Einstellungen.
 `?v=` ist der `mtime` des Quellbildes — sorgt nur für Browser-/CDN-Cache-Invalidierung.
