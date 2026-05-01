@@ -38,7 +38,7 @@ final class RexPic extends rex_var
         // fall back to Image::picture()'s own defaults (which include enum
         // defaults for loading/decoding/fetchPriority that we cannot emit
         // as a string here without re-importing the enums).
-        foreach (['alt', 'width', 'height', 'sizes', 'loading', 'decoding', 'focal', 'class'] as $key) {
+        foreach (['alt', 'width', 'height', 'sizes', 'loading', 'decoding', 'focal', 'class', 'fit'] as $key) {
             $val = $this->getParsedArg($key);
             if ($val !== null) {
                 $args[] = $key . ': ' . $val;
