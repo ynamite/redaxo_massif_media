@@ -9,6 +9,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 - Number-Inputs auf den Settings-Tabs (AVIF/WebP/JPG-Qualität, LQIP-Maße, Cache-TTLs) fehlte die `form-control` CSS-Klasse — REDAXO's `addTextField` injiziert sie automatisch, `addInputField` jedoch nicht. Inputs werden jetzt konsistent mit den Text-Feldern gerendert.
 - Breite der Number-Inputs auf 100 px (Qualität / LQIP) bzw. 140 px (TTLs) begrenzt — `form-control` setzt sonst 100 % Container-Breite, was bei 1–3-stelligen Werten unverhältnismäßig wirkt.
+- Default-Werte werden auf den Number-Inputs (Qualität / LQIP / TTLs) als `placeholder` angezeigt, damit auf frischen Installationen ohne gespeicherten `rex_config`-Wert ersichtlich ist, was bei leerem Feld als Default greift. Quelle ist `Config::DEFAULTS`, damit Code- und UI-Default nicht auseinanderlaufen.
 
 ## [1.0.0] — 2026-05-01
 
