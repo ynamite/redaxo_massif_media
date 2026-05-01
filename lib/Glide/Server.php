@@ -74,6 +74,15 @@ final class Server
             ? $params['fit']
             : null;
 
+        // Normalize Glide's `crop-X-Y` (passed in when this is invoked from
+        // inside makeImage via the cachePathCallable) back to our `cover-X-Y`
+        // (used in URL emission). Both code paths must produce the same path
+        // so static direct-serving works on cache hits — otherwise Glide would
+        // write to `crop-X-Y/` while the browser asks for `cover-X-Y/`.
+        if ($fitToken !== null && str_starts_with($fitToken, 'crop-')) {
+            $fitToken = 'cover-' . substr($fitToken, strlen('crop-'));
+        }
+
         if ($h !== null && $h > 0 && $fitToken !== null) {
             return sprintf('%s-%d-%d-%s-%d/%s.%s', $fmt, $w, $h, $fitToken, $q, $path, $fmt);
         }
