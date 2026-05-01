@@ -9,6 +9,7 @@ use rex_media;
 use Throwable;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
+use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Exception\ImageNotFoundException;
 use Ynamite\Media\Pipeline\ImageResolver;
@@ -35,6 +36,7 @@ final class ImageBuilder
     private Loading $loading = Loading::LAZY;
     private Decoding $decoding = Decoding::ASYNC;
     private FetchPriority $fetchPriority = FetchPriority::AUTO;
+    private ?Fit $fit = null;
     private bool $preload = false;
     private ?string $focal = null;
     private bool $withBlurhashAttr = false;
@@ -125,6 +127,12 @@ final class ImageBuilder
         return $this;
     }
 
+    public function fit(Fit|string $fit): self
+    {
+        $this->fit = is_string($fit) ? Fit::from($fit) : $fit;
+        return $this;
+    }
+
     public function preload(bool $on = true): self
     {
         $this->preload = $on;
@@ -208,6 +216,7 @@ final class ImageBuilder
             $this->fetchPriority,
             $this->withBlurhashAttr,
             $this->class,
+            $this->fit,
         );
     }
 
