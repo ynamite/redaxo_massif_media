@@ -41,10 +41,16 @@ final class Server
 
     public static function cachePathCallable(): Closure
     {
-        // Not a static closure: Glide binds $this (the Server instance) onto
-        // this callable via Closure::bind() before invoking it, which fails on
-        // static closures. The body doesn't use $this, so binding is a no-op.
-        return fn (string $path, array $params): string => self::cachePath($path, $params);
+        // Two Glide gotchas, both rooted in `Closure::bind($callable, $this, static::class)`:
+        //   1. The closure must not be static — static closures reject `$this`
+        //      and Glide throws "Cannot bind an instance to a static closure".
+        //   2. The bind rescopes `self::` / `static::` to League\Glide\Server,
+        //      so `self::cachePath()` resolves against Glide's class (which
+        //      has no such method) and fails with
+        //      "Call to undefined method League\Glide\Server::cachePath()".
+        // Use the FQCN — resolved at the call site, not via the closure's
+        // bound scope.
+        return fn (string $path, array $params): string => Server::cachePath($path, $params);
     }
 
     /**
