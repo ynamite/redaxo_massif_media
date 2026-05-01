@@ -48,7 +48,7 @@ final class PictureRenderer
         $sizes ??= Config::defaultSizes();
         $formats = $this->normalizeFormats($formats ?? Config::formats());
 
-        $widths = $this->srcsetBuilder->build($image->intrinsicWidth, $width, $widthsOverride);
+        $widths = $this->srcsetBuilder->build($image->intrinsicWidth, $widthsOverride);
         if ($widths === []) {
             return '';
         }

@@ -54,7 +54,7 @@ final class Preloader
             }
             $useFormats = $entry['formats'] ?? $formats;
             $useSizes = $entry['sizes'] ?? $sizes;
-            $useWidths = $srcsetBuilder->build($image->intrinsicWidth, $entry['width'], $entry['widths']);
+            $useWidths = $srcsetBuilder->build($image->intrinsicWidth, $entry['widths']);
             if ($useWidths === []) {
                 continue;
             }
