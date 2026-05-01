@@ -13,33 +13,35 @@ final class SrcsetBuilder
      *
      * Pool defaults to the union of Config::deviceSizes() and Config::imageSizes()
      * (next/image dual-pool model). Caps each candidate at the source's intrinsic
-     * width — never generates variants larger than the source can produce. The
-     * intrinsic itself is always included as the top variant.
+     * width. When cropping (cover / contain) demands a smaller upper bound — e.g.
+     * a 1:1 crop on a 5000×4000 source caps usable width at 4000 — the caller
+     * passes `$effectiveMaxWidth` and the pool is filtered against that too. The
+     * effective cap is always included as the top variant.
      *
-     * The `width` prop on Image::picture() / REX_PIC is intentionally NOT used
-     * to cap the srcset. It's a layout hint (HTML `width=` attribute, CLS
-     * reservation), not a hard ceiling — capping there would starve HiDPI / 2x /
-     * 3x screens of crisp variants on a CSS-`width` of e.g. 720px. Matches
-     * next/image's responsive behavior: when a `sizes` attribute is present
-     * (which it always is in this pipeline — defaults to `Config::defaultSizes()`),
-     * the browser picks the right variant from the full pool based on the actual
-     * rendered size × DPR. Use `->widths([...])` to override the pool when you
-     * specifically want a tighter set.
+     * `width` (the caller's render-size hint) is NOT a srcset cap — that's
+     * intentional, see commit c0aaa5d. Use `$override` to pass an explicit pool
+     * when you specifically want a tighter set.
      *
-     * @param int      $intrinsicWidth Source image's natural width.
-     * @param int[]|null $override     Optional explicit widths. Replaces the default pool.
-     * @return int[]                   Sorted, deduped, all <= intrinsicWidth.
+     * @param int      $intrinsicWidth     Source image's natural width.
+     * @param int[]|null $override         Optional explicit widths. Replaces the default pool.
+     * @param int|null $effectiveMaxWidth  Optional secondary cap (cover/contain crop limit). null = use intrinsic.
+     * @return int[]                       Sorted, deduped, all <= effective cap.
      */
-    public function build(int $intrinsicWidth, ?array $override = null): array
+    public function build(int $intrinsicWidth, ?array $override = null, ?int $effectiveMaxWidth = null): array
     {
         $candidates = $override !== null
             ? array_map('intval', $override)
             : array_unique(array_merge(Config::deviceSizes(), Config::imageSizes()));
 
-        $candidates = array_filter($candidates, static fn (int $w): bool => $w > 0 && $w <= $intrinsicWidth);
+        $cap = $intrinsicWidth;
+        if ($effectiveMaxWidth !== null && $effectiveMaxWidth > 0 && $effectiveMaxWidth < $cap) {
+            $cap = $effectiveMaxWidth;
+        }
 
-        if ($intrinsicWidth > 0 && !in_array($intrinsicWidth, $candidates, true)) {
-            $candidates[] = $intrinsicWidth;
+        $candidates = array_filter($candidates, static fn (int $w): bool => $w > 0 && $w <= $cap);
+
+        if ($cap > 0 && !in_array($cap, $candidates, true)) {
+            $candidates[] = $cap;
         }
 
         $candidates = array_values(array_unique($candidates));
