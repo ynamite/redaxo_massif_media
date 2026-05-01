@@ -60,25 +60,32 @@ Voraussetzung: der Server-Block hat ein per-Site `root` auf das Public-Verzeichn
 
 #### Laravel Herd
 
-Herd routet alle geparkten Sites durch **einen** gemeinsamen `server { … }` Block mit `root /;` und einem Fall-through auf Valets `server.php`. Es gibt keine per-Site Override-Datei, und `try_files $uri` funktioniert in dieser Konstellation nicht. Stattdessen das Snippet aus `assets/herd.conf.snippet` direkt in die zentrale Herd-Konfig einbauen:
+Herd routet alle geparkten Sites durch Valets `server.php`, das anhand von `$_SERVER['REQUEST_URI']` dispatcht. nginx-Level-Rewrites in `herd.conf` aktualisieren diese Variable **nicht** — eine `rewrite … last;` Zeile bleibt dort wirkungslos. Der korrekte Hook ist die per-Site `LocalValetDriver.php` Ihrer REDAXO-Installation.
 
+In der bestehenden `frontControllerPath()`-Methode den Cache-Pfad-Treffer abfangen, **nach** der `$docRoot = …` Zeile und **vor** dem Candidates-Loop:
+
+```php
+$docRoot = rtrim($this->getPublicPath($sitePath), '/');
+
+// MASSIF Media: route cache-miss URLs through the addon's Glide shim.
+// Cache hits sind durch isStaticFile() abgedeckt und landen nie hier.
+if (preg_match('#^/assets/addons/massif_media/cache/(.+)$#', $uri, $m)) {
+    $shim = $docRoot . '/assets/addons/massif_media/_img/index.php';
+    if ($this->isActualFile($shim)) {
+        $_GET['p'] = $m[1];
+        $_SERVER['SCRIPT_FILENAME'] = $shim;
+        $_SERVER['SCRIPT_NAME'] = '/assets/addons/massif_media/_img/index.php';
+        $_SERVER['DOCUMENT_ROOT'] = $docRoot;
+        return $shim;
+    }
+}
+
+// … bestehender Candidates-Loop bleibt unverändert …
 ```
-~/Library/Application Support/Herd/config/nginx/herd.conf
-```
 
-In den `server { … }` Block einfügen — neben dem bestehenden `# YREWRITE START / END` Block ist eine natürliche Stelle. Inhalt:
+Das Snippet liegt zur Copy-Paste-Verfügbarkeit auch unter `assets/LocalValetDriver.snippet.php`. Anschließend `herd restart`.
 
-```nginx
-# MASSIF MEDIA START
-rewrite ^/assets/addons/massif_media/cache/(.+)$ /assets/addons/massif_media/_img/index.php?p=$1&$args last;
-# MASSIF MEDIA END
-```
-
-Anschließend `herd restart`.
-
-Trade-off: dieser Rewrite läuft **immer**, also auch auf Cache-Hits — PHP wird bei jedem Bild-Request angefragt, nicht nur beim ersten. Das ist akzeptabel, weil Herd ohnehin alle statischen Requests durch Valets `server.php` schleift. Auf einem produktiven nginx (per-Site `server`-Block, eigenes `root`) das `nginx.conf.example` nutzen — dort bleibt der Direkt-Auslieferungs-Fastpath erhalten.
-
-⚠️ Herd-Updates können `herd.conf` überschreiben. Falls das Cache-Routing nach einem Herd-Upgrade nicht mehr greift, die Zeile zwischen den Markern erneut einfügen.
+Logik: Cache-**Hits** werden weiterhin von Valets `serveStaticFile()` direkt ausgeliefert (PHP läuft nicht), weil `isStaticFile()` die Datei auf Disk findet — der Direkt-Auslieferungs-Fastpath bleibt erhalten. Cache-**Misses** routen wir hier explizit zum Glide-Shim mit injektiertem `$_GET['p']`; die ursprünglichen Query-Parameter (`s`, `v`) bleiben unverändert verfügbar.
 
 #### AVIF-Mime-Type
 
