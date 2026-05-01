@@ -194,6 +194,29 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String; gerendert wird daraus
 | `focal` | string | aus `focuspoint`-Addon (sonst `50% 50%`) | `X% Y%` oder `0.5,0.3` — überschreibt für diesen Aufruf den asset-level Focal-Point. |
 | `preload` | bool | `false` | `"true"` injiziert ein `<link rel="preload">` in den `<head>`. |
 | `class` | string | — (kein `class`-Attribut) | CSS-Klasse(n) für das `<img>` bzw. `<picture>`. |
+| `fit` | string | `cover` (wenn `ratio`/`height` gesetzt), sonst ignoriert | `cover` (Default, fokuspunkt-bewusster Center-Crop), `contain` (verkleinert proportional in die Box), `stretch` (verzerrt zur Box-Form), `none` (kein Crop, nur Layout-Reservierung — Verhalten vor diesem Release). Greift nur, wenn ein Ziel-Format via `ratio` oder `height` gesetzt ist; ohne Ziel-Box wird das Attribut still ignoriert. |
+
+### Cropping (`fit`)
+
+Sobald `ratio` oder `height` gesetzt ist, wird das gerenderte Bild standardmäßig **gecroppt**, damit es exakt in die angeforderte Layout-Box passt. Default-Modus ist `cover` — fokuspunkt-bewusster Center-Crop, wobei der Fokuspunkt entweder vom optionalen `focuspoint`-Addon kommt oder per Aufruf via `focal="X% Y%"` gesetzt wird.
+
+| Modus | Verhalten |
+|---|---|
+| `cover` | Box ausfüllen, Überstand cropen, Fokuspunkt zentriert (Default). |
+| `contain` | Bild proportional verkleinern bis es vollständig in die Box passt — eine Dimension trifft die Box, die andere ist kleiner. **Kein Padding / Letterboxing** (Glide setzt bei `contain` keinen Hintergrund). |
+| `stretch` | Auf Box-Maße verzerren (selten gewollt, aber unterstützt). |
+| `none` | Kein Crop. Image behält intrinsisches Seitenverhältnis, Box wird nur layout-mäßig reserviert (Verhalten vor diesem Release). |
+
+**Beispiele:**
+
+```
+REX_PIC[src="hero.jpg" width="800" ratio="1:1"]                             // implizites cover
+REX_PIC[src="hero.jpg" width="800" ratio="1:1" focal="30% 70%"]             // cover mit Fokuspunkt
+REX_PIC[src="hero.jpg" width="800" ratio="1:1" fit="contain"]               // proportional in 800x800 verkleinert
+REX_PIC[src="hero.jpg" width="800" ratio="1:1" fit="none"]                  // wie früher: nur Layout-Box, keine Bild-Manipulation
+```
+
+Wenn `ratio` exakt mit dem intrinsischen Seitenverhältnis der Quelle übereinstimmt, überspringt das Addon den Crop (kein zusätzlicher Cache-Eintrag). Bei `cover` und `contain` wird die `srcset`-Auswahl zusätzlich auf die Crop-Dimensionen begrenzt — bei einem 5712×4284 Quellbild und `ratio="9:16"` endet `srcset` z. B. bei 2409 w (= ⌊4284 × 9/16⌋), damit Glide nicht hochskalieren muss. `stretch` ignoriert diesen Cap (kann verzerrt auf jede Größe).
 
 ### Scope und Performance
 
@@ -258,14 +281,18 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 
 ## URL-Schema
 
-Generierte Varianten werden hier abgelegt:
+Generierte Varianten werden hier abgelegt — zwei Cache-Pfad-Formen je nach Crop-Modus:
 
 ```
-assets/addons/massif_media/cache/{fmt}-{w}-{q}/{filename}.{out_ext}
+assets/addons/massif_media/cache/{fmt}-{w}-{q}/{filename}.{out_ext}                    (kein Crop)
+assets/addons/massif_media/cache/{fmt}-{w}-{h}-{fitToken}-{q}/{filename}.{out_ext}     (mit Crop)
 
 z. B.  assets/addons/massif_media/cache/avif-1080-50/hero.jpg.avif
-       assets/addons/massif_media/cache/webp-640-75/hero.jpg.webp
+       assets/addons/massif_media/cache/avif-800-800-cover-50-50-50/hero.jpg.avif
+       assets/addons/massif_media/cache/webp-640-360-contain-75/hero.jpg.webp
 ```
+
+`fitToken` ist eines von: `cover-{focalX}-{focalY}` (mit fokuspunkt-bewusstem Crop), `contain` oder `stretch`.
 
 Ausgelieferte URL:
 
