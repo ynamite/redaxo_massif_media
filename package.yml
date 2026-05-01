@@ -25,3 +25,12 @@ page:
     settings:
       title: 'Einstellungen'
       icon: rex-icon fa-cog
+      subpages:
+        general: { title: 'Allgemein' }
+        placeholder: { title: 'Placeholder' }
+        cdn: { title: 'CDN' }
+        security: { title: 'Sicherheit & Cache' }
+    docs:
+      title: 'Dokumentation'
+      icon: rex-icon fa-book
+      subPath: README.md

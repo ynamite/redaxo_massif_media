@@ -2,4 +2,4 @@
 
 declare(strict_types=1);
 
-\Ynamite\Media\BE\SettingsPage::render();
+rex_be_controller::includeCurrentPageSubPath();
