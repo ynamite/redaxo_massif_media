@@ -5,10 +5,16 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Added
+
+- nginx Support: `assets/nginx.conf.example` als 1:1-Pendant zum `.htaccess` für standalone nginx (per-Site `server`-Block, eigenes `root`) — `try_files`-Fastpath für Cache-Hits, Fallback-Rewrite auf `_img/index.php?p=…` für Misses (Query-String erhalten), Long-lived `Cache-Control` auf Hits, Hinweis zum AVIF-Mime-Type für alte nginx-Builds.
+- Laravel Herd Support: `assets/herd.conf.snippet` mit einem unkonditionalen Server-Level-Rewrite, der direkt in die gemeinsame `~/Library/Application Support/Herd/config/nginx/herd.conf` eingebaut wird (Herd hat keine per-Site Override-Datei, und `try_files` funktioniert mit Herds `root /;` nicht). PHP läuft damit auf jedem Cache-Hit — akzeptabel im Herd-Kontext, da Valets `server.php` ohnehin alle Static-Requests durchschleift. README-Abschnitt **nginx** unter Installation erklärt beide Setups separat. Bisher liefen Cache-URLs auf nginx-Setups stillschweigend ins 404, weil `.htaccess` ignoriert wurde.
+
 ### Changed
 
 - Placeholder-Settings-Tab klargestellt: LQIP und Blurhash sind zwei unabhängige Strategien (LQIP = Inline-Base64-JPEG, JS-frei; Blurhash = kompakter Hash für Client-Side-Rendering oder API). Intro-Hinweis am Panel-Anfang, ausführlichere Notice-Texte unter beiden Toggles. Der Blurhash-Option-Label nennt jetzt explizit „Beim ersten Zugriff auf ein Bild berechnen und in der Asset-Metadata cachen".
 - README: dedizierter Abschnitt **REX_PIC — Placeholder für Inhaltspflege** mit neun Beispielen (minimal, mit `sizes`, mit `ratio`, responsive, mit Preload, mit Focal-Point, mit CSS-Klasse, SVG-Pass-through, eingebettet in Markdown), vollständiger Attribut-Tabelle und Performance-Hinweis. Vorher nur einzeiliger Erwähnung.
+- README: Cache-Hit-Bullet und URL-Schema-Section sind nicht mehr Apache-spezifisch — beide Webserver werden jetzt explizit erwähnt.
 
 ### Fixed
 
