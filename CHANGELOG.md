@@ -5,6 +5,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Number-Inputs auf den Settings-Tabs (AVIF/WebP/JPG-Qualität, LQIP-Maße, Cache-TTLs) fehlte die `form-control` CSS-Klasse — REDAXO's `addTextField` injiziert sie automatisch, `addInputField` jedoch nicht. Inputs werden jetzt konsistent mit den Text-Feldern gerendert.
+
 ## [1.0.0] — 2026-05-01
 
 Erstes Release. MASSIF Media wurde aus dem `redaxo-massif` Sammel-Addon ausgelagert und auf eine moderne, eigenständige Pipeline umgebaut. Alte `Ynamite\Massif\Media\…` Aufrufe in bestehenden Projekten bleiben unverändert nutzbar (das alte Addon koexistiert); neuer Code verwendet `Ynamite\Media\…`.
