@@ -61,6 +61,24 @@ $f->setNotice(
     . '<strong>Unabhängig vom LQIP</strong> oben — beide können zusammen oder einzeln aktiv sein.'
 );
 
+$f = $form->addInputField('number', Config::KEY_BLURHASH_COMPONENTS_X);
+$f->setLabel('Komponenten X (1–9) <small class="text-muted">(Blurhash only)</small>');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_BLURHASH_COMPONENTS_X]);
+$f->setAttribute('min', '1');
+$f->setAttribute('max', '9');
+$f->setNotice('Horizontale Detailauflösung des Hashes. Höher = mehr Details, längerer Hash-String. Default 4. Änderungen greifen erst nach <code>Cache leeren</code> (alte <code>_meta/</code>-Sidecars werden dann neu berechnet).');
+
+$f = $form->addInputField('number', Config::KEY_BLURHASH_COMPONENTS_Y);
+$f->setLabel('Komponenten Y (1–9) <small class="text-muted">(Blurhash only)</small>');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_BLURHASH_COMPONENTS_Y]);
+$f->setAttribute('min', '1');
+$f->setAttribute('max', '9');
+$f->setNotice('Vertikale Detailauflösung des Hashes. Default 3 (für Landscape-Bilder typisch leicht niedriger als X). Gleiche Cache-Hinweise wie oben.');
+
 $intro = '<p class="alert alert-info">'
        . '<strong>Zwei unabhängige Strategien</strong> für Lade-Vorschauen: '
        . '<strong>LQIP</strong> als Inline-Base64-JPEG (kein JavaScript nötig, sofort sichtbar) und '

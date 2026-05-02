@@ -23,6 +23,8 @@ final class Config
     public const KEY_LQIP_BLUR = 'lqip_blur';
     public const KEY_LQIP_QUALITY = 'lqip_quality';
     public const KEY_BLURHASH_ENABLED = 'blurhash_enabled';
+    public const KEY_BLURHASH_COMPONENTS_X = 'blurhash_components_x';
+    public const KEY_BLURHASH_COMPONENTS_Y = 'blurhash_components_y';
     public const KEY_CDN_ENABLED = 'cdn_enabled';
     public const KEY_CDN_BASE = 'cdn_base';
     public const KEY_CDN_URL_TEMPLATE = 'cdn_url_template';
@@ -47,6 +49,8 @@ final class Config
         self::KEY_LQIP_BLUR => 40,
         self::KEY_LQIP_QUALITY => 40,
         self::KEY_BLURHASH_ENABLED => 1,
+        self::KEY_BLURHASH_COMPONENTS_X => 4,
+        self::KEY_BLURHASH_COMPONENTS_Y => 3,
         self::KEY_CDN_ENABLED => 0,
         self::KEY_CDN_BASE => '',
         self::KEY_CDN_URL_TEMPLATE => '',
@@ -131,6 +135,25 @@ final class Config
     public static function blurhashEnabled(): bool
     {
         return (bool) (int) self::get(self::KEY_BLURHASH_ENABLED);
+    }
+
+    public static function blurhashComponentsX(): int
+    {
+        return self::clampBlurhashComponent((int) self::get(self::KEY_BLURHASH_COMPONENTS_X));
+    }
+
+    public static function blurhashComponentsY(): int
+    {
+        return self::clampBlurhashComponent((int) self::get(self::KEY_BLURHASH_COMPONENTS_Y));
+    }
+
+    /**
+     * Blurhash component counts must be in [1, 9] — kornrunner/blurhash rejects
+     * values outside that range (vendor/kornrunner/blurhash/src/Blurhash.php).
+     */
+    private static function clampBlurhashComponent(int $value): int
+    {
+        return max(1, min(9, $value));
     }
 
     public static function cdnEnabled(): bool

@@ -200,7 +200,7 @@ final class MetadataReader
             }
             imagedestroy($img);
 
-            return Blurhash::encode($pixels, 4, 3);
+            return Blurhash::encode($pixels, Config::blurhashComponentsX(), Config::blurhashComponentsY());
         } catch (Throwable) {
             return null;
         }
