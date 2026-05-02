@@ -169,40 +169,55 @@ final class MetadataReader
                 return null;
             }
 
-            $width = imagesx($img);
-            $height = imagesy($img);
-
-            $maxDim = 64;
-            if ($width > $maxDim || $height > $maxDim) {
-                $ratio = min($maxDim / $width, $maxDim / $height);
-                $newWidth = max(1, (int) ($width * $ratio));
-                $newHeight = max(1, (int) ($height * $ratio));
-                $resized = imagecreatetruecolor($newWidth, $newHeight);
-                imagecopyresampled($resized, $img, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-                imagedestroy($img);
-                $img = $resized;
-                $width = $newWidth;
-                $height = $newHeight;
-            }
-
-            $pixels = [];
-            for ($y = 0; $y < $height; $y++) {
-                $row = [];
-                for ($x = 0; $x < $width; $x++) {
-                    $color = imagecolorat($img, $x, $y);
-                    $row[] = [
-                        ($color >> 16) & 0xFF,
-                        ($color >> 8) & 0xFF,
-                        $color & 0xFF,
-                    ];
-                }
-                $pixels[] = $row;
-            }
+            $img = self::downscaleIfOversized($img, 64);
+            $pixels = self::extractPixels($img, imagesx($img), imagesy($img));
             imagedestroy($img);
 
             return Blurhash::encode($pixels, Config::blurhashComponentsX(), Config::blurhashComponentsY());
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @param \GdImage $img
+     * @return \GdImage
+     */
+    private static function downscaleIfOversized(\GdImage $img, int $maxDim): \GdImage
+    {
+        $width = imagesx($img);
+        $height = imagesy($img);
+        if ($width <= $maxDim && $height <= $maxDim) {
+            return $img;
+        }
+
+        $ratio = min($maxDim / $width, $maxDim / $height);
+        $newWidth = max(1, (int) ($width * $ratio));
+        $newHeight = max(1, (int) ($height * $ratio));
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        imagecopyresampled($resized, $img, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        imagedestroy($img);
+        return $resized;
+    }
+
+    /**
+     * @return list<list<array{0: int, 1: int, 2: int}>>
+     */
+    private static function extractPixels(\GdImage $img, int $width, int $height): array
+    {
+        $pixels = [];
+        for ($y = 0; $y < $height; $y++) {
+            $row = [];
+            for ($x = 0; $x < $width; $x++) {
+                $color = imagecolorat($img, $x, $y);
+                $row[] = [
+                    ($color >> 16) & 0xFF,
+                    ($color >> 8) & 0xFF,
+                    $color & 0xFF,
+                ];
+            }
+            $pixels[] = $row;
+        }
+        return $pixels;
     }
 }
