@@ -164,3 +164,55 @@ if (!class_exists('rex')) {
         }
     }
 }
+
+if (!class_exists('rex_var')) {
+    abstract class rex_var
+    {
+        public const ENV_FRONTEND = 1;
+        public const ENV_BACKEND = 2;
+        public const ENV_INPUT = 4;
+        public const ENV_OUTPUT = 8;
+
+        /** @var array<string, string> */
+        protected array $args = [];
+
+        public static function register(string $name, string $class): void
+        {
+            // no-op for tests
+        }
+
+        public function _setArgs(array $args): void
+        {
+            $this->args = $args;
+        }
+
+        protected function hasArg(string $key, bool $defaultArg = false): bool
+        {
+            return isset($this->args[$key]) || ($defaultArg && isset($this->args[0]));
+        }
+
+        protected function getArg(string $key, mixed $default = null, bool $defaultArg = false): mixed
+        {
+            if (!$this->hasArg($key, $defaultArg)) {
+                return $default;
+            }
+            return $this->args[$key] ?? $this->args[0];
+        }
+
+        protected function getParsedArg(string $key, mixed $default = null, bool $defaultArg = false): mixed
+        {
+            if (!$this->hasArg($key, $defaultArg)) {
+                return $default;
+            }
+            $value = $this->args[$key] ?? $this->args[0];
+            return is_numeric($value) ? $value : "'" . addcslashes($value, "\\'") . "'";
+        }
+
+        abstract protected function getOutput(): string|false;
+
+        public function _callGetOutput(): string|false
+        {
+            return $this->getOutput();
+        }
+    }
+}
