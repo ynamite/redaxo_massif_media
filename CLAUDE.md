@@ -16,7 +16,7 @@ The addon **coexists with `redaxo-massif`**. There's no migration shim — old c
 - On-demand resizing via `league/glide` (Imagick driver, sRGB normalization manipulator).
 - Cache lives at `rex_path::addonAssets('massif_media', 'cache/')`. Cache misses are served by a `PACKAGES_INCLUDED` (EARLY) hook in REDAXO's frontend — no addon-specific webserver config required. Optional `.htaccess` / nginx snippet serve cache hits directly for the fastpath.
 - HMAC-SHA256 signed URLs prevent disk-fill abuse.
-- Blurhash via `kornrunner/blurhash` cached in `_meta/` sidecars.
+- Blurhash via `kornrunner/blurhash` cached in `_meta/` sidecars. Component counts (X, Y) are configurable via `Config::KEY_BLURHASH_COMPONENTS_X` / `_Y` (clamped to `[1, 9]`); defaults `4` / `3` match the prior hardcoded behavior.
 - Optional CDN override (ImageKit / Cloudinary / Imgix template).
 - Tabbed backend settings page under **AddOns → MASSIF Media → Einstellungen** (sub-tabs: Allgemein / Placeholder / CDN / Sicherheit & Cache).
 - Documentation tab under **AddOns → MASSIF Media → Dokumentation** that renders `README.md` directly via `subPath:` in `package.yml`.
