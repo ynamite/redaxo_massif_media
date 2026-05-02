@@ -8,21 +8,18 @@ use Ynamite\Media\Config;
 
 final class Signature
 {
-    public static function sign(string $cachePath): string
+    public static function sign(string $path, ?string $key = null): string
     {
-        return self::compute($cachePath);
+        $key ??= Config::signKey();
+        return hash_hmac('sha256', $path, $key);
     }
 
-    public static function verify(string $cachePath, string $signature): bool
+    public static function verify(string $path, string $signature, ?string $key = null): bool
     {
-        if ($signature === '' || Config::signKey() === '') {
+        if ($signature === '') {
             return false;
         }
-        return hash_equals(self::compute($cachePath), $signature);
-    }
-
-    private static function compute(string $cachePath): string
-    {
-        return hash_hmac('sha256', $cachePath, Config::signKey());
+        $key ??= Config::signKey();
+        return hash_equals(hash_hmac('sha256', $path, $key), $signature);
     }
 }
