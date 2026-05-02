@@ -114,7 +114,7 @@ final class Config
 
     public static function lqipEnabled(): bool
     {
-        return (bool) (int) self::get(self::KEY_LQIP_ENABLED);
+        return self::checkboxBool(self::KEY_LQIP_ENABLED);
     }
 
     public static function lqipWidth(): int
@@ -134,7 +134,7 @@ final class Config
 
     public static function blurhashEnabled(): bool
     {
-        return (bool) (int) self::get(self::KEY_BLURHASH_ENABLED);
+        return self::checkboxBool(self::KEY_BLURHASH_ENABLED);
     }
 
     public static function blurhashComponentsX(): int
@@ -158,7 +158,7 @@ final class Config
 
     public static function cdnEnabled(): bool
     {
-        return (bool) (int) self::get(self::KEY_CDN_ENABLED);
+        return self::checkboxBool(self::KEY_CDN_ENABLED);
     }
 
     public static function cdnBase(): string
@@ -169,6 +169,35 @@ final class Config
     public static function cdnUrlTemplate(): string
     {
         return (string) self::get(self::KEY_CDN_URL_TEMPLATE);
+    }
+
+    /**
+     * Read a checkbox-backed config value as bool. Two storage shapes to handle:
+     *   1. `rex_config_form::addCheckboxField` stores selected options pipe-delimited
+     *      (`|1|` for a single ticked option with value `1`, `''` for unticked,
+     *      `|1|2|` for multi-option checkboxes). A naive `(bool) (int)` cast on
+     *      `'|1|'` evaluates to `false` because PHP's int cast on a string that
+     *      doesn't start with a digit returns `0` — silently flipping any
+     *      user-toggled checkbox to "off". Strip pipes first, then int-cast.
+     *   2. `Config::DEFAULTS` uses plain ints (`1` / `0`) for fresh installs that
+     *      have no saved value yet.
+     *
+     * Bypasses `Config::get` because that method's empty-string fallback would
+     * coerce a user-unticked checkbox (saved as `''`) back to the default (`1`),
+     * making it impossible to actually disable a checkbox-backed setting from
+     * the UI. We only fall back to DEFAULTS when the key has truly never been
+     * set (`rex_config::get` returns `null`).
+     */
+    private static function checkboxBool(string $key): bool
+    {
+        $raw = rex_config::get(self::ADDON, $key, null);
+        if ($raw === null) {
+            $raw = self::DEFAULTS[$key] ?? 0;
+        }
+        if (is_string($raw)) {
+            $raw = trim($raw, '|');
+        }
+        return (bool) (int) $raw;
     }
 
     /**
