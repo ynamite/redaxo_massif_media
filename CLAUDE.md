@@ -20,7 +20,7 @@ The addon **coexists with `redaxo-massif`**. There's no migration shim — old c
 - Optional CDN override (ImageKit / Cloudinary / Imgix template).
 - Tabbed backend settings page under **AddOns → MASSIF Media → Einstellungen** (sub-tabs: Allgemein / Placeholder / CDN / Sicherheit & Cache).
 - Documentation tab under **AddOns → MASSIF Media → Dokumentation** that renders `README.md` directly via `subPath:` in `package.yml`.
-- `REX_PIC[src="..." alt="..." ...]` placeholder via native `rex_var` for content editors. Substitution happens at article-cache-build time, not on every render.
+- `REX_PIC[src="..." alt="..." ...]` and `REX_VIDEO[src="..." poster="..." ...]` placeholders via native `rex_var`s for content editors. Substitution happens at article-cache-build time, not on every render.
 - Preload via `<link rel="preload">` injected into `<head>` via `OUTPUT_FILTER`.
 - Focal-point support via the optional `focuspoint` addon's `med_focuspoint` field.
 
@@ -46,7 +46,7 @@ lib/
 │   ├── FilterParams.php                   # filter translation map + clamping + hex validation
 │   ├── RequestHandler.php                 # PACKAGES_INCLUDED hook → Endpoint::handle for self-contained routing
 │   └── Signature.php                      # HMAC sign + verify (optional extraPayload arg)
-├── Var/RexPic.php                         # rex_var subclass — REX_PIC[...] substitution at article-cache-build time
+├── Var/{RexPic,RexVideo}.php              # rex_var subclasses — REX_PIC[...] / REX_VIDEO[...] substitution at article-cache-build time
 ├── Config.php                             # rex_config wrapper + typed accessors
 ├── Enum/{Loading,Decoding,FetchPriority,Fit}.php
 └── Exception/ImageNotFoundException.php
