@@ -184,7 +184,7 @@ final class PictureRenderer
 
         // Cover requires focal coordinates as integers (Glide's `crop-X-Y` regex
         // rejects decimals on the first two coords — vendor/league/glide/src/Manipulators/Size.php:118).
-        [$fx, $fy] = $this->parseFocalToInts($focalPoint);
+        [$fx, $fy] = self::parseFocalToInts($focalPoint);
         return sprintf('cover-%d-%d', $fx, $fy);
     }
 
@@ -195,7 +195,7 @@ final class PictureRenderer
      *
      * @return array{0: int, 1: int}
      */
-    private function parseFocalToInts(?string $value): array
+    public static function parseFocalToInts(?string $value): array
     {
         if ($value === null || !preg_match('/^([\d.]+)%\s+([\d.]+)%$/', $value, $m)) {
             return [50, 50];

@@ -23,6 +23,7 @@ Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/re
 - PHP 8.2+
 - **Imagick** (empfohlen). Für AVIF-Output zusätzlich **libheif/libavif** in der Imagick-Build. GD funktioniert auch, kann aber kein AVIF und liefert qualitativ schwächere Skalierungen.
 - Optional: [`focuspoint`](https://github.com/yakamara/redaxo_focuspoint) Addon für visuelle Focal-Point-Pflege.
+- Für lokale Entwicklung: PHPUnit ^11 via `composer install` (require-dev). Tests laufen mit `composer test` (alle), `composer test:unit` (schnell) oder `composer test:integration` (Glide + Temp-FS). **Vor jedem Commit von `vendor/`-Änderungen** `composer install --no-dev` ausführen, dann `bin/check-vendor` zur Sicherheit.
 
 ## Installation
 
