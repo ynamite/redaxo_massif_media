@@ -59,13 +59,18 @@ final class Server
     /**
      * Compute the cache path for a given source + params.
      *
-     * Two shapes:
-     * - No crop (params['h'] / params['fit'] absent): {fmt}-{w}-{q}/{source_path}.{out_ext}
-     *   (legacy shape, preserved for backward compatibility with existing on-disk cache)
-     * - Crop:    {fmt}-{w}-{h}-{fitToken}-{q}/{source_path}.{out_ext}
+     * Asset-keyed: {src}/{transformSpec}.{ext}.
      *
-     * `fitToken` follows our internal vocabulary: `cover-{X}-{Y}` (focal-aware), `contain`, or `stretch`.
-     * Endpoint::parseCachePath understands both shapes and rejects malformed paths.
+     * Four shapes for the transform spec:
+     *   {fmt}-{w}-{q}                                  — no crop, no filters
+     *   {fmt}-{w}-{h}-{fitToken}-{q}                   — crop, no filters
+     *   {fmt}-{w}-{q}-f{hash}                          — no crop, with filters
+     *   {fmt}-{w}-{h}-{fitToken}-{q}-f{hash}           — crop, with filters
+     *
+     * fitToken is `cover-{X}-{Y}` / `contain` / `stretch`.
+     * Glide's `crop-X-Y` (passed in when invoked from inside makeImage via the
+     * cachePathCallable) is normalized back to our `cover-X-Y` form so URL-side
+     * and Glide-side produce the same path.
      */
     public static function cachePath(string $path, array $params): string
     {
@@ -77,19 +82,28 @@ final class Server
             ? $params['fit']
             : null;
 
-        // Normalize Glide's `crop-X-Y` (passed in when this is invoked from
-        // inside makeImage via the cachePathCallable) back to our `cover-X-Y`
-        // (used in URL emission). Both code paths must produce the same path
-        // so static direct-serving works on cache hits — otherwise Glide would
-        // write to `crop-X-Y/` while the browser asks for `cover-X-Y/`.
         if ($fitToken !== null && str_starts_with($fitToken, 'crop-')) {
             $fitToken = 'cover-' . substr($fitToken, strlen('crop-'));
         }
 
-        if ($h !== null && $h > 0 && $fitToken !== null) {
-            return sprintf('%s-%d-%d-%s-%d/%s.%s', $fmt, $w, $h, $fitToken, $q, $path, $fmt);
+        $filterParams = isset($params['filters']) && is_array($params['filters']) && $params['filters'] !== []
+            ? $params['filters']
+            : null;
+        $hash = null;
+        if ($filterParams !== null) {
+            ksort($filterParams);
+            $hash = substr(md5(json_encode($filterParams, JSON_FORCE_OBJECT)), 0, 8);
         }
 
-        return sprintf('%s-%d-%d/%s.%s', $fmt, $w, $q, $path, $fmt);
+        $spec = sprintf('%s-%d', $fmt, $w);
+        if ($h !== null && $h > 0 && $fitToken !== null) {
+            $spec .= sprintf('-%d-%s', $h, $fitToken);
+        }
+        $spec .= '-' . $q;
+        if ($hash !== null) {
+            $spec .= '-f' . $hash;
+        }
+
+        return sprintf('%s/%s.%s', $path, $spec, $fmt);
     }
 }

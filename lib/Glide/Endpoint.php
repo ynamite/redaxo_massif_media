@@ -58,23 +58,39 @@ final class Endpoint
     }
 
     /**
-     * Parse a cache path back into its components. Accepts both shapes:
+     * Parse asset-keyed cache path back into its components.
      *
-     * - Legacy: `{fmt}-{w}-{q}/{source}.{out_ext}` — h and fit are null.
-     * - Crop:   `{fmt}-{w}-{h}-{fitToken}-{q}/{source}.{out_ext}` — fitToken is
-     *   `cover-{X}-{Y}` / `contain` / `stretch`.
+     * Path shape: {src}/{transformSpec}.{ext}, with transformSpec being one of:
+     *   - {fmt}-{w}-{q}                              — legacy (no crop, no filters)
+     *   - {fmt}-{w}-{h}-{fitToken}-{q}               — crop, no filters
+     *   - {fmt}-{w}-{q}-f{hash}                      — no crop, with filters
+     *   - {fmt}-{w}-{h}-{fitToken}-{q}-f{hash}       — crop, with filters
      *
-     * @return array{fmt: string, w: int, q: int, h: int|null, fit: string|null, source: string}|null
+     * @return array{fmt: string, w: int, q: int, h: int|null, fit: string|null, hash: string|null, source: string}|null
      */
     public static function parseCachePath(string $path): ?array
     {
-        $segments = explode('/', $path, 2);
-        if (count($segments) < 2) {
+        $lastSlash = strrpos($path, '/');
+        if ($lastSlash === false) {
             return null;
         }
-        [$paramSeg, $rest] = $segments;
+        $srcPath = substr($path, 0, $lastSlash);
+        $filename = substr($path, $lastSlash + 1);
+        if ($srcPath === '' || $filename === '') {
+            return null;
+        }
 
-        $tokens = explode('-', $paramSeg);
+        $extPos = strrpos($filename, '.');
+        if ($extPos === false) {
+            return null;
+        }
+        $stem = substr($filename, 0, $extPos);
+        $ext = strtolower(substr($filename, $extPos + 1));
+        if (!preg_match('/^[a-z0-9]+$/', $ext)) {
+            return null;
+        }
+
+        $tokens = explode('-', $stem);
         if (count($tokens) < 3) {
             return null;
         }
@@ -84,24 +100,27 @@ final class Endpoint
             return null;
         }
 
-        // Legacy shape: fmt-w-q (3 tokens, last two numeric).
+        // Detect optional trailing f{8-hex} segment.
+        $hash = null;
+        $last = $tokens[count($tokens) - 1];
+        if (preg_match('/^f([a-f0-9]{8})$/', $last, $m)) {
+            $hash = $m[1];
+            array_pop($tokens);
+        }
+
+        // After potential hash strip: legacy fmt-w-q (3 tokens) or crop fmt-w-h-fit-q (5+).
         if (count($tokens) === 3 && ctype_digit($tokens[1]) && ctype_digit($tokens[2])) {
-            $source = self::stripFormatExtension($rest, $fmt);
-            if ($source === null) {
-                return null;
-            }
             return [
                 'fmt' => $fmt,
                 'w' => (int) $tokens[1],
                 'q' => (int) $tokens[2],
                 'h' => null,
                 'fit' => null,
-                'source' => $source,
+                'hash' => $hash,
+                'source' => $srcPath,
             ];
         }
 
-        // Crop shape: fmt-w-h-{fitToken}-q (5+ tokens; tokens[1], tokens[2], and
-        // last token are numeric; fitToken is the slice between h and q).
         if (count($tokens) >= 5
             && ctype_digit($tokens[1])
             && ctype_digit($tokens[2])
@@ -112,13 +131,7 @@ final class Endpoint
             $q = (int) $tokens[count($tokens) - 1];
             $fitParts = array_slice($tokens, 3, count($tokens) - 4);
             $fitToken = implode('-', $fitParts);
-
             if (!self::isValidFitToken($fitToken)) {
-                return null;
-            }
-
-            $source = self::stripFormatExtension($rest, $fmt);
-            if ($source === null) {
                 return null;
             }
             return [
@@ -127,20 +140,12 @@ final class Endpoint
                 'q' => $q,
                 'h' => $h,
                 'fit' => $fitToken,
-                'source' => $source,
+                'hash' => $hash,
+                'source' => $srcPath,
             ];
         }
 
         return null;
-    }
-
-    private static function stripFormatExtension(string $rest, string $fmt): ?string
-    {
-        $source = preg_replace('/\.' . preg_quote($fmt, '/') . '$/i', '', $rest);
-        if ($source === null || $source === $rest) {
-            return null;
-        }
-        return $source;
     }
 
     private static function isValidFitToken(string $token): bool

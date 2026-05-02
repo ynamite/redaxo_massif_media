@@ -86,5 +86,6 @@ final class CropPipelineTest extends TestCase
         // cachePath normalizes Glide's `crop-X-Y` → our `cover-X-Y`.
         self::assertStringContainsString('cover-50-50', $rel);
         self::assertStringNotContainsString('crop-50-50', $rel);
+        self::assertMatchesRegularExpression('@^hero\.jpg/jpg-400-400-cover-50-50-80\.jpg$@', $rel);
     }
 }

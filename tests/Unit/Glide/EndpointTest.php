@@ -11,33 +11,33 @@ final class EndpointTest extends TestCase
 {
     public function testParseCachePathLegacyShape(): void
     {
-        $parsed = Endpoint::parseCachePath('avif-1080-50/hero.jpg.avif');
-        self::assertSame([
-            'fmt' => 'avif',
-            'w' => 1080,
-            'q' => 50,
-            'h' => null,
-            'fit' => null,
-            'source' => 'hero.jpg',
-        ], $parsed);
+        $parsed = Endpoint::parseCachePath('hero.jpg/avif-1080-50.avif');
+        self::assertNotNull($parsed);
+        self::assertSame('hero.jpg', $parsed['source']);
+        self::assertSame('avif', $parsed['fmt']);
+        self::assertSame(1080, $parsed['w']);
+        self::assertSame(50, $parsed['q']);
+        self::assertNull($parsed['h']);
+        self::assertNull($parsed['fit']);
+        self::assertNull($parsed['hash']);
     }
 
     public function testParseCachePathCropShapeCover(): void
     {
-        $parsed = Endpoint::parseCachePath('avif-1080-1080-cover-50-50-50/hero.jpg.avif');
-        self::assertSame([
-            'fmt' => 'avif',
-            'w' => 1080,
-            'q' => 50,
-            'h' => 1080,
-            'fit' => 'cover-50-50',
-            'source' => 'hero.jpg',
-        ], $parsed);
+        $parsed = Endpoint::parseCachePath('hero.jpg/avif-1080-1080-cover-50-50-50.avif');
+        self::assertNotNull($parsed);
+        self::assertSame('hero.jpg', $parsed['source']);
+        self::assertSame('avif', $parsed['fmt']);
+        self::assertSame(1080, $parsed['w']);
+        self::assertSame(1080, $parsed['h']);
+        self::assertSame(50, $parsed['q']);
+        self::assertSame('cover-50-50', $parsed['fit']);
+        self::assertNull($parsed['hash']);
     }
 
     public function testParseCachePathCropShapeContain(): void
     {
-        $parsed = Endpoint::parseCachePath('webp-800-600-contain-75/hero.jpg.webp');
+        $parsed = Endpoint::parseCachePath('hero.jpg/webp-800-600-contain-75.webp');
         self::assertNotNull($parsed);
         self::assertSame('contain', $parsed['fit']);
         self::assertSame(800, $parsed['w']);
@@ -46,23 +46,49 @@ final class EndpointTest extends TestCase
 
     public function testParseCachePathCropShapeStretch(): void
     {
-        $parsed = Endpoint::parseCachePath('jpg-800-450-stretch-80/hero.jpg.jpg');
+        $parsed = Endpoint::parseCachePath('hero.jpg/jpg-800-450-stretch-80.jpg');
         self::assertNotNull($parsed);
         self::assertSame('stretch', $parsed['fit']);
+    }
+
+    public function testParseCachePathFilterShape(): void
+    {
+        $parsed = Endpoint::parseCachePath('hero.jpg/jpg-800-80-fa1b2c3d4.jpg');
+        self::assertNotNull($parsed);
+        self::assertSame('a1b2c3d4', $parsed['hash']);
+        self::assertNull($parsed['fit']);
+        self::assertSame('hero.jpg', $parsed['source']);
+        self::assertSame(800, $parsed['w']);
+        self::assertSame(80, $parsed['q']);
+    }
+
+    public function testParseCachePathCropAndFilters(): void
+    {
+        $parsed = Endpoint::parseCachePath('hero.jpg/avif-1080-1080-contain-50-fa1b2c3d4.avif');
+        self::assertNotNull($parsed);
+        self::assertSame('contain', $parsed['fit']);
+        self::assertSame('a1b2c3d4', $parsed['hash']);
+    }
+
+    public function testParseCachePathPreservesSubdirSource(): void
+    {
+        $parsed = Endpoint::parseCachePath('gallery/2024/atelier.jpg/avif-1920-50.avif');
+        self::assertNotNull($parsed);
+        self::assertSame('gallery/2024/atelier.jpg', $parsed['source']);
     }
 
     public function testParseCachePathRejectsMalformed(): void
     {
         self::assertNull(Endpoint::parseCachePath('garbage'));
-        self::assertNull(Endpoint::parseCachePath('avif-1080-1080-bogus-50/hero.jpg.avif'));
-        self::assertNull(Endpoint::parseCachePath('avif-1080-50'));
-        self::assertNull(Endpoint::parseCachePath('avif-x-50/hero.jpg.avif'));
+        self::assertNull(Endpoint::parseCachePath('hero.jpg/avif-x-50.avif'));
+        self::assertNull(Endpoint::parseCachePath('hero.jpg/avif-1080-1080-bogus-50.avif'));
+        self::assertNull(Endpoint::parseCachePath('no-extension'));
     }
 
-    public function testParseCachePathPreservesSourceWithSubdirs(): void
+    public function testParseCachePathRejectsBogusHash(): void
     {
-        $parsed = Endpoint::parseCachePath('avif-1080-50/gallery/2024/hero.jpg.avif');
-        self::assertNotNull($parsed);
-        self::assertSame('gallery/2024/hero.jpg', $parsed['source']);
+        // Hash must be 8 lowercase hex chars.
+        self::assertNull(Endpoint::parseCachePath('hero.jpg/jpg-800-80-fNOTHEX.jpg'));
+        self::assertNull(Endpoint::parseCachePath('hero.jpg/jpg-800-80-fab.jpg'));
     }
 }
