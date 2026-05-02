@@ -14,10 +14,23 @@
     "league/glide": "^3.0",
     "kornrunner/blurhash": "^1.2"
   },
+  "require-dev": {
+    "phpunit/phpunit": "^11.0"
+  },
   "autoload": {
     "psr-4": {
       "Ynamite\\Media\\": "lib/"
     }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\Massif\\Media\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "test:unit": "phpunit --testsuite=unit",
+    "test:integration": "phpunit --testsuite=integration"
   },
   "config": {
     "sort-packages": true
