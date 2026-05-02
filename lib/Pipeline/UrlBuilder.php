@@ -6,6 +6,7 @@ namespace Ynamite\Media\Pipeline;
 
 use rex_url;
 use Ynamite\Media\Config;
+use Ynamite\Media\Glide\CacheKeyBuilder;
 use Ynamite\Media\Glide\Server;
 use Ynamite\Media\Glide\Signature;
 
@@ -46,11 +47,7 @@ final class UrlBuilder
             'filters' => $filterParams,
         ]);
 
-        $filterBlob = '';
-        if ($filterParams !== []) {
-            ksort($filterParams);
-            $filterBlob = self::base64UrlEncode(json_encode($filterParams, JSON_FORCE_OBJECT));
-        }
+        $filterBlob = $filterParams !== [] ? CacheKeyBuilder::encodeFilterBlob($filterParams) : '';
 
         $signature = Signature::sign($cachePath, $filterBlob !== '' ? $filterBlob : null);
 
@@ -85,11 +82,7 @@ final class UrlBuilder
             $template = '{src}?w={w}&q={q}&fm={fm}';
         }
 
-        $filterBlob = '';
-        if ($filterParams !== []) {
-            ksort($filterParams);
-            $filterBlob = self::base64UrlEncode(json_encode($filterParams, JSON_FORCE_OBJECT));
-        }
+        $filterBlob = $filterParams !== [] ? CacheKeyBuilder::encodeFilterBlob($filterParams) : '';
 
         $expanded = strtr($template, [
             '{w}' => (string) $width,
@@ -105,13 +98,4 @@ final class UrlBuilder
         return $base . '/' . ltrim($expanded, '/');
     }
 
-    private static function base64UrlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-    }
-
-    public static function base64UrlDecode(string $data): string|false
-    {
-        return base64_decode(strtr($data, '-_', '+/'), true);
-    }
 }

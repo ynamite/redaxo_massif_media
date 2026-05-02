@@ -6,7 +6,6 @@ namespace Ynamite\Media\Glide;
 
 use rex_logger;
 use Throwable;
-use Ynamite\Media\Pipeline\UrlBuilder;
 
 final class Endpoint
 {
@@ -35,14 +34,13 @@ final class Endpoint
                 self::respond(400, 'Bad request');
                 return;
             }
-            $decoded = json_decode((string) UrlBuilder::base64UrlDecode($filterBlob), true);
+            $decoded = json_decode((string) CacheKeyBuilder::decodeFilterBlob($filterBlob), true);
             if (!is_array($decoded)) {
                 self::respond(400, 'Bad request');
                 return;
             }
             $filterParams = $decoded;
-            ksort($filterParams);
-            $expectedHash = substr(md5(json_encode($filterParams, JSON_FORCE_OBJECT)), 0, 8);
+            $expectedHash = CacheKeyBuilder::hashFilterParams($filterParams);
             if (!hash_equals($expectedHash, $parsed['hash'])) {
                 self::respond(400, 'Bad request');
                 return;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Ynamite\Media\Glide\CacheKeyBuilder;
 use Ynamite\Media\Glide\Server;
 use Ynamite\Media\Glide\Signature;
 
@@ -97,17 +98,12 @@ final class FilterPipelineTest extends TestCase
             'fm' => 'jpg', 'w' => 200, 'q' => 80,
             'filters' => ['bri' => 10],
         ]);
-        $filterBlob = self::base64UrlEncode(json_encode(['bri' => 10], JSON_FORCE_OBJECT));
+        $filterBlob = CacheKeyBuilder::encodeFilterBlob(['bri' => 10]);
         $sig = Signature::sign($cachePath, $filterBlob, $key);
 
         self::assertTrue(Signature::verify($cachePath, $sig, $filterBlob, $key));
 
-        $tamperedBlob = self::base64UrlEncode(json_encode(['bri' => 99], JSON_FORCE_OBJECT));
+        $tamperedBlob = CacheKeyBuilder::encodeFilterBlob(['bri' => 99]);
         self::assertFalse(Signature::verify($cachePath, $sig, $tamperedBlob, $key));
-    }
-
-    private static function base64UrlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }

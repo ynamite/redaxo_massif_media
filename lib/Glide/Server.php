@@ -117,11 +117,7 @@ final class Server
         $filterParams = isset($params['filters']) && is_array($params['filters']) && $params['filters'] !== []
             ? $params['filters']
             : null;
-        $hash = null;
-        if ($filterParams !== null) {
-            ksort($filterParams);
-            $hash = substr(md5(json_encode($filterParams, JSON_FORCE_OBJECT)), 0, 8);
-        }
+        $hash = $filterParams !== null ? CacheKeyBuilder::hashFilterParams($filterParams) : null;
 
         $spec = sprintf('%s-%d', $fmt, $w);
         if ($h !== null && $h > 0 && $fitToken !== null) {
