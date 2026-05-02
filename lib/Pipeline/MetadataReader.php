@@ -117,7 +117,7 @@ final class MetadataReader
      * Accept a focal-point value from focuspoint addon and normalize to "X% Y%".
      * Handles: "50% 30%", "50,30", "0.5,0.3", "50;30", JSON {"x":..,"y":..}.
      */
-    private function normalizeFocal(string $value): ?string
+    public function normalizeFocal(string $value): ?string
     {
         $value = trim($value);
         if ($value === '') {
@@ -142,7 +142,7 @@ final class MetadataReader
         return null;
     }
 
-    private function formatFocal(float $x, float $y): string
+    public function formatFocal(float $x, float $y): string
     {
         if ($x <= 1.0 && $y <= 1.0) {
             $x *= 100;
