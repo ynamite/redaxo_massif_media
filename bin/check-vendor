@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# check-vendor — fails (exit 1) if known PHPUnit-family dev packages are
+# present under vendor/. Run before `git add vendor/` to catch the missed
+# `composer install --no-dev` step.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+dev_dirs=(
+    "vendor/phpunit"
+    "vendor/sebastian"
+    "vendor/myclabs"
+    "vendor/phar-io"
+    "vendor/theseer"
+    "vendor/phpdocumentor"
+    "vendor/nikic/php-parser"
+    "vendor/staabm"
+)
+
+found=()
+for d in "${dev_dirs[@]}"; do
+    if [ -d "$d" ]; then
+        found+=("$d")
+    fi
+done
+
+if [ "${#found[@]}" -gt 0 ]; then
+    echo "Dev packages found under vendor/:" >&2
+    for d in "${found[@]}"; do
+        echo "  $d" >&2
+    done
+    echo >&2
+    echo "Run \`composer install --no-dev\` before committing vendor/ changes." >&2
+    exit 1
+fi
+
+echo "vendor/ clean of known dev packages."
