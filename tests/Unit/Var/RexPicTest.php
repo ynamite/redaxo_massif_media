@@ -78,4 +78,51 @@ final class RexPicTest extends TestCase
         self::assertIsString($code);
         self::assertStringContainsString('width: 800', $code);
     }
+
+    public function testGetOutputEmitsFiltersArrayForBrightness(): void
+    {
+        $code = $this->buildOutput(['src' => 'hero.jpg', 'brightness' => '10']);
+
+        self::assertIsString($code);
+        self::assertStringContainsString("filters: ['brightness' => 10]", $code);
+    }
+
+    public function testGetOutputEmitsFiltersArrayForMultipleAttributes(): void
+    {
+        $code = $this->buildOutput([
+            'src' => 'hero.jpg',
+            'brightness' => '10',
+            'sharpen' => '20',
+            'filter' => 'sepia',
+        ]);
+
+        self::assertIsString($code);
+        self::assertStringContainsString('filters: [', $code);
+        self::assertStringContainsString("'brightness' => 10", $code);
+        self::assertStringContainsString("'sharpen' => 20", $code);
+        self::assertStringContainsString("'filter' => 'sepia'", $code);
+    }
+
+    public function testGetOutputOmitsFiltersWhenNonePresent(): void
+    {
+        $code = $this->buildOutput(['src' => 'hero.jpg']);
+
+        self::assertIsString($code);
+        self::assertStringNotContainsString('filters:', $code);
+    }
+
+    public function testGetOutputPassesWatermarkAttributes(): void
+    {
+        $code = $this->buildOutput([
+            'src' => 'hero.jpg',
+            'mark' => 'logo.png',
+            'markpos' => 'bottom-right',
+            'markalpha' => '70',
+        ]);
+
+        self::assertIsString($code);
+        self::assertStringContainsString("'mark' => 'logo.png'", $code);
+        self::assertStringContainsString("'markpos' => 'bottom-right'", $code);
+        self::assertStringContainsString("'markalpha' => 70", $code);
+    }
 }

@@ -66,6 +66,24 @@ final class RexPic extends rex_var
             $args[] = 'preload: ' . (filter_var($preloadRaw, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false');
         }
 
+        // Filter attributes — collect into a single $filters array passed to
+        // Image::picture. FilterParams::normalize translates / clamps server-side.
+        $filterAttrs = [
+            'brightness', 'contrast', 'gamma', 'sharpen', 'blur', 'pixelate',
+            'filter', 'bg', 'border', 'flip', 'orient',
+            'mark', 'marks', 'markw', 'markh', 'markpos', 'markpad', 'markalpha', 'markfit',
+        ];
+        $filterPairs = [];
+        foreach ($filterAttrs as $key) {
+            $val = $this->getParsedArg($key);
+            if ($val !== null) {
+                $filterPairs[] = "'" . $key . "' => " . $val;
+            }
+        }
+        if ($filterPairs !== []) {
+            $args[] = 'filters: [' . implode(', ', $filterPairs) . ']';
+        }
+
         return '\\Ynamite\\Media\\Image::picture(' . implode(', ', $args) . ')';
     }
 
