@@ -6,7 +6,7 @@ namespace Ynamite\Media\Pipeline;
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Fit;
-use Ynamite\Media\View\PictureRenderer;
+use Ynamite\Media\Glide\FitTokenBuilder;
 
 /**
  * Collects <link rel="preload"> entries during rendering.
@@ -77,7 +77,7 @@ final class Preloader
             $fit = $entry['fit'] ?? null;
             $fitToken = null;
             if ($fit !== null && $fit !== Fit::NONE && $effectiveRatio !== null) {
-                $fitToken = self::buildFitToken($fit, $image->focalPoint);
+                $fitToken = FitTokenBuilder::build($fit, $image->focalPoint);
             }
             $filterParams = $entry['filterParams'] ?? [];
 
@@ -105,14 +105,5 @@ final class Preloader
     public static function reset(): void
     {
         self::$queue = [];
-    }
-
-    private static function buildFitToken(Fit $fit, ?string $focalPoint): string
-    {
-        if ($fit !== Fit::COVER) {
-            return $fit->value;
-        }
-        [$fx, $fy] = PictureRenderer::parseFocalToInts($focalPoint);
-        return sprintf('cover-%d-%d', $fx, $fy);
     }
 }
