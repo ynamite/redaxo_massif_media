@@ -34,6 +34,7 @@ final class UrlBuilder
         ?int $quality = null,
         ?int $height = null,
         ?string $fitToken = null,
+        array $filterParams = [],
     ): string {
         $quality ??= Config::quality($format);
 

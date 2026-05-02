@@ -12,6 +12,7 @@ use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Exception\ImageNotFoundException;
+use Ynamite\Media\Glide\FilterParams;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
@@ -41,6 +42,8 @@ final class ImageBuilder
     private ?string $focal = null;
     private bool $withBlurhashAttr = false;
     private ?string $class = null;
+    /** @var array<string, scalar> Glide-keyed filter params. */
+    private array $filterParams = [];
 
     public function __construct(string|rex_media $src)
     {
@@ -157,6 +160,115 @@ final class ImageBuilder
         return $this;
     }
 
+    public function brightness(int $value): self
+    {
+        $this->filterParams['bri'] = (int) FilterParams::clamp('bri', $value);
+        return $this;
+    }
+
+    public function contrast(int $value): self
+    {
+        $this->filterParams['con'] = (int) FilterParams::clamp('con', $value);
+        return $this;
+    }
+
+    public function gamma(float $value): self
+    {
+        $this->filterParams['gam'] = (float) FilterParams::clamp('gam', $value);
+        return $this;
+    }
+
+    public function sharpen(int $value): self
+    {
+        $this->filterParams['sharp'] = (int) FilterParams::clamp('sharp', $value);
+        return $this;
+    }
+
+    public function blur(int $value): self
+    {
+        $this->filterParams['blur'] = (int) FilterParams::clamp('blur', $value);
+        return $this;
+    }
+
+    public function pixelate(int $value): self
+    {
+        $this->filterParams['pixel'] = (int) FilterParams::clamp('pixel', $value);
+        return $this;
+    }
+
+    public function filter(string $preset): self
+    {
+        $this->filterParams['filt'] = $preset;
+        return $this;
+    }
+
+    public function bg(string $hex): self
+    {
+        $validated = FilterParams::validateHex($hex);
+        if ($validated !== null) {
+            $this->filterParams['bg'] = strtolower($validated);
+        }
+        return $this;
+    }
+
+    public function border(int $width, string $color, string $method = 'overlay'): self
+    {
+        $this->filterParams['border'] = sprintf('%d,%s,%s', $width, $color, $method);
+        return $this;
+    }
+
+    public function flip(string $axis): self
+    {
+        $this->filterParams['flip'] = $axis;
+        return $this;
+    }
+
+    public function orient(int|string $value): self
+    {
+        $this->filterParams['orient'] = (string) $value;
+        return $this;
+    }
+
+    public function watermark(
+        string $src,
+        ?float $size = null,
+        ?int $width = null,
+        ?int $height = null,
+        string $position = 'center',
+        int $padding = 0,
+        int $alpha = 100,
+        string $fit = 'contain',
+    ): self {
+        $this->filterParams['mark'] = $src;
+        if ($size !== null) {
+            $this->filterParams['marks'] = (float) FilterParams::clamp('marks', $size);
+        }
+        if ($width !== null) {
+            $this->filterParams['markw'] = $width;
+        }
+        if ($height !== null) {
+            $this->filterParams['markh'] = $height;
+        }
+        $this->filterParams['markpos'] = $position;
+        $this->filterParams['markpad'] = max(0, $padding);
+        $this->filterParams['markalpha'] = (int) FilterParams::clamp('markalpha', $alpha);
+        $this->filterParams['markfit'] = $fit;
+        return $this;
+    }
+
+    /**
+     * Bulk-apply filters from a friendly-keyed array. Translates / clamps /
+     * drops via FilterParams::normalize. Subsequent setter calls override.
+     *
+     * @param array<string, scalar> $filters
+     */
+    public function filters(array $filters): self
+    {
+        $normalized = FilterParams::normalize($filters);
+        $this->filterParams = array_merge($this->filterParams, $normalized);
+        return $this;
+    }
+
     public function render(): string
     {
         $resolver = new ImageResolver(new MetadataReader());
@@ -194,6 +306,8 @@ final class ImageBuilder
                 $this->widthsOverride,
                 $this->formatsOverride,
                 $this->qualityOverride,
+                $this->fit,
+                $this->filterParams,
             );
         }
 
@@ -217,6 +331,7 @@ final class ImageBuilder
             $this->withBlurhashAttr,
             $this->class,
             $this->fit,
+            $this->filterParams,
         );
     }
 

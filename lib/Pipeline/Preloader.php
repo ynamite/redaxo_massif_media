@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ynamite\Media\Pipeline;
 
 use Ynamite\Media\Config;
+use Ynamite\Media\Enum\Fit;
 
 /**
  * Collects <link rel="preload"> entries during rendering.
@@ -13,7 +14,7 @@ use Ynamite\Media\Config;
  */
 final class Preloader
 {
-    /** @var array<int, array{image: ResolvedImage, width: ?int, height: ?int, ratio: ?float, sizes: ?string, widths: ?array, formats: ?array, quality: ?array}> */
+    /** @var array<int, array{image: ResolvedImage, width: ?int, height: ?int, ratio: ?float, sizes: ?string, widths: ?array, formats: ?array, quality: ?array, fit: ?Fit, filterParams: array}> */
     private static array $queue = [];
 
     public static function queue(
@@ -25,8 +26,13 @@ final class Preloader
         ?array $widths = null,
         ?array $formats = null,
         ?array $quality = null,
+        ?Fit $fit = null,
+        array $filterParams = [],
     ): void {
-        self::$queue[] = compact('image', 'width', 'height', 'ratio', 'sizes', 'widths', 'formats', 'quality');
+        self::$queue[] = compact(
+            'image', 'width', 'height', 'ratio', 'sizes',
+            'widths', 'formats', 'quality', 'fit', 'filterParams',
+        );
     }
 
     /**

@@ -48,6 +48,7 @@ final class PictureRenderer
         bool $withBlurhashAttr = false,
         ?string $class = null,
         ?Fit $fit = null,
+        array $filterParams = [],
     ): string {
         $sizes ??= Config::defaultSizes();
         $formats = $this->normalizeFormats($formats ?? Config::formats());
@@ -98,7 +99,7 @@ final class PictureRenderer
                 continue;
             }
             $quality = $qualityOverride[$fmt] ?? null;
-            $srcset = $this->buildSrcset($image, $widths, $fmt, $quality, $effectiveRatio, $fitToken);
+            $srcset = $this->buildSrcset($image, $widths, $fmt, $quality, $effectiveRatio, $fitToken, $filterParams);
             $sources[] = sprintf(
                 '<source type="image/%s" srcset="%s" sizes="%s">',
                 self::escape($this->mimeSubtype($fmt)),
@@ -108,14 +109,14 @@ final class PictureRenderer
         }
 
         $fallbackQuality = $qualityOverride[$fallbackFormat] ?? null;
-        $fallbackSrcset = $this->buildSrcset($image, $widths, $fallbackFormat, $fallbackQuality, $effectiveRatio, $fitToken);
+        $fallbackSrcset = $this->buildSrcset($image, $widths, $fallbackFormat, $fallbackQuality, $effectiveRatio, $fitToken, $filterParams);
 
         $midIdx = (int) floor((count($widths) - 1) / 2);
         $midWidth = $widths[$midIdx];
         $midHeight = ($effectiveRatio !== null && $fitToken !== null)
             ? (int) round($midWidth / $effectiveRatio)
             : null;
-        $fallbackSrc = $this->urlBuilder->build($image, $midWidth, $fallbackFormat, $fallbackQuality, $midHeight, $fitToken);
+        $fallbackSrc = $this->urlBuilder->build($image, $midWidth, $fallbackFormat, $fallbackQuality, $midHeight, $fitToken, $filterParams);
 
         [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $effectiveRatio);
 
@@ -166,11 +167,12 @@ final class PictureRenderer
         ?int $quality,
         ?float $effectiveRatio,
         ?string $fitToken,
+        array $filterParams,
     ): string {
         $entries = [];
         foreach ($widths as $w) {
             $h = ($effectiveRatio !== null && $fitToken !== null) ? (int) round($w / $effectiveRatio) : null;
-            $url = $this->urlBuilder->build($image, $w, $format, $quality, $h, $fitToken);
+            $url = $this->urlBuilder->build($image, $w, $format, $quality, $h, $fitToken, $filterParams);
             $entries[] = $url . ' ' . $w . 'w';
         }
         return implode(', ', $entries);
