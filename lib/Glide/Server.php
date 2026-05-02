@@ -14,10 +14,13 @@ use Ynamite\Media\Config;
 
 final class Server
 {
-    public static function create(): GlideServer
+    public static function create(?string $sourceDir = null, ?string $cacheDir = null): GlideServer
     {
-        $sourceFs = new Filesystem(new LocalFilesystemAdapter(rex_path::media()));
-        $cacheFs = new Filesystem(new LocalFilesystemAdapter(rex_path::addonAssets(Config::ADDON, 'cache/')));
+        $sourceDir ??= rex_path::media();
+        $cacheDir ??= rex_path::addonAssets(Config::ADDON, 'cache/');
+
+        $sourceFs = new Filesystem(new LocalFilesystemAdapter($sourceDir));
+        $cacheFs = new Filesystem(new LocalFilesystemAdapter($cacheDir));
 
         $driver = extension_loaded('imagick') ? 'imagick' : 'gd';
 
