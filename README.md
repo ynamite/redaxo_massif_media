@@ -393,6 +393,7 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 | `default_sizes` | `(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw` | Default `sizes` Attribut |
 | `lqip_*` | aktiviert, 32 px, blur 40, q 40 | LQIP-Tuning |
 | `blurhash_enabled` | `true` | Blurhash bei Metadatenerzeugung berechnen |
+| `blurhash_components_x` / `_y` | `4` / `3` | Komponenten-Auflösung des Hashes (1–9). Höhere Werte = mehr Detail, längerer Hash. Änderungen erfordern `Cache leeren`, damit die `_meta/`-Sidecars neu berechnet werden. |
 | `cdn_*` | deaktiviert | CDN-Override (Base + Template) |
 
 ## URL-Schema
