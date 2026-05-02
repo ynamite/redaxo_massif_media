@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'ynamite/massif_media',
-        'pretty_version' => 'dev-feature/filter-passthrough',
-        'version' => 'dev-feature/filter-passthrough',
-        'reference' => '3edd28be1619d50b1d13b6eb2c2fa1e86cc88a25',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => '586960662daa35244a4d5e628aeb45b6ddec3f90',
         'type' => 'redaxo-addon',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -83,9 +83,9 @@
             'dev_requirement' => false,
         ),
         'ynamite/massif_media' => array(
-            'pretty_version' => 'dev-feature/filter-passthrough',
-            'version' => 'dev-feature/filter-passthrough',
-            'reference' => '3edd28be1619d50b1d13b6eb2c2fa1e86cc88a25',
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => '586960662daa35244a4d5e628aeb45b6ddec3f90',
             'type' => 'redaxo-addon',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

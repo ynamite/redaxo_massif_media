@@ -8,11 +8,14 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Glide\RequestHandler;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Var\RexPic;
+use Ynamite\Media\Var\RexVideo;
 
-// REX_PIC[...] in slice content → <picture> markup. Native rex_var, scoped
-// to article rendering — does not fire on backend pages (e.g. the addon's
-// own Documentation tab) and does not regex every byte of every output.
+// REX_PIC[...] / REX_VIDEO[...] in slice content → <picture> / <video> markup.
+// Native rex_vars, scoped to article rendering — do not fire on backend pages
+// (e.g. the addon's own Documentation tab) and do not regex every byte of
+// every output.
 rex_var::register('REX_PIC', RexPic::class);
+rex_var::register('REX_VIDEO', RexVideo::class);
 
 // Self-contained cache-URL routing. On Apache (.htaccess) and standalone
 // nginx (assets/nginx.conf.example), cache hits skip PHP entirely. On Herd
