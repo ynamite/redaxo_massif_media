@@ -44,6 +44,7 @@ lib/
 │   ├── ColorProfile.php                   # custom manipulator (sRGB)
 │   ├── Endpoint.php                       # cache-URL handler (HMAC verify + Glide makeImage + send)
 │   ├── FilterParams.php                   # filter translation map + clamping + hex validation
+│   ├── FitTokenBuilder.php                # Fit + focal → 'cover-X-Y' / 'contain' / 'stretch' (single source of truth)
 │   ├── RequestHandler.php                 # PACKAGES_INCLUDED hook → Endpoint::handle for self-contained routing
 │   └── Signature.php                      # HMAC sign + verify (optional extraPayload arg)
 ├── Var/{RexPic,RexVideo}.php              # rex_var subclasses — REX_PIC[...] / REX_VIDEO[...] substitution at article-cache-build time
