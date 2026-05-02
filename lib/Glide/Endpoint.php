@@ -6,6 +6,7 @@ namespace Ynamite\Media\Glide;
 
 use rex_logger;
 use Throwable;
+use Ynamite\Media\Pipeline\UrlBuilder;
 
 final class Endpoint
 {
@@ -13,8 +14,11 @@ final class Endpoint
     {
         $cachePath = (string) ($_GET['p'] ?? '');
         $signature = (string) ($_GET['s'] ?? '');
+        $filterBlob = (string) ($_GET['f'] ?? '');
 
-        if ($cachePath === '' || !Signature::verify($cachePath, $signature)) {
+        $extraPayload = $filterBlob !== '' ? $filterBlob : null;
+
+        if ($cachePath === '' || !Signature::verify($cachePath, $signature, $extraPayload)) {
             self::respond(403, 'Forbidden');
             return;
         }
@@ -25,8 +29,27 @@ final class Endpoint
             return;
         }
 
+        $filterParams = [];
+        if ($parsed['hash'] !== null) {
+            if ($filterBlob === '') {
+                self::respond(400, 'Bad request');
+                return;
+            }
+            $decoded = json_decode((string) UrlBuilder::base64UrlDecode($filterBlob), true);
+            if (!is_array($decoded)) {
+                self::respond(400, 'Bad request');
+                return;
+            }
+            $filterParams = $decoded;
+            ksort($filterParams);
+            $expectedHash = substr(md5(json_encode($filterParams, JSON_FORCE_OBJECT)), 0, 8);
+            if (!hash_equals($expectedHash, $parsed['hash'])) {
+                self::respond(400, 'Bad request');
+                return;
+            }
+        }
+
         try {
-            $server = Server::create();
             $params = [
                 'w' => $parsed['w'],
                 'q' => $parsed['q'],
@@ -41,8 +64,17 @@ final class Endpoint
                     ? 'crop-' . substr($parsed['fit'], strlen('cover-'))
                     : $parsed['fit'];
             }
-            $relCachePath = $server->makeImage($parsed['source'], $params);
-            $bytes = $server->getCache()->read($relCachePath);
+            // Merge filter params last so they can't override w/q/fm/h/fit accidentally.
+            $params = array_merge($filterParams, $params);
+
+            Server::setActiveFilters($filterParams);
+            try {
+                $server = Server::create();
+                $relCachePath = $server->makeImage($parsed['source'], $params);
+                $bytes = $server->getCache()->read($relCachePath);
+            } finally {
+                Server::clearActiveFilters();
+            }
         } catch (Throwable $e) {
             rex_logger::logException($e);
             self::respond(404, 'Not found');

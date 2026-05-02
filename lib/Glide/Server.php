@@ -14,6 +14,27 @@ use Ynamite\Media\Config;
 
 final class Server
 {
+    /**
+     * Active filter params for the current request. Set by Endpoint::handle
+     * before each makeImage call so the Glide-bound cachePathCallable closure
+     * can spread them into Server::cachePath. Public because the closure runs
+     * with League\Glide\Server's scope after Glide's Closure::bind, so private
+     * access would fail (see Glide gotcha in CLAUDE.md).
+     *
+     * @var array<string, scalar>
+     */
+    public static array $activeFilterParams = [];
+
+    public static function setActiveFilters(array $params): void
+    {
+        self::$activeFilterParams = $params;
+    }
+
+    public static function clearActiveFilters(): void
+    {
+        self::$activeFilterParams = [];
+    }
+
     public static function create(?string $sourceDir = null, ?string $cacheDir = null): GlideServer
     {
         $sourceDir ??= rex_path::media();
@@ -53,7 +74,14 @@ final class Server
         //      "Call to undefined method League\Glide\Server::cachePath()".
         // Use the FQCN — resolved at the call site, not via the closure's
         // bound scope.
-        return fn (string $path, array $params): string => Server::cachePath($path, $params);
+        //
+        // The closure additionally reads Server::$activeFilterParams so on-disk
+        // paths match the URL emission's filter hash even when Glide internally
+        // calls Server::cachePath without filter context.
+        return fn (string $path, array $params): string => Server::cachePath($path, [
+            ...$params,
+            'filters' => Server::$activeFilterParams,
+        ]);
     }
 
     /**
