@@ -219,6 +219,65 @@ REX_PIC[src="hero.jpg" width="800" ratio="1:1" fit="none"]                  // w
 
 Wenn `ratio` exakt mit dem intrinsischen Seitenverhältnis der Quelle übereinstimmt, überspringt das Addon den Crop (kein zusätzlicher Cache-Eintrag). Bei `cover` und `contain` wird die `srcset`-Auswahl zusätzlich auf die Crop-Dimensionen begrenzt — bei einem 5712×4284 Quellbild und `ratio="9:16"` endet `srcset` z. B. bei 2409 w (= ⌊4284 × 9/16⌋), damit Glide nicht hochskalieren muss. `stretch` ignoriert diesen Cap (kann verzerrt auf jede Größe).
 
+### Filter
+
+Glide-basierte Image-Filter sind als REX_PIC-Attribute verfügbar — sowohl klassische Color-Tweaks (Brightness, Contrast, Gamma) als auch Sharpen / Blur, Color-Presets (`greyscale`, `sepia`), Background-Color, Border, Flip / Orient sowie Watermark.
+
+| Attribut | Wert | Beschreibung |
+|---|---|---|
+| `brightness` | -100..100 | Helligkeit; 0 = unverändert. |
+| `contrast` | -100..100 | Kontrast. |
+| `gamma` | 0.1..9.99 | Gamma-Korrektur. |
+| `sharpen` | 0..100 | Schärfung. |
+| `blur` | 0..100 | Weichzeichner. |
+| `pixelate` | 0..1000 | Pixelblock-Größe. |
+| `filter` | `greyscale` \| `sepia` | Color-Preset. |
+| `bg` | 6 Hex (z. B. `ffffff`) | Hintergrundfarbe — relevant z. B. wenn `fit="contain"` Lücken erzeugt. |
+| `border` | `width,color,method` | Rahmen, z. B. `border="2,000000,expand"`. `method` = `overlay` / `shadow` / `expand`. |
+| `flip` | `h` \| `v` \| `both` | Spiegelung. |
+| `orient` | `auto` \| `0` \| `90` \| `180` \| `270` | Rotation. |
+
+Numerische Werte ausserhalb des Ranges werden automatisch geclampt (z. B. `brightness="200"` → `100`). Ungültige Hex-Werte werden ignoriert. Unbekannte String-Werte (`filter="nonsense"`) werden an Glide durchgereicht; Glide ignoriert nicht-erkannte Filter still.
+
+**Beispiele:**
+
+```
+REX_PIC[src="hero.jpg" width="800" filter="sepia"]
+REX_PIC[src="hero.jpg" width="800" brightness="10" sharpen="20"]
+REX_PIC[src="hero.jpg" width="800" ratio="1:1" fit="contain" bg="ffffff"]
+REX_PIC[src="hero.jpg" width="800" flip="h" orient="90"]
+```
+
+### Watermark
+
+Wasserzeichen via 8 separate Attribute:
+
+| Attribut | Wert | Beschreibung |
+|---|---|---|
+| `mark` | string (Pflicht für Watermark) | Pfad im REDAXO-Mediapool. |
+| `marks` | 0.0..1.0 | Relative Größe (0.25 = 25 % der Bildbreite). |
+| `markw` | int | Pixel-Breite (overrides `marks`). |
+| `markh` | int | Pixel-Höhe (overrides `marks`). |
+| `markpos` | siehe Glide | `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, `bottom-right`. |
+| `markpad` | int | Abstand zum Rand in px. |
+| `markalpha` | 0..100 | Deckkraft. |
+| `markfit` | siehe Glide | Wie das Watermark in seine Box eingepasst wird (`contain` / `max` / `fill` / `stretch` / `crop`). |
+
+```
+REX_PIC[src="hero.jpg" width="1200" mark="logos/brand.png" marks="0.2" markpos="bottom-right" markpad="20" markalpha="70"]
+```
+
+PHP-API:
+
+```php
+echo Image::for('hero.jpg')
+    ->width(1200)
+    ->watermark('logos/brand.png', size: 0.2, position: 'bottom-right', padding: 20, alpha: 70)
+    ->render();
+```
+
+Existiert die Watermark-Datei nicht im Mediapool, wird der betroffene Variant-Request mit 404 beantwortet — der `<picture>` Tag enthält dann u. U. broken-image-Glyphs für diese Variante. Das Watermark-Attribut idealerweise an Templates / Module heften, wo der Pfad kontrolliert ist.
+
 ### Scope und Performance
 
 `REX_PIC` ist ein natives REDAXO-`rex_var` — die Substitution greift in Slice-Content (Modul-Output, Modul-Input, Templates) und wird bei der Article-Cache-Generierung in PHP-Code übersetzt. Pro Render entsteht damit kein Regex-Overhead — der Article-Cache ruft direkt `\\Ynamite\\Media\\Image::picture(…)` auf.
@@ -282,30 +341,35 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 
 ## URL-Schema
 
-Generierte Varianten werden hier abgelegt — zwei Cache-Pfad-Formen je nach Crop-Modus:
+Generierte Varianten werden hier abgelegt — vier Cache-Pfad-Formen, asset-keyed (alle Varianten einer Quelle leben in einem Verzeichnis):
 
 ```
-assets/addons/massif_media/cache/{fmt}-{w}-{q}/{filename}.{out_ext}                    (kein Crop)
-assets/addons/massif_media/cache/{fmt}-{w}-{h}-{fitToken}-{q}/{filename}.{out_ext}     (mit Crop)
+assets/addons/massif_media/cache/{src}/{fmt}-{w}-{q}.{ext}                              (kein Crop, keine Filter)
+assets/addons/massif_media/cache/{src}/{fmt}-{w}-{h}-{fitToken}-{q}.{ext}               (mit Crop)
+assets/addons/massif_media/cache/{src}/{fmt}-{w}-{q}-f{hash}.{ext}                      (mit Filtern)
+assets/addons/massif_media/cache/{src}/{fmt}-{w}-{h}-{fitToken}-{q}-f{hash}.{ext}       (Crop + Filter)
 
-z. B.  assets/addons/massif_media/cache/avif-1080-50/hero.jpg.avif
-       assets/addons/massif_media/cache/avif-800-800-cover-50-50-50/hero.jpg.avif
-       assets/addons/massif_media/cache/webp-640-360-contain-75/hero.jpg.webp
+z. B.  assets/addons/massif_media/cache/hero.jpg/avif-1080-50.avif
+       assets/addons/massif_media/cache/hero.jpg/avif-800-800-cover-50-50-50.avif
+       assets/addons/massif_media/cache/hero.jpg/jpg-800-80-fa1b2c3d4.jpg
+       assets/addons/massif_media/cache/gallery/2024/atelier.jpg/avif-1920-1920-cover-30-70-50.avif
 ```
 
-`fitToken` ist eines von: `cover-{focalX}-{focalY}` (mit fokuspunkt-bewusstem Crop), `contain` oder `stretch`.
+`fitToken` ist eines von: `cover-{focalX}-{focalY}` (mit fokuspunkt-bewusstem Crop), `contain` oder `stretch`. `f{hash}` enthält die ersten 8 Hex-Chars von `md5(json_encode(ksort(filterParams)))`. Source-Subdirectories aus dem Mediapool bleiben erhalten.
 
 Ausgelieferte URL:
 
 ```
-/assets/addons/massif_media/cache/avif-1080-50/hero.jpg.avif?s={HMAC}&v={mtime}
+/assets/addons/massif_media/cache/hero.jpg/avif-1080-50.avif?s={HMAC}&v={mtime}
+/assets/addons/massif_media/cache/hero.jpg/jpg-800-80-fa1b2c3d4.jpg?s={HMAC}&v={mtime}&f={base64url(json)}
 ```
 
 - **Cache-Hit**: Apache (mit mitgeliefertem `.htaccess`), nginx (mit Snippet) oder Valet/Herd (nativ über `isStaticFile()`) liefert die Datei direkt aus — PHP läuft nicht.
 - **Cache-Miss**: Request landet in REDAXOs Frontend `index.php`. Der `PACKAGES_INCLUDED`-Hook fängt die Cache-URL ab, verifiziert die HMAC, Glide generiert die Variante, der Hook sendet die Bytes und beendet die Request-Verarbeitung. Ab sofort liegt die Variante auf Disk und der nächste Request ist ein Hit.
 
-`?s=` ist eine HMAC-SHA256-Signatur über den Cache-Pfad gegen `sign_key` aus den Einstellungen.
+`?s=` ist eine HMAC-SHA256-Signatur gegen `sign_key` aus den Einstellungen. Bei Filter-Anfragen deckt sie `path|f` zusammen ab — Filter-Werte können nicht ohne Signatur-Bruch manipuliert werden.
 `?v=` ist der `mtime` des Quellbildes — sorgt nur für Browser-/CDN-Cache-Invalidierung.
+`&f=` ist der vollständige Filter-Blob als base64url-kodiertes JSON (nur bei Filter-Anfragen vorhanden).
 
 ## Cache-Invalidierung
 
