@@ -6,6 +6,7 @@ namespace Ynamite\Media\Pipeline;
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Fit;
+use Ynamite\Media\View\PictureRenderer;
 
 /**
  * Collects <link rel="preload"> entries during rendering.
@@ -69,9 +70,21 @@ final class Preloader
             $primaryFormat = strtolower((string) ($useFormats[0] ?? 'jpg'));
             $primaryQuality = $entry['quality'][$primaryFormat] ?? null;
 
+            $effectiveRatio = $entry['ratio'];
+            if ($effectiveRatio === null && ($entry['height'] ?? 0) > 0 && ($entry['width'] ?? 0) > 0) {
+                $effectiveRatio = $entry['width'] / $entry['height'];
+            }
+            $fit = $entry['fit'] ?? null;
+            $fitToken = null;
+            if ($fit !== null && $fit !== Fit::NONE && $effectiveRatio !== null) {
+                $fitToken = self::buildFitToken($fit, $image->focalPoint);
+            }
+            $filterParams = $entry['filterParams'] ?? [];
+
             $srcsetParts = [];
             foreach ($useWidths as $w) {
-                $url = $urlBuilder->build($image, $w, $primaryFormat, $primaryQuality);
+                $h = ($effectiveRatio !== null && $fitToken !== null) ? (int) round($w / $effectiveRatio) : null;
+                $url = $urlBuilder->build($image, $w, $primaryFormat, $primaryQuality, $h, $fitToken, $filterParams);
                 $srcsetParts[] = $url . ' ' . $w . 'w';
             }
             $imageSrcset = implode(', ', $srcsetParts);
@@ -92,5 +105,14 @@ final class Preloader
     public static function reset(): void
     {
         self::$queue = [];
+    }
+
+    private static function buildFitToken(Fit $fit, ?string $focalPoint): string
+    {
+        if ($fit !== Fit::COVER) {
+            return $fit->value;
+        }
+        [$fx, $fy] = PictureRenderer::parseFocalToInts($focalPoint);
+        return sprintf('cover-%d-%d', $fx, $fy);
     }
 }

@@ -14,18 +14,13 @@ final class UrlBuilder
     /**
      * Build a URL for a single variant of a resolved image.
      *
-     * - When CDN is enabled: emits a CDN URL based on cdn_base + cdn_url_template.
-     * - Otherwise: emits a signed local URL pointing at the addon's cache, with a
-     *   ?v={mtime} parameter for browser / CDN cache busting on source changes.
+     * Glide params (w/h/q/fm/fit) are encoded into the cache path itself.
+     * Filter params ride in a separate `&f=base64url(json)` query parameter
+     * because their values can include special characters and the cache key
+     * only carries an 8-char hash for unambiguity. HMAC covers `path|f`
+     * together when filters are present.
      *
-     * Glide params (w/h/q/fm/fit) are encoded into the cache path itself, not
-     * appended as URL query parameters. The URL query string only carries
-     * ?s={hmac} and &v={mtime}.
-     *
-     * `$height` and `$fitToken` are non-null only when the caller wants a crop.
-     * `$fitToken` follows our internal vocabulary: `cover-{X}-{Y}` (focal-aware),
-     * `contain`, or `stretch`. The Endpoint translates `cover-X-Y` to Glide's
-     * `crop-X-Y` at the boundary.
+     * @param array<string, scalar> $filterParams Glide-keyed filter params.
      */
     public function build(
         ResolvedImage $image,
@@ -39,7 +34,7 @@ final class UrlBuilder
         $quality ??= Config::quality($format);
 
         if (Config::cdnEnabled()) {
-            return $this->buildCdnUrl($image, $width, $format, $quality, $height, $fitToken);
+            return $this->buildCdnUrl($image, $width, $format, $quality, $height, $fitToken, $filterParams);
         }
 
         $cachePath = Server::cachePath($image->sourcePath, [
@@ -48,13 +43,24 @@ final class UrlBuilder
             'q' => $quality,
             'h' => $height,
             'fit' => $fitToken,
+            'filters' => $filterParams,
         ]);
-        $signature = Signature::sign($cachePath);
+
+        $filterBlob = '';
+        if ($filterParams !== []) {
+            ksort($filterParams);
+            $filterBlob = self::base64UrlEncode(json_encode($filterParams, JSON_FORCE_OBJECT));
+        }
+
+        $signature = Signature::sign($cachePath, $filterBlob !== '' ? $filterBlob : null);
 
         $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
         $url .= '?s=' . $signature;
         if ($image->mtime > 0) {
             $url .= '&v=' . $image->mtime;
+        }
+        if ($filterBlob !== '') {
+            $url .= '&f=' . $filterBlob;
         }
         return $url;
     }
@@ -62,11 +68,8 @@ final class UrlBuilder
     /**
      * Build a CDN URL using the configured base and template.
      *
-     * Template tokens: {w}, {h}, {q}, {fm}, {fit}, {src}.
-     * - {h} expands to the height (or empty string when not cropping).
-     * - {fit} expands to the fit token (or empty string when not cropping).
-     * Existing templates without {h}/{fit} keep emitting the same URLs as today.
-     * Example template: "tr:w-{w},q-{q},f-{fm}/{src}" (ImageKit-style).
+     * Template tokens: {w}, {h}, {q}, {fm}, {fit}, {src}, {f}.
+     * Existing templates without {h}/{fit}/{f} keep emitting the same URLs.
      */
     private function buildCdnUrl(
         ResolvedImage $image,
@@ -75,10 +78,17 @@ final class UrlBuilder
         int $quality,
         ?int $height,
         ?string $fitToken,
+        array $filterParams,
     ): string {
         $template = Config::cdnUrlTemplate();
         if ($template === '') {
             $template = '{src}?w={w}&q={q}&fm={fm}';
+        }
+
+        $filterBlob = '';
+        if ($filterParams !== []) {
+            ksort($filterParams);
+            $filterBlob = self::base64UrlEncode(json_encode($filterParams, JSON_FORCE_OBJECT));
         }
 
         $expanded = strtr($template, [
@@ -88,9 +98,20 @@ final class UrlBuilder
             '{src}' => $image->sourcePath,
             '{h}' => $height !== null ? (string) $height : '',
             '{fit}' => $fitToken ?? '',
+            '{f}' => $filterBlob,
         ]);
 
         $base = Config::cdnBase();
         return $base . '/' . ltrim($expanded, '/');
+    }
+
+    private static function base64UrlEncode(string $data): string
+    {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    }
+
+    public static function base64UrlDecode(string $data): string|false
+    {
+        return base64_decode(strtr($data, '-_', '+/'), true);
     }
 }
