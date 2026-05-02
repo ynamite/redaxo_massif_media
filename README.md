@@ -286,6 +286,62 @@ Existiert die Watermark-Datei nicht im Mediapool, wird der betroffene Variant-Re
 
 Wenn nach einem Addon-Update ein Slice mit `REX_PIC[…]` plötzlich nicht mehr rendert: REDAXO-Cache leeren, damit der Article-Cache neu gebaut wird. `rex_var`-Substitution ist Article-Cache-bound; geändertes `getOutput()` greift erst nach Cache-Rebuild.
 
+## REX_VIDEO — Placeholder für Video-Content
+
+Analog zu `REX_PIC`, aber für `<video>`-Markup. Auch als natives `rex_var` registriert; gleicher Article-Cache-Substitutionsweg, gleiche Scope-Regeln.
+
+### Beispiele
+
+**Hero-Loop ohne Sound (Standard-Pattern für autoplaying Hintergrund-Videos):**
+
+```
+REX_VIDEO[src="hero.mp4" poster="hero.jpg" autoplay="true" muted="true" loop="true" playsinline="true"]
+```
+
+**Mit Layout-Reservierung (CLS-sicher) und Klassen:**
+
+```
+REX_VIDEO[src="hero.mp4" poster="hero.jpg" width="1920" height="1080" class="hero-video"]
+```
+
+**Editor-kontrolliertes Video (Standard-Controls, kein Autoplay):**
+
+```
+REX_VIDEO[src="interview.mp4" poster="thumb.jpg" alt="Interview mit Hans Müller"]
+```
+
+**Aggressives Preload für above-the-fold Player:**
+
+```
+REX_VIDEO[src="hero.mp4" poster="hero.jpg" preload="auto" loading="eager"]
+```
+
+### Verfügbare Attribute
+
+| Attribut | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `src` | string | — (Pflicht) | Dateiname im REDAXO-Mediapool. |
+| `poster` | string | — | Pfad zum Poster-Bild (typischerweise ein Standbild aus dem Video). |
+| `width` | int | — | `width`-HTML-Attribut für Layout-Reservierung. |
+| `height` | int | — | `height`-HTML-Attribut für Layout-Reservierung. |
+| `alt` | string | — | Wird als `aria-label` ausgegeben (HTML-`<video>` hat kein natives `alt`). |
+| `class` | string | — | CSS-Klasse(n) für das `<video>`-Element. |
+| `preload` | string | `metadata` | `none`, `metadata`, oder `auto`. Andere Werte fallen auf `metadata` zurück. |
+| `loading` | string | `lazy` | `lazy` oder `eager`. |
+| `autoplay` | bool | `false` | Browser starten den Stream automatisch. **Erfordert in der Praxis `muted="true"`** — sonst blockt der Browser das Autoplay. |
+| `muted` | bool | `false` | Tonspur stumm. Praktisch immer mit `autoplay` kombiniert. |
+| `loop` | bool | `false` | Video läuft endlos. |
+| `controls` | bool | `true` | Standard-Browser-Controls anzeigen (Play, Pause, Lautstärke, …). |
+| `playsinline` | bool | `true` | iOS-Video läuft inline statt Fullscreen-Takeover. Bei autoplaying Hero-Loops typischerweise `true` lassen. |
+
+Bool-Attribute akzeptieren `"true"` / `"false"` / `"1"` / `"0"` / `"yes"` / `"no"` (PHP `FILTER_VALIDATE_BOOLEAN`).
+
+Fehlt ein Attribut komplett, greift der Default aus `Video::render()` — bewusst _nicht_ aus `REX_VIDEO`, damit ein API-Default-Wechsel sich nahtlos auch auf bestehende Slice-Inhalte auswirkt.
+
+### Scope und Performance
+
+Identisch zu `REX_PIC`: Substitution während Article-Cache-Build, kein Regex auf jedem Render, geänderte Defaults erfordern Cache-Rebuild (`Cache leeren`).
+
 ## Erzeugtes Markup
 
 ```html
