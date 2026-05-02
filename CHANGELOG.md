@@ -5,6 +5,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Checkbox-Settings (LQIP, Blurhash, CDN) ließen sich nicht von der UI aktivieren.** `rex_config_form::addCheckboxField` speichert getickte Checkboxen pipe-delimited (`'|1|'`), weil eine Checkbox-Gruppe mehrere Optionen halten kann. Die alten Reader (`Config::lqipEnabled` / `blurhashEnabled` / `cdnEnabled`) machten `(bool) (int) self::get(...)` — PHP int-castet `'|1|'` zu `0`, was die User-Aktivierung still wieder auf "aus" geflippt hat. Symptom: Box gehakt, gespeichert, kein LQIP / Blurhash / CDN-Output. Fix: neuer `Config::checkboxBool()` Helper geht direkt an `rex_config::get` (bypasst die Default-Fallback-Logik von `Config::get`, die einen User-Untick als "fehlend" behandelt und stattdessen das Default zurückgibt — wodurch sich eine Default-on Setting nicht abschalten ließe), strippt Pipes, dann int-castet. Drei Reader umgestellt. Tests in `tests/Unit/ConfigTest.php` locken die drei Storage-Shapes (`'|1|'`, `''`, plain int) ein. Gotcha in CLAUDE.md dokumentiert, damit künftige Checkbox-Settings nicht in dieselbe Falle treten.
+
 ### Added
 
 - **`MetadataReader::computeBlurhash`** auseinandergeschnitten in drei Zuständigkeiten: `downscaleIfOversized()` (resize via Glide-style 64-px Cap), `extractPixels()` (RGB-Pixel-Matrix-Extraktion via `imagecolorat`), und der Top-Level-Flow (load → downscale → extract → encode). Vorher 51 Zeilen prozedural mit drei Verantwortlichkeiten in einem Methodenkörper; jetzt eine 5-Zeilen-Sequenz. Kein Verhaltenswechsel — Hash-Output bit-identisch zum Vorzustand.
