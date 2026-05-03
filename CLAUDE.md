@@ -35,13 +35,13 @@ lib/
 │   ├── ResolvedImage.php                  # readonly value object
 │   ├── SrcsetBuilder.php                  # next/image dual-pool widths
 │   ├── UrlBuilder.php                     # signed Glide URL or CDN URL
-│   ├── Placeholder.php                    # 32×32 base64 WebP LQIP via Glide (metadata stripped, CACHE_VERSION-bound key)
+│   ├── Placeholder.php                    # 32×32 base64 WebP LQIP via Glide (metadata stripping shared with all variants via StripMetadata; CACHE_VERSION-bound key for self-invalidation across encoding contract changes)
 │   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
 ├── View/{Picture,Passthrough}Renderer.php # full HTML emission
 ├── Glide/                                 # league/glide integration
-│   ├── Server.php                         # factory, cache path callable, setActiveFilters / setActiveStripMetadata
-│   ├── ColorProfile.php                   # custom manipulator (sRGB)
-│   ├── StripMetadata.php                  # custom manipulator (Imagick stripImage), gated by Server::$activeStripMetadata for LQIP only
+│   ├── Server.php                         # factory, cache path callable, setActiveFilters
+│   ├── ColorProfile.php                   # custom manipulator (sRGB normalize via transformImageColorspace)
+│   ├── StripMetadata.php                  # custom manipulator (Imagick stripImage) — runs unconditionally for every variant; pairs with ColorProfile (after sRGB transform the embedded profile is stale, browser default = sRGB matches pixels)
 │   ├── CacheKeyBuilder.php                # filter-param hash + base64url blob (single source of truth for &f= and -f{hash})
 │   ├── Endpoint.php                       # cache-URL handler (HMAC verify + Glide makeImage + send)
 │   ├── FilterParams.php                   # filter translation map + clamping + hex validation
