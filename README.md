@@ -360,7 +360,9 @@ SVG / GIF → schlichtes `<img>` ohne `srcset` / Sources.
 
 ## Placeholder (LQIP)
 
-Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Image Placeholder): ein 32 px Mini-JPEG, leicht geblurrt, als Base64-Data-URL inline im `style="background-image:url('data:image/jpeg;base64,…')"` Attribut des `<img>`. Der Browser dekodiert nativ — kein JavaScript, keine zusätzlichen Roundtrips. Pro Bild fallen ~2 KB im HTML an, pro Asset ~2 KB auf Disk unter `cache/_lqip/…`. Default-Tuning: 32 px Breite, Blur 5, Qualität 40 — alles über die Settings-Seite anpassbar.
+Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Image Placeholder): ein 32 px Mini-WebP, leicht geblurrt, als Base64-Data-URL inline im `style="background-image:url('data:image/webp;base64,…')"` Attribut des `<img>`. Der Browser dekodiert nativ — kein JavaScript, keine zusätzlichen Roundtrips. Default-Tuning: 32 px Breite, Blur 5, Qualität 40 — alles über die Settings-Seite anpassbar.
+
+Vor dem Encoden wird die EXIF / XMP / IPTC / ICC-Profil-Metadaten der Quelle gestrippt (Imagick `stripImage`) — iPhone-Captures bringen typischerweise 20+ KB an Face-Detection-JSON, Depth-Maps, Display-P3-ICC und XMP-Face-Regionen mit, die im base64-inlinten LQIP keinen Mehrwert haben und das Data-URI sonst um den Faktor ~10 aufblasen. Das Stripping greift nur auf dem LQIP-Pfad (`Glide\StripMetadata` ist über `Server::$activeStripMetadata` request-gated) — Volltext-Varianten behalten ihr ICC-Profil für color-managed Displays.
 
 ## Konfiguration
 
