@@ -7,7 +7,6 @@ REDAXO-Addon für moderne, responsive Bild- und Video-Auslieferung.
 - **Self-contained, ohne Server-Konfiguration**: ein `PACKAGES_INCLUDED`-Hook fängt Cache-URLs in REDAXOs Frontend ab und liefert die Variante aus — funktioniert überall (Apache, nginx, Laravel Herd, Valet) ohne `.htaccess`/nginx-Tweaks oder Valet-Driver-Patches. Optional: für Cache-**Hits** liefert das mitgelieferte `assets/.htaccess` (Apache) bzw. `assets/nginx.conf.example` (Standalone-nginx) den Fastpath, der PHP komplett umgeht.
 - **HMAC-signierte URLs** — verhindert, dass beliebige Größen-/Qualitätskombinationen den Speicher fluten können.
 - **LQIP** (Low-Quality Image Placeholder) als inline Base64-JPEG im `background-image` — JS-frei.
-- **Blurhash**-Generierung als Sidecar in den Asset-Metadaten — abrufbar via `Image::blurhash($src)` für Galerien / JSON-APIs, optional auch als `data-blurhash` Attribut.
 - **Focal-Point-Unterstützung** über das optionale [`focuspoint`](https://github.com/yakamara/redaxo_focuspoint) Addon (`med_focuspoint` Feld).
 - **Preload** für Above-the-fold-Bilder via `<link rel="preload">`-Injektion in den `<head>`.
 - **SVG/GIF Pass-through** — keine Transformation, nur ein einfaches `<img>`.
@@ -31,7 +30,7 @@ Inspiriert vom [Statamic Responsive Images Addon](https://github.com/statamic/re
 2. Aktivieren — der HMAC Sign-Key und das Cache-Verzeichnis werden automatisch eingerichtet.
 3. Optional: Einstellungen unter **AddOns → MASSIF Media → Einstellungen** anpassen. Die Tabs gruppieren die Optionen:
     - **Allgemein** — Formate, Qualität pro Format, Breakpoint-Pools, Default-`sizes`-Attribut.
-    - **Placeholder** — LQIP-Tuning, Blurhash-Toggle.
+    - **Placeholder** — LQIP-Tuning.
     - **CDN** — optionale CDN-Auslieferung mit Template.
     - **Sicherheit & Cache** — Sign-Key-Anzeige + Regenerieren, Cache leeren, Cache-TTLs.
 
@@ -74,11 +73,7 @@ echo Image::for('portrait.jpg')
     ->focal('40% 30%')
     ->widths([320, 640, 800, 1200])
     ->quality(['avif' => 50, 'webp' => 75, 'jpg' => 80])
-    ->withBlurhashAttr()
     ->render();
-
-// API-Helper für Galerien / JSON-APIs
-$hash = Image::blurhash('hero.jpg');
 
 // Video — analoges API-Design
 echo Video::render(
@@ -363,21 +358,9 @@ Identisch zu `REX_PIC`: Substitution während Article-Cache-Build, kein Regex au
 
 SVG / GIF → schlichtes `<img>` ohne `srcset` / Sources.
 
-## Placeholder-Strategien: LQIP vs. Blurhash
+## Placeholder (LQIP)
 
-Das Addon erzeugt für jedes Bild **zwei** unabhängige Placeholder-Repräsentationen — beide sind kleine, unscharfe Vorschauen, decken aber unterschiedliche Use-Cases ab. Beide sind defaultmäßig aktiv und benötigen keine Anpassung.
-
-| Aspekt | LQIP | Blurhash |
-|---|---|---|
-| Was ist es? | Ein 32 px Mini-JPEG (geblurrt, Q40), als Base64-Data-URL inline ausgeliefert. | Eine ~30-Byte ASCII-Repräsentation (DCT-Approximation der Bildfarben/-struktur). |
-| Wie kommt es zum Browser? | Inline im `style="background-image:url('data:image/jpeg;base64,…')"` Attribut des `<img>`. ~2 KB pro Bild im HTML. | Als `data-blurhash="…"` Attribut (opt-in über `->withBlurhashAttr()`) oder als Rückgabewert von `Image::blurhash($src)` für JSON-APIs. |
-| Wer entschlüsselt? | Browser-nativ (data: URL). Kein JS, keine CPU-Kosten. | JavaScript-Decoder im Browser (Canvas-Rendering) — **oder** server-seitig in PHP via `\\kornrunner\\Blurhash\\Blurhash::decode($hash, $w, $h)`, das eine Pixel-Matrix zurückgibt, die man zu JPEG/PNG enkodieren kann. |
-| Speicherort | Cache-Datei pro Asset unter `cache/_lqip/…`, plus Verweis in der `meta.json` Sidecar. ~2 KB pro Asset auf Disk. | Nur `meta.json` Sidecar pro Asset. ~30 Bytes pro Asset. |
-| Visueller Charakter | Echte Pixel-Reduktion des Originals → farb- und strukturtreu. | Parametrische DCT-Approximation → designed-blur Look, weniger Detail. |
-
-Konzeptionell sind beide kleine Vorschau-Bilder — der Unterschied liegt in **Speicherung** und **Decode-Pfad**. Für klassisches Server-Rendering von HTML ist LQIP der direktere Weg (Browser dekodiert nativ, keine Roundtrips). Blurhash spielt seine Stärke aus, sobald man eine **JSON-API** baut und einem JS-Client einen 30-Byte-Hash schickt, statt 2 KB Base64 — dort übernimmt der Client das Rendering.
-
-Beide Strategien laufen unabhängig und additiv. Default: LQIP rendert inline, Blurhash wird nur berechnet (für `Image::blurhash($src)`) und nicht im HTML mitgeliefert. Soll der Hash auch als `data-blurhash` Attribut erscheinen, dann `->withBlurhashAttr()` in der Builder-Kette aufrufen.
+Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Image Placeholder): ein 32 px Mini-JPEG, leicht geblurrt, als Base64-Data-URL inline im `style="background-image:url('data:image/jpeg;base64,…')"` Attribut des `<img>`. Der Browser dekodiert nativ — kein JavaScript, keine zusätzlichen Roundtrips. Pro Bild fallen ~2 KB im HTML an, pro Asset ~2 KB auf Disk unter `cache/_lqip/…`. Default-Tuning: 32 px Breite, Blur 5, Qualität 40 — alles über die Settings-Seite anpassbar.
 
 ## Konfiguration
 
@@ -391,9 +374,7 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 | `device_sizes` | `[640, 750, 828, 1080, 1200, 1920, 2048, 3840]` | Große Breakpoints (next/image) |
 | `image_sizes` | `[16, 32, 48, 64, 96, 128, 256, 384]` | Kleine Breakpoints (next/image) |
 | `default_sizes` | `(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw` | Default `sizes` Attribut |
-| `lqip_*` | aktiviert, 32 px, blur 40, q 40 | LQIP-Tuning |
-| `blurhash_enabled` | `true` | Blurhash bei Metadatenerzeugung berechnen |
-| `blurhash_components_x` / `_y` | `4` / `3` | Komponenten-Auflösung des Hashes (1–9). Höhere Werte = mehr Detail, längerer Hash. Änderungen erfordern `Cache leeren`, damit die `_meta/`-Sidecars neu berechnet werden. |
+| `lqip_*` | aktiviert, 32 px, blur 5, q 40 | LQIP-Tuning |
 | `cdn_*` | deaktiviert | CDN-Override (Base + Template) |
 
 ## URL-Schema
