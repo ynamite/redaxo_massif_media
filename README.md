@@ -423,6 +423,16 @@ URLs sind HMAC-signiert. Ohne den Sign-Key kann niemand Generierungen für belie
 
 Wenn der Sign-Key neu generiert wird, werden alle bisher signierten URLs ungültig. Bestehende Cache-Files bleiben jedoch erreichbar (Apache prüft die Signatur nicht erneut beim direkten Ausliefern).
 
+## Troubleshooting
+
+**Bild oder Video taucht nicht auf, obwohl der Slice gepflegt ist?** Wahrscheinlich existiert die Datei nicht (Tippfehler im Dateinamen oder Asset wurde aus dem Mediapool entfernt). Das Addon loggt jeden fehlenden Source-File via `rex_logger`. Bei aktiviertem `rex::isDebug()` (`config.yml: debug: true`) wird zusätzlich ein HTML-Kommentar an die Stelle gerendert, an der das Bild/Video stehen sollte:
+
+```html
+<!-- massif_media: src not found "hero-imag.jpg" -->
+```
+
+Im Browser-DevTools-Inspector (oder als View-Source) sieht man den vermutlich falsch geschriebenen Dateinamen direkt. In Production (`debug: false`) wird ein leerer String ausgegeben — keine Logs für Endbenutzer einsehbar, aber der `rex_logger`-Eintrag bleibt erhalten.
+
 ## Lizenz
 
 MIT — siehe `LICENSE`.

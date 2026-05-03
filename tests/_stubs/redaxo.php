@@ -157,6 +157,7 @@ if (!class_exists('rex')) {
     class rex
     {
         private static bool $isBackend = false;
+        private static bool $isDebug = false;
 
         public static function isBackend(): bool
         {
@@ -166,6 +167,16 @@ if (!class_exists('rex')) {
         public static function _setBackend(bool $value): void
         {
             self::$isBackend = $value;
+        }
+
+        public static function isDebug(): bool
+        {
+            return self::$isDebug;
+        }
+
+        public static function _setDebug(bool $value): void
+        {
+            self::$isDebug = $value;
         }
     }
 }

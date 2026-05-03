@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Builder;
 
+use rex;
 use rex_logger;
 use rex_media;
 use rex_path;
 use rex_url;
+use RuntimeException;
 use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Loading;
@@ -114,13 +116,16 @@ final class VideoBuilder
     {
         $filename = $this->src instanceof rex_media ? $this->src->getFileName() : $this->src;
         if ($filename === '') {
-            return '';
+            return self::missingSrcMarker('');
         }
 
         $media = $this->src instanceof rex_media ? $this->src : rex_media::get($filename);
         $absPath = rex_path::media($filename);
         if (!is_readable($absPath)) {
-            return '';
+            rex_logger::logException(
+                new RuntimeException('massif_media: video src not readable: ' . $filename),
+            );
+            return self::missingSrcMarker($filename);
         }
 
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -193,5 +198,20 @@ final class VideoBuilder
             return $base . '/' . ltrim($filename, '/') . '?v=' . $mtime;
         }
         return rex_url::base() . 'media/' . $filename . '?v=' . $mtime;
+    }
+
+    /**
+     * In rex::isDebug() returns an HTML comment naming the missing src so
+     * editors see the typo in the page source. Empty string in production.
+     */
+    private static function missingSrcMarker(string $filename): string
+    {
+        if (!rex::isDebug()) {
+            return '';
+        }
+        return sprintf(
+            '<!-- massif_media: src not found "%s" -->',
+            htmlspecialchars($filename, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+        );
     }
 }

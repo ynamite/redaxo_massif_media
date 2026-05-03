@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Builder;
 
+use rex;
 use rex_logger;
 use rex_media;
 use Throwable;
@@ -269,7 +270,7 @@ final class ImageBuilder
             $image = $resolver->resolve($this->src);
         } catch (ImageNotFoundException $e) {
             rex_logger::logException($e);
-            return '';
+            return $this->missingSrcMarker();
         }
 
         if ($this->focal !== null) {
@@ -348,6 +349,22 @@ final class ImageBuilder
             sourceFormat: $image->sourceFormat,
             focalPoint: $focal,
             mtime: $image->mtime,
+        );
+    }
+
+    /**
+     * In rex::isDebug() returns an HTML comment naming the missing src so
+     * editors see the typo in the page source. Empty string in production.
+     */
+    private function missingSrcMarker(): string
+    {
+        if (!rex::isDebug()) {
+            return '';
+        }
+        $filename = $this->src instanceof rex_media ? $this->src->getFileName() : (string) $this->src;
+        return sprintf(
+            '<!-- massif_media: src not found "%s" -->',
+            htmlspecialchars($filename, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
         );
     }
 }
