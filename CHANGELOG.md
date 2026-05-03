@@ -12,6 +12,9 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 ### Changed
 
 - **LQIP-Default `blur` auf `5` (vorher `40`).** Liefert eine merklich softere Inline-Vorschau. Installs, die den Wert nie über die Settings-Seite gesetzt haben, sehen automatisch das neue Verhalten — bestehende `_lqip/`-Cache-Dateien sind aber nach altem Wert generiert; einmal `Cache leeren`, damit sie neu berechnet werden.
+- **LQIP-Format auf WebP umgestellt** (vorher JPEG); Inline-Data-URI ist jetzt `data:image/webp;base64,…`. Bei gleichem Blur / Qualität deutlich kleiner als JPEG für die LQIP-Größe. WebP-Browser-Support ist seit Safari 14 universal.
+- **EXIF / XMP / IPTC / ICC-Profil werden vor dem LQIP-Encoden gestrippt.** Neuer `lib/Glide/StripMetadata.php` Manipulator (Imagick-only, ruft `stripImage()`), gegated über `Server::$activeStripMetadata` analog zu `setActiveFilters` — fired nur auf dem LQIP-Pfad, Volltext-Varianten behalten ihr ICC-Profil für color-managed Displays. iPhone-Captures bringen typischerweise 20+ KB Face-Detection-JSON, Depth-Maps, Display-P3-ICC und XMP-Face-Regionen mit, die im base64-inlinten LQIP nichts beitragen und das Data-URI sonst um den Faktor ~10 aufblasen.
+- **`Pipeline\Placeholder::CACHE_VERSION = 'v2'`** hängt sich in den `_lqip/`-Cache-Key (`xxh64({src}:{mtime}:{version})`) — bestehende `_lqip/*.txt` invalidieren sich beim nächsten Read automatisch (würden sonst stale jpg-encodierte Data-URIs zurückgeben). Kein manueller `Cache leeren`-Schritt nötig für die Format- / Strip-Änderung.
 
 ### Fixed
 
