@@ -12,6 +12,7 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
@@ -42,7 +43,12 @@ final class PictureRendererTest extends TestCase
 
     private function renderer(): PictureRenderer
     {
-        return new PictureRenderer(new SrcsetBuilder(), new UrlBuilder(), new Placeholder());
+        return new PictureRenderer(
+            new SrcsetBuilder(),
+            new UrlBuilder(),
+            new Placeholder(),
+            new DominantColor(),
+        );
     }
 
     private function image(
@@ -76,6 +82,22 @@ final class PictureRendererTest extends TestCase
         );
         @mkdir(dirname($cachePath), 0777, true);
         file_put_contents($cachePath, $dataUri);
+    }
+
+    /**
+     * Pre-seed the dominant-color cache so DominantColor::generate returns
+     * the seeded value without invoking Imagick.
+     */
+    private function seedColorCache(ResolvedImage $image, string $hex): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_COLOR_ENABLED, 1);
+        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':v1');
+        $cachePath = rex_path::addonAssets(
+            Config::ADDON,
+            'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
+        );
+        @mkdir(dirname($cachePath), 0777, true);
+        file_put_contents($cachePath, $hex);
     }
 
     // --- Smoke / structure ---------------------------------------------------
@@ -364,6 +386,54 @@ final class PictureRendererTest extends TestCase
         );
 
         self::assertStringContainsString('style="object-position:50% 50%"', $html);
+    }
+
+    public function testDominantColorPrependsBackgroundColor(): void
+    {
+        $image = $this->image();
+        $this->seedColorCache($image, '#3a4f6b');
+
+        $html = $this->renderer()->render($image, alt: 'x');
+
+        // Background color first so it paints immediately; standalone (no LQIP, no focal).
+        self::assertStringContainsString('style="background-color:#3a4f6b"', $html);
+    }
+
+    public function testDominantColorPlusLqipPaintColorThenLqipImage(): void
+    {
+        $image = $this->image();
+        $this->seedColorCache($image, '#112233');
+        $this->seedLqipCache($image, 'data:image/webp;base64,QQ==');
+
+        $html = $this->renderer()->render($image, alt: 'x');
+
+        // Order: background-color → background-size → background-image. Browser
+        // paints color first, LQIP overlays it.
+        self::assertMatchesRegularExpression(
+            '/style="background-color:#112233;background-size:cover;background-image:/',
+            $html,
+        );
+    }
+
+    public function testDominantColorPlusFocalCombinedInOneStyle(): void
+    {
+        $image = $this->image(focal: '25% 75%');
+        $this->seedColorCache($image, '#aabbcc');
+
+        $html = $this->renderer()->render($image, width: 400, height: 400, alt: 'x');
+
+        self::assertStringContainsString(
+            'style="background-color:#aabbcc;object-position:25% 75%"',
+            $html,
+        );
+    }
+
+    public function testColorDisabledOmitsBackgroundColor(): void
+    {
+        // Default state: KEY_COLOR_ENABLED = 0 (no seeding).
+        $html = $this->renderer()->render($this->image(), alt: 'x');
+
+        self::assertStringNotContainsString('background-color', $html);
     }
 
     // --- Misc attributes -----------------------------------------------------

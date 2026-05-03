@@ -22,6 +22,7 @@ final class Config
     public const KEY_LQIP_WIDTH = 'lqip_width';
     public const KEY_LQIP_BLUR = 'lqip_blur';
     public const KEY_LQIP_QUALITY = 'lqip_quality';
+    public const KEY_COLOR_ENABLED = 'color_enabled';
     public const KEY_CDN_ENABLED = 'cdn_enabled';
     public const KEY_CDN_BASE = 'cdn_base';
     public const KEY_CDN_URL_TEMPLATE = 'cdn_url_template';
@@ -45,6 +46,7 @@ final class Config
         self::KEY_LQIP_WIDTH => 32,
         self::KEY_LQIP_BLUR => 5,
         self::KEY_LQIP_QUALITY => 40,
+        self::KEY_COLOR_ENABLED => 0,
         self::KEY_CDN_ENABLED => 0,
         self::KEY_CDN_BASE => '',
         self::KEY_CDN_URL_TEMPLATE => '',
@@ -124,6 +126,11 @@ final class Config
     public static function lqipQuality(): int
     {
         return (int) self::get(self::KEY_LQIP_QUALITY);
+    }
+
+    public static function colorEnabled(): bool
+    {
+        return self::checkboxBool(self::KEY_COLOR_ENABLED);
     }
 
     public static function cdnEnabled(): bool

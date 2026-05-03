@@ -364,6 +364,14 @@ Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Im
 
 Vor dem Encoden wird die EXIF / XMP / IPTC / ICC-Profil-Metadaten der Quelle gestrippt — und zwar für **jede** generierte Variante, nicht nur die LQIPs. iPhone-Captures bringen typischerweise 20+ KB an Face-Detection-JSON, Depth-Maps, Display-P3-ICC, GPS-Koordinaten und XMP-Face-Regionen mit, die für die Web-Auslieferung keinen Mehrwert haben (Bandbreite + Privacy). Implementiert in `lib/Glide/StripMetadata.php` (Imagick `stripImage`), läuft als zusätzlicher Manipulator nach `ColorProfile`. Da `ColorProfile` Pixel bereits via `transformImageColorspace()` zu sRGB normalisiert, ist das eingebettete ICC-Profil danach ohnehin stale und wird vom Strip entfernt — Browser-Default ist sRGB und matched die Pixel.
 
+### Dominante Farbe (optional, deaktiviert per Default)
+
+Alternative oder Ergänzung zu LQIP: **Dominante Farbe** berechnet aus der Quelle eine einzelne repräsentative Hex-Farbe und setzt sie als `background-color` im selben `style`-Attribut. Vorteile gegenüber LQIP allein: ~7 Bytes statt ~600 Bytes pro Bild, kein Decode-Roundtrip, sofort sichtbar — der Browser kann die Farbe noch vor dem ersten Repaint zeichnen.
+
+Lässt sich **kombiniert** mit LQIP einsetzen: die Farbe paint zuerst, das LQIP-Bild überlagert sie sobald dekodiert, die fertige Variante überschreibt schließlich beides. Sinnvolle Reihenfolge im Style-Attribut wird vom Renderer garantiert. Aktivieren per Checkbox auf dem **Placeholder**-Tab.
+
+Berechnung: Imagick `quantizeImage(1, COLORSPACE_SRGB)` auf einer 50 px breiten Working-Copy — sub-20ms auf üblichen Foto-Größen, ergibt einen 1-Pixel-äquivalenten Mittelwert. Cache liegt unter `cache/_color/<2-char>/<xxh64>.txt`. Erfordert die `imagick`-PHP-Extension; ohne sie wird die Farbe still übersprungen.
+
 ## Konfiguration
 
 Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Einstellungen** erreichbar. Sinnvolle Defaults sind gesetzt; die meisten Installationen müssen die Seite nicht anfassen.
@@ -377,6 +385,7 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 | `image_sizes` | `[16, 32, 48, 64, 96, 128, 256, 384]` | Kleine Breakpoints (next/image) |
 | `default_sizes` | `(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw` | Default `sizes` Attribut |
 | `lqip_*` | aktiviert, 32 px, blur 5, q 40 | LQIP-Tuning |
+| `color_enabled` | deaktiviert | Dominante Farbe als `background-color` (kombinierbar mit LQIP) |
 | `cdn_*` | deaktiviert | CDN-Override (Base + Template) |
 
 ## URL-Schema

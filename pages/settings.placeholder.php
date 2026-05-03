@@ -45,6 +45,20 @@ $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
 $f->setNotice('WebP-Encoding-Qualität nur für den Placeholder. Niedrige Werte (40 Default) sind okay — der Placeholder wird beim Laden der Hauptvariante ohnehin überlagert.');
 
+$form->addFieldset('Dominante Farbe (Background-Color Placeholder)');
+
+$f = $form->addCheckboxField(Config::KEY_COLOR_ENABLED);
+$f->setLabel('Dominante Farbe');
+$f->addOption('Pro Bild eine repräsentative Hex-Farbe als <code>background-color</code> einbetten', 1);
+$f->setNotice(
+    'Berechnet aus dem Quellbild eine einzelne dominante Farbe (~7 Bytes statt ~600 Bytes für ein LQIP) und '
+    . 'setzt sie als <code>background-color</code> im <code>style</code>-Attribut. Lässt sich '
+    . '<strong>kombiniert mit LQIP</strong> einsetzen — die Farbe ist sofort sichtbar, das LQIP-Bild '
+    . 'überlagert sie sobald dekodiert; die fertige Variante überschreibt beides. Erfordert die '
+    . '<code>imagick</code>-PHP-Extension; ohne sie wird der Wert still übersprungen. Wird beim ersten '
+    . 'Zugriff auf das jeweilige Bild generiert und gecached.'
+);
+
 $content = $form->getMessage() . $form->get();
 
 $fragment = new rex_fragment();

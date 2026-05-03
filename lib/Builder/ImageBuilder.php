@@ -14,6 +14,7 @@ use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Exception\ImageNotFoundException;
 use Ynamite\Media\Glide\FilterParams;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
@@ -309,6 +310,7 @@ final class ImageBuilder
             new SrcsetBuilder(),
             new UrlBuilder(),
             new Placeholder(),
+            new DominantColor(),
         ))->render(
             $image,
             $this->width,

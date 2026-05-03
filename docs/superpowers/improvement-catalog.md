@@ -39,10 +39,8 @@ When an item ships, mark it `✅ shipped <YYYY-MM-DD> <commit-sha-or-PR-ref>` an
 
 ## Features
 
-### B1 — Dominant-color placeholder — **Recommend**, S–M
-- **Where:** new option in `lib/Pipeline/Placeholder.php` (today only base64 WebP LQIP).
-- **Why:** A 7-byte hex value (`#3a4f6b`) replaces a ~600-byte base64 data-URI for the use case where the design just needs a non-white block under the loading image. Keeps the LQIP path for sites that want the blurred preview.
-- **Open questions:** config shape (enum vs two toggles); hex computation (`getImageHistogram` vs `quantizeImage(1, …)`); markup placement (merge into existing `style` attr vs separate wrapper).
+### B1 — Dominant-color placeholder — ✅ shipped (independent toggle, prepended `background-color`)
+- New `lib/Pipeline/DominantColor.php`. Imagick `quantizeImage(1, COLORSPACE_SRGB)` on a scaled-down working copy. Cache at `cache/_color/<prefix>/<hash>.txt`. Two independent toggles (lqip + color); style attr renders color → LQIP image → focal in that order so each layer overlays the previous. Tests cover gates (unit) + real Imagick path (integration).
 
 ### B2 — Animated WebP for animated GIFs — **Consider**, M
 - **Where:** `lib/Pipeline/ImageResolver.php` (passthrough decision) + `lib/View/PassthroughRenderer.php`.

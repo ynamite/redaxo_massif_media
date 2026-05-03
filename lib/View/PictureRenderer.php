@@ -10,6 +10,7 @@ use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Glide\FitTokenBuilder;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
@@ -23,6 +24,7 @@ final class PictureRenderer
         private SrcsetBuilder $srcsetBuilder,
         private UrlBuilder $urlBuilder,
         private Placeholder $placeholder,
+        private DominantColor $dominantColor,
     ) {
     }
 
@@ -121,6 +123,7 @@ final class PictureRenderer
         [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $effectiveRatio);
 
         $lqip = $this->placeholder->generate($image);
+        $color = $this->dominantColor->generate($image);
 
         $imgAttrs = [
             'src' => $fallbackSrc,
@@ -142,7 +145,13 @@ final class PictureRenderer
             $imgAttrs['class'] = $class;
         }
 
+        // Style attr order matters: background-color first so it paints
+        // immediately, LQIP background-image overlays it once decoded, focal
+        // object-position positions the loaded raster.
         $style = [];
+        if ($color !== '') {
+            $style[] = 'background-color:' . $color;
+        }
         if ($lqip !== '') {
             $style[] = 'background-size:cover';
             $style[] = "background-image:url('" . str_replace("'", "\\'", $lqip) . "')";
