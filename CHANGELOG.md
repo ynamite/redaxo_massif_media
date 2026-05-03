@@ -7,6 +7,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Removed
 
+- **`_legacy_reference/` gelöscht.** Verzeichnis enthielt die ursprüngliche `Ynamite\Massif\Media`-Quelle aus `redaxo-massif`, gehalten für Porting-Referenz beim Greenfield-Skeleton. Addon ist jetzt produktiv verifiziert; Referenzkopie ist obsolet (Original-Historie liegt in `redaxo-massif`). Connect-Installs sparen ein paar KB; CLAUDE.md-Migrationsabsatz entsprechend gestrichen. Begleitend in derselben Änderung: `CLAUDE.md`-Gotcha zum Glide-Crop-Decimal-Trap zeigt jetzt korrekt auf `FitTokenBuilder::parseFocalToInts()` (vorher fälschlich auf nicht-existierendes `PictureRenderer::parseFocalToInts()`).
+
 - **Blurhash-Feature komplett entfernt.** `Image::blurhash($src)`, der `withBlurhashAttr()`-Builder-Step, das `data-blurhash`-Attribut, das `$blurhash`-Feld auf `ResolvedImage`, der Compute-Pfad in `MetadataReader` (inkl. `kornrunner/blurhash`-Dependency und vendor-Verzeichnis), das Blurhash-Fieldset im **Placeholder**-Settings-Tab, der Blurhash-Eintrag in der Meta-Cache-TTL-Notice (`pages/settings.security.php`), die `massif_media_blurhash_legend`-Sprachzeile und die zugehörigen Tests sind weg. Bestehende `_meta/`-Sidecars enthalten noch einen unbenutzten `blurhash`-Key — harmlos, beim nächsten Schreiben fällt er weg. Stale `rex_config`-Zeilen (`blurhash_enabled`, `blurhash_components_x`, `blurhash_components_y`) bleiben liegen — kein Reader, kein Effekt. Der bisherige `composer update`-Schritt zog auch eine transitive `intervention/image` 3.11.7 → 3.11.8 mit.
 
 ### Changed
