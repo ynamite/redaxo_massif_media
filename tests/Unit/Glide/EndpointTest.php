@@ -91,4 +91,15 @@ final class EndpointTest extends TestCase
         self::assertNull(Endpoint::parseCachePath('hero.jpg/jpg-800-80-fNOTHEX.jpg'));
         self::assertNull(Endpoint::parseCachePath('hero.jpg/jpg-800-80-fab.jpg'));
     }
+
+    public function testParseCachePathReturnsNullForAnimatedShape(): void
+    {
+        // Animated WebP variants use a flat single-segment stem ("animated")
+        // rather than the {fmt}-{w}-{q} shape — Endpoint::handle dispatches
+        // these to AnimatedWebpEncoder before parseCachePath is called, so
+        // parseCachePath should fail-closed (return null) rather than misparse
+        // them as malformed Glide variants.
+        self::assertNull(Endpoint::parseCachePath('spinner.gif/animated.webp'));
+        self::assertNull(Endpoint::parseCachePath('subdir/anim.gif/animated.webp'));
+    }
 }

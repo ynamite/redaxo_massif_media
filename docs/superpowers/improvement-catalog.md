@@ -42,10 +42,8 @@ When an item ships, mark it `✅ shipped <YYYY-MM-DD> <commit-sha-or-PR-ref>` an
 ### B1 — Dominant-color placeholder — ✅ shipped (independent toggle, prepended `background-color`)
 - New `lib/Pipeline/DominantColor.php`. Imagick `quantizeImage(1, COLORSPACE_SRGB)` on a scaled-down working copy. Cache at `cache/_color/<prefix>/<hash>.txt`. Two independent toggles (lqip + color); style attr renders color → LQIP image → focal in that order so each layer overlays the previous. Tests cover gates (unit) + real Imagick path (integration).
 
-### B2 — Animated WebP for animated GIFs — **Consider**, M
-- **Where:** `lib/Pipeline/ImageResolver.php` (passthrough decision) + `lib/View/PassthroughRenderer.php`.
-- **Why:** GIFs are routinely 5–10× the size of equivalent animated WebP. Today the addon force-passthroughs them.
-- **Risk:** Imagick animated-encode quirks; AVIF animated quality still uneven (out of scope for v1).
+### B2 — Animated WebP for animated GIFs — ✅ shipped (single-width MVP, picture+gif fallback)
+- New `lib/Pipeline/AnimatedWebpEncoder.php` bypasses Glide's single-frame encoder via `Imagick::coalesceImages() + writeImages(adjoin=true)`. Single intrinsic-width variant per source — animated WebP support correlates with WebP support, so no srcset needed. Cache `cache/{src}/animated.webp`. `Endpoint::handle` matches `/animated.webp` suffix and dispatches to the encoder before reaching Glide. `MetadataReader::probeAnimated` adds `is_animated` to the meta sidecar; `ResolvedImage` gets a `readonly bool $isAnimated`. CDN mode skips the wrap (CDN can't run our encoder). Animated PNG / animated WebP-as-source explicitly out of scope for v1; promote when someone asks.
 
 ### B3 — Aspect-ratio CSS belt-and-suspenders — **Skip**
 - `PictureRenderer` already emits `width=` and `height=` attributes (line 129-130). Modern browsers compute `aspect-ratio` from those automatically for CLS prevention. Adding explicit `style="aspect-ratio: …"` is redundant. Document the existing behavior in README rather than ship duplicate output.

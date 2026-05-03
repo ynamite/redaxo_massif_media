@@ -364,6 +364,19 @@ Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Im
 
 Vor dem Encoden wird die EXIF / XMP / IPTC / ICC-Profil-Metadaten der Quelle gestrippt — und zwar für **jede** generierte Variante, nicht nur die LQIPs. iPhone-Captures bringen typischerweise 20+ KB an Face-Detection-JSON, Depth-Maps, Display-P3-ICC, GPS-Koordinaten und XMP-Face-Regionen mit, die für die Web-Auslieferung keinen Mehrwert haben (Bandbreite + Privacy). Implementiert in `lib/Glide/StripMetadata.php` (Imagick `stripImage`), läuft als zusätzlicher Manipulator nach `ColorProfile`. Da `ColorProfile` Pixel bereits via `transformImageColorspace()` zu sRGB normalisiert, ist das eingebettete ICC-Profil danach ohnehin stale und wird vom Strip entfernt — Browser-Default ist sRGB und matched die Pixel.
 
+### Animierte GIFs werden automatisch als animiertes WebP angeboten
+
+Animierte GIFs sind typischerweise 2–3× so groß wie das äquivalente animierte WebP. Wenn das Quellbild ein animiertes GIF ist (Imagick erkennt das automatisch beim Metadaten-Read), rendert das Addon statt eines reinen `<img>` ein `<picture>` mit WebP-Source und GIF-Fallback:
+
+```html
+<picture>
+  <source type="image/webp" srcset="/.../spinner.gif/animated.webp?s=…">
+  <img src="/media/spinner.gif" alt="…" width="200" height="200" loading="lazy" decoding="async">
+</picture>
+```
+
+Browser, die WebP unterstützen (alle aktuellen — seit Safari 14 universal), holen die WebP-Variante; ältere Browser bekommen das GIF. Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)` (Glides Standard-Encoder behält nur das erste Frame, deshalb läuft dieser Pfad an Glide vorbei). Die WebP-Variante wird einmalig pro Source generiert (kein Multi-Width-Pool — animierte WebPs sind die volle Quellgröße). Cache liegt unter `cache/{src}/animated.webp`. Erfordert Imagick mit WebP-Delegate; ohne sie wird die WebP-Source still weggelassen und der Browser bekommt nur das GIF. **Im CDN-Modus** entfällt der Wrapper komplett (das CDN macht die Encoding-Arbeit nicht für uns).
+
 ### Dominante Farbe (optional, deaktiviert per Default)
 
 Alternative oder Ergänzung zu LQIP: **Dominante Farbe** berechnet aus der Quelle eine einzelne repräsentative Hex-Farbe und setzt sie als `background-color` im selben `style`-Attribut. Vorteile gegenüber LQIP allein: ~7 Bytes statt ~600 Bytes pro Bild, kein Decode-Roundtrip, sofort sichtbar — der Browser kann die Farbe noch vor dem ersten Repaint zeichnen.

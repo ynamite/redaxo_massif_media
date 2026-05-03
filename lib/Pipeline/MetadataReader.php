@@ -30,6 +30,7 @@ final class MetadataReader
             sourceFormat: (string) ($cached['source_format'] ?? 'unknown'),
             focalPoint: isset($cached['focal']) && $cached['focal'] !== '' ? (string) $cached['focal'] : null,
             mtime: $mtime,
+            isAnimated: (bool) ($cached['is_animated'] ?? false),
         );
     }
 
@@ -77,7 +78,34 @@ final class MetadataReader
             'mime' => $mime,
             'source_format' => $sourceFormat,
             'focal' => $focal,
+            'is_animated' => $this->probeAnimated($absolutePath, $sourceFormat),
         ];
+    }
+
+    /**
+     * Detect multi-frame sources. Only checked for formats that can carry
+     * animation (gif, webp, png/apng) — other formats short-circuit to false
+     * to avoid the Imagick open. Falls back to false if Imagick is unavailable
+     * or the read fails (worst case: animated source treated as static, which
+     * is the existing behaviour).
+     */
+    private function probeAnimated(string $absolutePath, string $sourceFormat): bool
+    {
+        if (!in_array($sourceFormat, ['gif', 'webp', 'png'], true)) {
+            return false;
+        }
+        if (!extension_loaded('imagick')) {
+            return false;
+        }
+        try {
+            $im = new \Imagick();
+            $im->pingImage($absolutePath);
+            $count = $im->getNumberImages();
+            $im->clear();
+            return $count > 1;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** @return array{0: int, 1: int, 2: string} */

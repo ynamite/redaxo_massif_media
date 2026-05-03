@@ -63,6 +63,30 @@ final class UrlBuilder
     }
 
     /**
+     * Build a signed URL for the animated WebP variant of an animated source.
+     * Returns '' when CDN mode is on (the CDN doesn't run our encoder) or when
+     * the source isn't actually animated. Caller falls back to the GIF in
+     * either case.
+     */
+    public function buildAnimatedWebp(ResolvedImage $image): string
+    {
+        // Mirror AnimatedWebpEncoder::shouldEncode — only animated GIFs in
+        // self-served (non-CDN) mode get the WebP wrap. Anything else returns
+        // '' and the caller falls back to the plain <img>.
+        if (!$image->isAnimated || $image->sourceFormat !== 'gif' || Config::cdnEnabled()) {
+            return '';
+        }
+        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->sourcePath);
+        $signature = Signature::sign($cachePath);
+        $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
+        $url .= '?s=' . $signature;
+        if ($image->mtime > 0) {
+            $url .= '&v=' . $image->mtime;
+        }
+        return $url;
+    }
+
+    /**
      * Build a CDN URL using the configured base and template.
      *
      * Template tokens: {w}, {h}, {q}, {fm}, {fit}, {src}, {f}.

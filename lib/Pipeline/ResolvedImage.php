@@ -15,6 +15,7 @@ final class ResolvedImage
         public readonly string $sourceFormat,
         public readonly ?string $focalPoint = null,
         public readonly int $mtime = 0,
+        public readonly bool $isAnimated = false,
     ) {
     }
 

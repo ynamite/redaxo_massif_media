@@ -44,6 +44,26 @@ makeImage(600, 800, '#aa3366', $fixturesDir . '/portrait-600x800.jpg', 'jpeg', $
 makeImage(400, 400, '#33aa66', $fixturesDir . '/square-400x400.png', 'png', $useImagick);
 makeImage(32, 32, '#aaaa33', $fixturesDir . '/tiny-32x32.gif', 'gif', $useImagick);
 
+// Animated GIF — three solid-colour frames. Used by AnimatedWebpEncoder
+// integration tests; needs >1 frame so MetadataReader::probeAnimated flips
+// isAnimated to true and the encoder produces multi-frame WebP output.
+if ($useImagick) {
+    $gif = new Imagick();
+    foreach (['#ff0000', '#00ff00', '#0000ff'] as $color) {
+        $frame = new Imagick();
+        $frame->newImage(64, 64, new ImagickPixel($color));
+        $frame->setImageFormat('gif');
+        $frame->setImageDelay(20);
+        $gif->addImage($frame);
+        $frame->clear();
+    }
+    $gif->setImageFormat('gif');
+    $gif->writeImages($fixturesDir . '/animated-3frame.gif', true);
+    $gif->clear();
+} else {
+    fwrite(STDERR, "Skipping animated GIF fixture: needs Imagick.\n");
+}
+
 file_put_contents(
     $fixturesDir . '/vector.svg',
     '<?xml version="1.0" encoding="UTF-8"?>' . "\n"

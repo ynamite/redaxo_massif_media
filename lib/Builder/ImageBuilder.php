@@ -279,7 +279,7 @@ final class ImageBuilder
         }
 
         if ($image->isPassthrough()) {
-            return (new PassthroughRenderer())->render(
+            return (new PassthroughRenderer(new UrlBuilder()))->render(
                 $image,
                 $this->width,
                 $this->height,

@@ -6,6 +6,9 @@ namespace Ynamite\Media\Glide;
 
 use rex_logger;
 use Throwable;
+use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
+use Ynamite\Media\Pipeline\ImageResolver;
+use Ynamite\Media\Pipeline\MetadataReader;
 
 final class Endpoint
 {
@@ -19,6 +22,14 @@ final class Endpoint
 
         if ($cachePath === '' || !Signature::verify($cachePath, $signature, $extraPayload)) {
             self::respond(403, 'Forbidden');
+            return;
+        }
+
+        // Animated WebP variants live outside the Glide pipeline (Glide's
+        // encoder is single-frame). Detect them first and dispatch to the
+        // dedicated encoder; everything else falls through to Glide.
+        if (str_ends_with($cachePath, '/animated.webp')) {
+            self::handleAnimated($cachePath);
             return;
         }
 
@@ -183,6 +194,35 @@ final class Endpoint
         return $token === 'contain'
             || $token === 'stretch'
             || (bool) preg_match('/^cover-\d{1,3}-\d{1,3}$/', $token);
+    }
+
+    private static function handleAnimated(string $cachePath): void
+    {
+        $src = substr($cachePath, 0, -strlen('/animated.webp'));
+        if ($src === '' || $src === false) {
+            self::respond(400, 'Bad request');
+            return;
+        }
+
+        try {
+            $image = (new ImageResolver(new MetadataReader()))->resolve($src);
+            $absPath = (new AnimatedWebpEncoder())->encode($image);
+            if ($absPath === '' || !is_file($absPath)) {
+                self::respond(404, 'Not found');
+                return;
+            }
+            $bytes = (string) file_get_contents($absPath);
+        } catch (Throwable $e) {
+            rex_logger::logException($e);
+            self::respond(404, 'Not found');
+            return;
+        }
+
+        header('Content-Type: image/webp');
+        header('Content-Length: ' . strlen($bytes));
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('ETag: "' . md5($bytes) . '"');
+        echo $bytes;
     }
 
     private static function respond(int $code, string $body): void
