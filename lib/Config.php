@@ -149,27 +149,44 @@ final class Config
     }
 
     /**
-     * Read a checkbox-backed config value as bool. Two storage shapes to handle:
-     *   1. `rex_config_form::addCheckboxField` stores selected options pipe-delimited
-     *      (`|1|` for a single ticked option with value `1`, `''` for unticked,
-     *      `|1|2|` for multi-option checkboxes). A naive `(bool) (int)` cast on
-     *      `'|1|'` evaluates to `false` because PHP's int cast on a string that
-     *      doesn't start with a digit returns `0` — silently flipping any
-     *      user-toggled checkbox to "off". Strip pipes first, then int-cast.
-     *   2. `Config::DEFAULTS` uses plain ints (`1` / `0`) for fresh installs that
-     *      have no saved value yet.
+     * Read a checkbox-backed config value as bool. Three storage shapes to handle:
+     *   1. `rex_config_form::addCheckboxField` stores ticked checkboxes pipe-
+     *      delimited (`'|1|'` for a single ticked option with value `1`,
+     *      `'|1|2|'` for multiples). A naive `(bool) (int)` cast on `'|1|'`
+     *      evaluates to `false` because PHP's int cast on a string that doesn't
+     *      start with a digit returns `0` — silently flipping any user-toggled
+     *      checkbox to "off". Strip pipes first, then int-cast.
+     *   2. **Unticked saves persist as `null`**, NOT empty string. Browsers
+     *      don't submit unchecked checkboxes, so REDAXO's form sees the field
+     *      missing from `$_POST`, calls `setValue(null)`, and `config_form::save`
+     *      hands `rex_config::set(..., null)` to storage. The naive read can't
+     *      distinguish "user explicitly unticked" (null) from "key was never
+     *      written" (also null) because `rex_config::get` collapses both via
+     *      `??`. `rex_config::has` uses `isset()` which returns false for null
+     *      values too, so we go through the whole namespace dict and use
+     *      `array_key_exists` — that's the only way to tell these apart.
+     *   3. `Config::DEFAULTS` ints (`1` / `0`) for fresh installs (key truly
+     *      never written). Used only when `array_key_exists` says the key is
+     *      not present.
      *
-     * Bypasses `Config::get` because that method's empty-string fallback would
-     * coerce a user-unticked checkbox (saved as `''`) back to the default (`1`),
-     * making it impossible to actually disable a checkbox-backed setting from
-     * the UI. We only fall back to DEFAULTS when the key has truly never been
-     * set (`rex_config::get` returns `null`).
+     * Result table:
+     *   never written  → DEFAULTS ($key) → bool cast    (default-on respected)
+     *   '|1|' / '|0|2|' / etc.  → trim('|') → int cast  (ticked = true)
+     *   ''             → int cast → 0 → false           (legacy unticked shape)
+     *   null           → false                          (current unticked shape)
      */
     private static function checkboxBool(string $key): bool
     {
-        $raw = rex_config::get(self::ADDON, $key, null);
-        if ($raw === null) {
+        $namespace = rex_config::get(self::ADDON);
+        if (!is_array($namespace) || !array_key_exists($key, $namespace)) {
+            // Truly never written — fall back to the shipped default.
             $raw = self::DEFAULTS[$key] ?? 0;
+        } else {
+            $raw = $namespace[$key];
+        }
+        if ($raw === null) {
+            // Explicit null from rex_config_form's unticked-checkbox save path.
+            return false;
         }
         if (is_string($raw)) {
             $raw = trim($raw, '|');

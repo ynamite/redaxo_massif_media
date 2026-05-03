@@ -12,8 +12,13 @@ if (!class_exists('rex_config')) {
         /** @var array<string, array<string, mixed>> */
         private static array $store = [];
 
-        public static function get(string $namespace, string $key, mixed $default = null): mixed
+        public static function get(string $namespace, ?string $key = null, mixed $default = null): mixed
         {
+            if ($key === null) {
+                return self::$store[$namespace] ?? [];
+            }
+            // Match REDAXO core: `?? $default` collapses null values to the
+            // default. Use array_key_exists if you need to distinguish.
             return self::$store[$namespace][$key] ?? $default;
         }
 
