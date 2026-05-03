@@ -16,7 +16,6 @@ The addon **coexists with `redaxo-massif`**. There's no migration shim — old c
 - On-demand resizing via `league/glide` (Imagick driver, sRGB normalization manipulator).
 - Cache lives at `rex_path::addonAssets('massif_media', 'cache/')`. Cache misses are served by a `PACKAGES_INCLUDED` (EARLY) hook in REDAXO's frontend — no addon-specific webserver config required. Optional `.htaccess` / nginx snippet serve cache hits directly for the fastpath.
 - HMAC-SHA256 signed URLs prevent disk-fill abuse.
-- Blurhash via `kornrunner/blurhash` cached in `_meta/` sidecars. Component counts (X, Y) are configurable via `Config::KEY_BLURHASH_COMPONENTS_X` / `_Y` (clamped to `[1, 9]`); defaults `4` / `3` match the prior hardcoded behavior.
 - Optional CDN override (ImageKit / Cloudinary / Imgix template).
 - Tabbed backend settings page under **AddOns → MASSIF Media → Einstellungen** (sub-tabs: Allgemein / Placeholder / CDN / Sicherheit & Cache).
 - Documentation tab under **AddOns → MASSIF Media → Dokumentation** that renders `README.md` directly via `subPath:` in `package.yml`.
@@ -32,7 +31,7 @@ lib/
 ├── Builder/{Image,Video}Builder.php       # fluent builders
 ├── Pipeline/                              # single-purpose units, composable
 │   ├── ImageResolver.php                  # rex_media | filename → ResolvedImage
-│   ├── MetadataReader.php                 # intrinsic dims + blurhash + focal, cached in meta.json
+│   ├── MetadataReader.php                 # intrinsic dims + focal, cached in meta.json
 │   ├── ResolvedImage.php                  # readonly value object
 │   ├── SrcsetBuilder.php                  # next/image dual-pool widths
 │   ├── UrlBuilder.php                     # signed Glide URL or CDN URL
@@ -57,7 +56,7 @@ pages/
 ├── index.php                              # parent dispatcher (echoes title, includes current subpage)
 ├── settings.php                           # settings tab dispatcher (includes current sub-subpage)
 ├── settings.general.php                   # tab: formats, qualities, breakpoints, default sizes
-├── settings.placeholder.php               # tab: LQIP + Blurhash
+├── settings.placeholder.php               # tab: LQIP
 ├── settings.cdn.php                       # tab: CDN config
 └── settings.security.php                  # tab: sign-key + cache-clear actions + TTLs
 ```
