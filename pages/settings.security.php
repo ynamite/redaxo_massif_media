@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Ynamite\Media\Config;
+use Ynamite\Media\Pipeline\CacheStats;
 
 $csrfToken = rex_csrf_token::factory('massif_media_security');
 
@@ -21,6 +22,9 @@ if (rex_request_method() === 'post' && (string) rex_post('massif_media_action', 
                 rex_dir::delete($cacheDir, false);
             }
             echo rex_view::success('Addon Cache geleert.');
+        } elseif ($action === 'refresh_stats') {
+            (new CacheStats())->compute(forceRefresh: true);
+            echo rex_view::success('Cache-Statistik neu berechnet.');
         }
     }
 }
@@ -52,10 +56,74 @@ $fragment->setVar('title', 'Sicherheit', false);
 $fragment->setVar('body', $body, false);
 echo $fragment->parse('core/page/section.php');
 
-// Cache panel
+// Cache panel — stats + clear button
+$stats = (new CacheStats())->compute();
+
+$formatBytes = static function (int $bytes): string {
+    if ($bytes < 1024) {
+        return $bytes . ' B';
+    }
+    $units = ['KB', 'MB', 'GB', 'TB'];
+    $i = -1;
+    do {
+        $bytes /= 1024;
+        $i++;
+    } while ($bytes >= 1024 && $i < count($units) - 1);
+    return sprintf('%.1f %s', $bytes, $units[$i]);
+};
+
+$kindLabels = [
+    'variants' => 'Varianten (avif/webp/jpg)',
+    'animated' => 'Animated WebP',
+    'lqip'     => 'LQIP (Inline Base64)',
+    'color'    => 'Dominante Farbe',
+    'meta'     => 'Metadata-Sidecars',
+];
+
+$rows = '';
+foreach ($kindLabels as $kind => $label) {
+    $count = (int) $stats['by_kind'][$kind]['count'];
+    $bytes = (int) $stats['by_kind'][$kind]['bytes'];
+    $rows .= sprintf(
+        '<tr><td>%s</td><td class="text-right">%s</td><td class="text-right">%s</td></tr>',
+        htmlspecialchars($label, ENT_QUOTES),
+        number_format($count, 0, ',', '.'),
+        $formatBytes($bytes),
+    );
+}
+
+$oldestStr = $stats['oldest_mtime'] !== null
+    ? date('Y-m-d H:i', (int) $stats['oldest_mtime'])
+    : '–';
+$newestStr = $stats['newest_mtime'] !== null
+    ? date('Y-m-d H:i', (int) $stats['newest_mtime'])
+    : '–';
+$computedStr = date('Y-m-d H:i:s', (int) $stats['computed_at']);
+
 $body = '<p>Generierte Bildvarianten werden unter <code>assets/addons/' . htmlspecialchars(Config::ADDON, ENT_QUOTES) . '/cache/</code> abgelegt. '
       . 'Beim regulären REDAXO-Cache-Reset wird dieser Addon-Cache automatisch mit geleert.</p>'
-      . '<form action="' . htmlspecialchars($action, ENT_QUOTES) . '" method="post" class="form-inline">'
+      . '<table class="table table-striped table-bordered" style="margin-top:15px;max-width:600px">'
+      . '<thead><tr><th>Kategorie</th><th class="text-right">Dateien</th><th class="text-right">Größe</th></tr></thead>'
+      . '<tbody>' . $rows . '</tbody>'
+      . '<tfoot><tr><th>Gesamt</th>'
+      . '<th class="text-right">' . number_format((int) $stats['file_count'], 0, ',', '.') . '</th>'
+      . '<th class="text-right">' . $formatBytes((int) $stats['total_bytes']) . '</th>'
+      . '</tr></tfoot>'
+      . '</table>'
+      . '<p class="text-muted" style="font-size:12px;margin-top:10px">'
+      . 'Älteste Datei: ' . htmlspecialchars($oldestStr, ENT_QUOTES) . ' · '
+      . 'Neueste Datei: ' . htmlspecialchars($newestStr, ENT_QUOTES) . ' · '
+      . 'Berechnet: ' . htmlspecialchars($computedStr, ENT_QUOTES) . ' (Cache 5 Min)'
+      . '</p>'
+      . '<form action="' . htmlspecialchars($action, ENT_QUOTES) . '" method="post" class="form-inline" style="margin-top:10px">'
+      . $hidden
+      . '<input type="hidden" name="massif_media_action" value="refresh_stats">'
+      . '<button type="submit" class="btn btn-default">'
+      . '<i class="rex-icon fa-refresh"></i> Statistik neu berechnen'
+      . '</button>'
+      . ' '
+      . '</form>'
+      . '<form action="' . htmlspecialchars($action, ENT_QUOTES) . '" method="post" class="form-inline" style="margin-top:10px">'
       . $hidden
       . '<input type="hidden" name="massif_media_action" value="clear_cache">'
       . '<button type="submit" class="btn btn-warning">'

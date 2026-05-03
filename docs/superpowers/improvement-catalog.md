@@ -64,10 +64,8 @@ When an item ships, mark it `✅ shipped <YYYY-MM-DD> <commit-sha-or-PR-ref>` an
 - **Where:** `pages/settings.{general,placeholder,cdn,security}.php`.
 - **Why:** First-time users don't know the difference between format list, breakpoint widths, LQIP knobs, or what the sign-key protects. `rex_config_form` supports per-field descriptions — costs nothing.
 
-### C2 — Cache stats panel on Sicherheit & Cache tab — **Consider**, M
-- **Where:** `pages/settings.security.php`.
-- **Why:** No way today to see how big the cache has grown, when it was last cleared, or how many variants live there. Image-heavy sites care about disk usage.
-- **Bound:** read-only stats. No LRU eviction, no per-variant deletion UI — those are real features that need their own design.
+### C2 — Cache stats panel on Sicherheit & Cache tab — ✅ shipped (read-only, 5-min memo)
+- New `lib/Pipeline/CacheStats.php` walks the cache dir with RecursiveDirectoryIterator and categorises each file into meta / lqip / color / animated / variants. Total bytes, file count, oldest+newest mtime, per-kind breakdown. Memoized to `cache/_stats.json` with 5-min TTL; "Refresh stats" action bypasses the memo. Existing "Cache leeren" naturally evicts the memo. No per-variant deletion UI (deferred — different feature).
 
 ### C3 — CLI cache-warming command — **Consider**, M
 - **Where:** new `lib/Console/WarmCommand.php` via `rex_console_command`.

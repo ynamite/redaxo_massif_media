@@ -433,6 +433,10 @@ Ausgelieferte URL:
 `?v=` ist der `mtime` des Quellbildes — sorgt nur für Browser-/CDN-Cache-Invalidierung.
 `&f=` ist der vollständige Filter-Blob als base64url-kodiertes JSON (nur bei Filter-Anfragen vorhanden).
 
+## Cache-Statistik
+
+Auf dem **Sicherheit & Cache**-Tab im Backend zeigt eine Übersichts-Tabelle, wie viel Disk der Addon-Cache aktuell belegt — aufgeschlüsselt nach Kategorie (Varianten, Animated WebP, LQIP, Dominante Farbe, Metadata-Sidecars), inklusive der `mtime` der ältesten und neuesten Datei. Nützlich auf Sites mit vielen Bildern, um zu erkennen, ob es Zeit für ein Cache-Leeren wird. Berechnung läuft rekursiv über das Cache-Verzeichnis, das Ergebnis wird 5 Minuten in `cache/_stats.json` gemerkt — bei Bedarf via "Statistik neu berechnen"-Button erneuert. Read-only; gezieltes Löschen einzelner Varianten ist nicht vorgesehen.
+
 ## Cache-Invalidierung
 
 - **Backend "Cache leeren"** (UI oder `console cache:clear`): das Addon hängt sich an `CACHE_DELETED` und leert den eigenen Cache mit.

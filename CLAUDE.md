@@ -38,6 +38,7 @@ lib/
 │   ├── Placeholder.php                    # 32×32 base64 WebP LQIP via Glide (metadata stripping shared with all variants via StripMetadata; CACHE_VERSION-bound key for self-invalidation across encoding contract changes)
 │   ├── DominantColor.php                  # single #rrggbb extracted via Imagick quantizeImage(1, COLORSPACE_SRGB) — independent of LQIP, paints first when both enabled
 │   ├── AnimatedWebpEncoder.php            # bypasses Glide (single-frame encoder) — Imagick coalesce + writeImages(adjoin=true) for animated-GIF → animated-WebP. Single intrinsic-width variant per source; cache path `{src}/animated.webp`.
+│   ├── CacheStats.php                     # recursive du + per-kind categorisation (meta / lqip / color / animated / variants), 5-min memoized to `cache/_stats.json`. Drives the Sicherheit & Cache backend panel.
 │   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
 ├── View/{Picture,Passthrough}Renderer.php # full HTML emission
 ├── Glide/                                 # league/glide integration
