@@ -25,6 +25,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_LQIP_WIDTH]);
 $f->setAttribute('min', '4');
 $f->setAttribute('max', '256');
+$f->setNotice('Pixelbreite des intern erzeugten Mini-Bilds, das base64-encoded in die HTML eingebettet wird. Mehr Breite = größere Data-URI; 32 px reicht für die meisten Layouts.');
 
 $f = $form->addInputField('number', Config::KEY_LQIP_BLUR);
 $f->setLabel('Blur (0–100) <small class="text-muted">(LQIP only)</small>');
@@ -33,6 +34,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_LQIP_BLUR]);
 $f->setAttribute('min', '0');
 $f->setAttribute('max', '100');
+$f->setNotice('Glide-Blur-Stärke. Höhere Werte glätten das Pixel-Raster der niedrigen Auflösung weiter aus; 5 ist der Default und meist genug.');
 
 $f = $form->addInputField('number', Config::KEY_LQIP_QUALITY);
 $f->setLabel('Qualität <small class="text-muted">(LQIP only)</small>');
@@ -41,6 +43,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_LQIP_QUALITY]);
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
+$f->setNotice('WebP-Encoding-Qualität nur für den Placeholder. Niedrige Werte (40 Default) sind okay — der Placeholder wird beim Laden der Hauptvariante ohnehin überlagert.');
 
 $content = $form->getMessage() . $form->get();
 

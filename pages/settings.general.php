@@ -20,6 +20,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_QUALITY_AVIF]);
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
+$f->setNotice('1–100. AVIF erlaubt sehr aggressive Kompression bei wenig sichtbarem Verlust — der Default 50 ist ein guter Kompromiss.');
 
 $f = $form->addInputField('number', Config::KEY_QUALITY_WEBP);
 $f->setLabel('WebP Qualität');
@@ -28,6 +29,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_QUALITY_WEBP]);
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
+$f->setNotice('1–100. Default 75. Darunter werden Details schnell sichtbar weicher.');
 
 $f = $form->addInputField('number', Config::KEY_QUALITY_JPG);
 $f->setLabel('JPG Qualität');
@@ -36,6 +38,7 @@ $f->setAttribute('style', 'width: 100px');
 $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_QUALITY_JPG]);
 $f->setAttribute('min', '1');
 $f->setAttribute('max', '100');
+$f->setNotice('1–100. Fallback-Format für ältere Browser. Default 80 ist Sweet-Spot zwischen Größe und Qualität.');
 
 $form->addFieldset('Breakpoints (next/image dual-pool)');
 
