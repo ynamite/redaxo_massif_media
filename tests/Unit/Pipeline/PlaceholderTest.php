@@ -33,24 +33,6 @@ final class PlaceholderTest extends TestCase
         self::assertSame('', (new Placeholder())->generate($image));
     }
 
-    public function testGenerateReturnsEmptyWhenLqipDisabledEvenIfBlurhashEnabled(): void
-    {
-        rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 0);
-        rex_config::set(Config::ADDON, Config::KEY_BLURHASH_ENABLED, 1);
-
-        $image = new ResolvedImage(
-            sourcePath: 'hero.jpg',
-            absolutePath: '/tmp/hero.jpg',
-            intrinsicWidth: 1600,
-            intrinsicHeight: 900,
-            mime: 'image/jpeg',
-            sourceFormat: 'jpg',
-            blurhash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
-        );
-
-        self::assertSame('', (new Placeholder())->generate($image));
-    }
-
     public function testGenerateReturnsEmptyForPassthroughEvenIfLqipEnabled(): void
     {
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 1);

@@ -8,7 +8,6 @@ massif_media_cache_legend = Cache
 massif_media_formats_legend = Formate
 massif_media_breakpoints_legend = Breakpoints
 massif_media_lqip_legend = Placeholder (LQIP)
-massif_media_blurhash_legend = Blurhash
 massif_media_cdn_legend = CDN (optional)
 massif_media_ttls_legend = Cache TTLs
 

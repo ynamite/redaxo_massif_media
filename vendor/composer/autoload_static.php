@@ -7,10 +7,6 @@ namespace Composer\Autoload;
 class ComposerStaticInit21cab83c9d6011abba0d93b387442906
 {
     public static $prefixLengthsPsr4 = array (
-        'k' =>
-        array (
-            'kornrunner\\Blurhash\\' => 20,
-        ),
         'Y' =>
         array (
             'Ynamite\\Media\\' => 14,
@@ -34,10 +30,6 @@ class ComposerStaticInit21cab83c9d6011abba0d93b387442906
     );
 
     public static $prefixDirsPsr4 = array (
-        'kornrunner\\Blurhash\\' =>
-        array (
-            0 => __DIR__ . '/..' . '/kornrunner/blurhash/src',
-        ),
         'Ynamite\\Media\\' =>
         array (
             0 => __DIR__ . '/../..' . '/lib',

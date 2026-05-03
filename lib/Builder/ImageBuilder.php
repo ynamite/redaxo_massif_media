@@ -40,7 +40,6 @@ final class ImageBuilder
     private ?Fit $fit = null;
     private bool $preload = false;
     private ?string $focal = null;
-    private bool $withBlurhashAttr = false;
     private ?string $class = null;
     /** @var array<string, scalar> Glide-keyed filter params. */
     private array $filterParams = [];
@@ -145,12 +144,6 @@ final class ImageBuilder
     public function focal(string $focal): self
     {
         $this->focal = $focal;
-        return $this;
-    }
-
-    public function withBlurhashAttr(bool $on = true): self
-    {
-        $this->withBlurhashAttr = $on;
         return $this;
     }
 
@@ -328,7 +321,6 @@ final class ImageBuilder
             $this->loading,
             $this->decoding,
             $this->fetchPriority,
-            $this->withBlurhashAttr,
             $this->class,
             $this->fit,
             $this->filterParams,
@@ -355,7 +347,6 @@ final class ImageBuilder
             mime: $image->mime,
             sourceFormat: $image->sourceFormat,
             focalPoint: $focal,
-            blurhash: $image->blurhash,
             mtime: $image->mtime,
         );
     }

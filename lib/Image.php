@@ -5,21 +5,18 @@ declare(strict_types=1);
 namespace Ynamite\Media;
 
 use rex_media;
-use Throwable;
 use Ynamite\Media\Builder\ImageBuilder;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
-use Ynamite\Media\Pipeline\ImageResolver;
-use Ynamite\Media\Pipeline\MetadataReader;
 
 class Image
 {
     /**
      * The 80% case: render a <picture> with named arguments.
      *
-     * For complex cases (focal override, preload, custom widths/quality, blurhash attr),
+     * For complex cases (focal override, preload, custom widths/quality),
      * use Image::for($src)->...->render() instead.
      */
     public static function picture(
@@ -79,19 +76,5 @@ class Image
     public static function for(string|rex_media $src): ImageBuilder
     {
         return new ImageBuilder($src);
-    }
-
-    /**
-     * Return the cached blurhash string for an asset, or null if unavailable.
-     * Useful for client-side galleries and JSON APIs.
-     */
-    public static function blurhash(string|rex_media $src): ?string
-    {
-        try {
-            $resolver = new ImageResolver(new MetadataReader());
-            return $resolver->resolve($src)->blurhash;
-        } catch (Throwable) {
-            return null;
-        }
     }
 }

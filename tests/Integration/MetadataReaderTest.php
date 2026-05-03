@@ -57,23 +57,4 @@ final class MetadataReaderTest extends TestCase
         self::assertSame(400, $resolved->intrinsicHeight);
         self::assertSame('png', $resolved->sourceFormat);
     }
-
-    public function testBlurhashGeneratedForRasterFormats(): void
-    {
-        if (!function_exists('imagecreatefromstring')) {
-            self::markTestSkipped('GD not available');
-        }
-        \rex_config::set('massif_media', 'blurhash_enabled', 1);
-
-        $resolved = $this->reader->read(
-            'landscape-800x600.jpg',
-            $this->fixturesDir . '/landscape-800x600.jpg',
-            null,
-        );
-
-        self::assertNotNull($resolved->blurhash);
-        // Blurhash strings are typically 6+ chars and start with one of the
-        // base83 chars [a-zA-Z0-9#$%*+,\-.:;=?@\[\]^_{|}~].
-        self::assertGreaterThanOrEqual(6, strlen($resolved->blurhash));
-    }
 }

@@ -6,7 +6,6 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    'kornrunner\\Blurhash\\' => array($vendorDir . '/kornrunner/blurhash/src'),
     'Ynamite\\Media\\' => array($baseDir . '/lib'),
     'Psr\\Http\\Message\\' => array($vendorDir . '/psr/http-message/src'),
     'League\\MimeTypeDetection\\' => array($vendorDir . '/league/mime-type-detection/src'),

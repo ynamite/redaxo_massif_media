@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Pipeline;
 
-use kornrunner\Blurhash\Blurhash;
 use rex_file;
 use rex_media;
 use rex_path;
-use Throwable;
 use Ynamite\Media\Config;
 
 final class MetadataReader
@@ -31,7 +29,6 @@ final class MetadataReader
             mime: (string) ($cached['mime'] ?? 'application/octet-stream'),
             sourceFormat: (string) ($cached['source_format'] ?? 'unknown'),
             focalPoint: isset($cached['focal']) && $cached['focal'] !== '' ? (string) $cached['focal'] : null,
-            blurhash: isset($cached['blurhash']) && $cached['blurhash'] !== '' ? (string) $cached['blurhash'] : null,
             mtime: $mtime,
         );
     }
@@ -74,18 +71,12 @@ final class MetadataReader
             }
         }
 
-        $blurhash = null;
-        if (Config::blurhashEnabled() && in_array($sourceFormat, ['jpg', 'png', 'webp'], true)) {
-            $blurhash = $this->computeBlurhash($absolutePath);
-        }
-
         return [
             'width' => $width,
             'height' => $height,
             'mime' => $mime,
             'source_format' => $sourceFormat,
             'focal' => $focal,
-            'blurhash' => $blurhash,
         ];
     }
 
@@ -151,73 +142,5 @@ final class MetadataReader
         $x = max(0.0, min(100.0, $x));
         $y = max(0.0, min(100.0, $y));
         return sprintf('%g%% %g%%', $x, $y);
-    }
-
-    private function computeBlurhash(string $absolutePath): ?string
-    {
-        if (!function_exists('imagecreatefromstring')) {
-            return null;
-        }
-
-        try {
-            $bytes = @file_get_contents($absolutePath);
-            if ($bytes === false) {
-                return null;
-            }
-            $img = @imagecreatefromstring($bytes);
-            if ($img === false) {
-                return null;
-            }
-
-            $img = self::downscaleIfOversized($img, 64);
-            $pixels = self::extractPixels($img, imagesx($img), imagesy($img));
-            imagedestroy($img);
-
-            return Blurhash::encode($pixels, Config::blurhashComponentsX(), Config::blurhashComponentsY());
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @param \GdImage $img
-     * @return \GdImage
-     */
-    private static function downscaleIfOversized(\GdImage $img, int $maxDim): \GdImage
-    {
-        $width = imagesx($img);
-        $height = imagesy($img);
-        if ($width <= $maxDim && $height <= $maxDim) {
-            return $img;
-        }
-
-        $ratio = min($maxDim / $width, $maxDim / $height);
-        $newWidth = max(1, (int) ($width * $ratio));
-        $newHeight = max(1, (int) ($height * $ratio));
-        $resized = imagecreatetruecolor($newWidth, $newHeight);
-        imagecopyresampled($resized, $img, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-        imagedestroy($img);
-        return $resized;
-    }
-
-    /**
-     * @return list<list<array{0: int, 1: int, 2: int}>>
-     */
-    private static function extractPixels(\GdImage $img, int $width, int $height): array
-    {
-        $pixels = [];
-        for ($y = 0; $y < $height; $y++) {
-            $row = [];
-            for ($x = 0; $x < $width; $x++) {
-                $color = imagecolorat($img, $x, $y);
-                $row[] = [
-                    ($color >> 16) & 0xFF,
-                    ($color >> 8) & 0xFF,
-                    $color & 0xFF,
-                ];
-            }
-            $pixels[] = $row;
-        }
-        return $pixels;
     }
 }

@@ -14,7 +14,6 @@ final class ResolvedImage
         public readonly string $mime,
         public readonly string $sourceFormat,
         public readonly ?string $focalPoint = null,
-        public readonly ?string $blurhash = null,
         public readonly int $mtime = 0,
     ) {
     }

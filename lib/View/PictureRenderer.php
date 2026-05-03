@@ -46,7 +46,6 @@ final class PictureRenderer
         Loading $loading = Loading::LAZY,
         Decoding $decoding = Decoding::ASYNC,
         FetchPriority $fetchPriority = FetchPriority::AUTO,
-        bool $withBlurhashAttr = false,
         ?string $class = null,
         ?Fit $fit = null,
         array $filterParams = [],
@@ -141,9 +140,6 @@ final class PictureRenderer
         }
         if ($class !== null && $class !== '') {
             $imgAttrs['class'] = $class;
-        }
-        if ($withBlurhashAttr && $image->blurhash !== null) {
-            $imgAttrs['data-blurhash'] = $image->blurhash;
         }
 
         $style = [];
