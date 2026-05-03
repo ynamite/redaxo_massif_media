@@ -362,7 +362,7 @@ SVG / GIF → schlichtes `<img>` ohne `srcset` / Sources.
 
 Für jedes raster-basierte Bild rendert das Addon einen **LQIP** (Low-Quality Image Placeholder): ein 32 px Mini-WebP, leicht geblurrt, als Base64-Data-URL inline im `style="background-image:url('data:image/webp;base64,…')"` Attribut des `<img>`. Der Browser dekodiert nativ — kein JavaScript, keine zusätzlichen Roundtrips. Default-Tuning: 32 px Breite, Blur 5, Qualität 40 — alles über die Settings-Seite anpassbar.
 
-Vor dem Encoden wird die EXIF / XMP / IPTC / ICC-Profil-Metadaten der Quelle gestrippt (Imagick `stripImage`) — iPhone-Captures bringen typischerweise 20+ KB an Face-Detection-JSON, Depth-Maps, Display-P3-ICC und XMP-Face-Regionen mit, die im base64-inlinten LQIP keinen Mehrwert haben und das Data-URI sonst um den Faktor ~10 aufblasen. Das Stripping greift nur auf dem LQIP-Pfad (`Glide\StripMetadata` ist über `Server::$activeStripMetadata` request-gated) — Volltext-Varianten behalten ihr ICC-Profil für color-managed Displays.
+Vor dem Encoden wird die EXIF / XMP / IPTC / ICC-Profil-Metadaten der Quelle gestrippt — und zwar für **jede** generierte Variante, nicht nur die LQIPs. iPhone-Captures bringen typischerweise 20+ KB an Face-Detection-JSON, Depth-Maps, Display-P3-ICC, GPS-Koordinaten und XMP-Face-Regionen mit, die für die Web-Auslieferung keinen Mehrwert haben (Bandbreite + Privacy). Implementiert in `lib/Glide/StripMetadata.php` (Imagick `stripImage`), läuft als zusätzlicher Manipulator nach `ColorProfile`. Da `ColorProfile` Pixel bereits via `transformImageColorspace()` zu sRGB normalisiert, ist das eingebettete ICC-Profil danach ohnehin stale und wird vom Strip entfernt — Browser-Default ist sRGB und matched die Pixel.
 
 ## Konfiguration
 
