@@ -25,6 +25,14 @@ final class Server
      */
     public static array $activeFilterParams = [];
 
+    /**
+     * When true, the StripMetadata manipulator will strip EXIF / XMP / IPTC
+     * / ICC profile from the encoded output. Set by Pipeline\Placeholder
+     * before its makeImage call (and cleared in finally). Same public-static
+     * pattern as $activeFilterParams.
+     */
+    public static bool $activeStripMetadata = false;
+
     public static function setActiveFilters(array $params): void
     {
         self::$activeFilterParams = $params;
@@ -33,6 +41,16 @@ final class Server
     public static function clearActiveFilters(): void
     {
         self::$activeFilterParams = [];
+    }
+
+    public static function setActiveStripMetadata(bool $on): void
+    {
+        self::$activeStripMetadata = $on;
+    }
+
+    public static function clearActiveStripMetadata(): void
+    {
+        self::$activeStripMetadata = false;
     }
 
     public static function create(?string $sourceDir = null, ?string $cacheDir = null): GlideServer
@@ -53,11 +71,13 @@ final class Server
 
         $server->setCachePathCallable(self::cachePathCallable());
 
-        // Append ColorProfile manipulator after Glide's defaults so colorspace
-        // normalization runs on the final pixels before encoding.
+        // Append custom manipulators after Glide's defaults so they run on
+        // the final pixels before encoding. ColorProfile normalizes to sRGB;
+        // StripMetadata is request-gated (only fires for the LQIP path).
         $api = $server->getApi();
         $manipulators = $api->getManipulators();
         $manipulators[] = new ColorProfile();
+        $manipulators[] = new StripMetadata();
         $api->setManipulators($manipulators);
 
         return $server;

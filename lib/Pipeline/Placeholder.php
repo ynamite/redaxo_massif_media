@@ -14,8 +14,17 @@ use Ynamite\Media\Glide\Server;
 final class Placeholder
 {
     /**
+     * Bumped whenever the LQIP encoding contract changes (format, metadata
+     * stripping, …) so existing _lqip/*.txt files self-invalidate without
+     * needing a manual cache clear.
+     *   v1: jpg, metadata included
+     *   v2: webp, EXIF/XMP/ICC stripped
+     */
+    private const CACHE_VERSION = 'v2';
+
+    /**
      * Generate (or load cached) an inline base64 LQIP for an image.
-     * Returns a `data:image/jpeg;base64,...` URI, or '' when LQIP is disabled,
+     * Returns a `data:image/webp;base64,...` URI, or '' when LQIP is disabled,
      * the source is non-rasterizable (svg/gif), or generation fails.
      */
     public function generate(ResolvedImage $image): string
@@ -34,26 +43,31 @@ final class Placeholder
 
         try {
             $server = Server::create();
-            $relCachePath = $server->makeImage($image->sourcePath, [
-                'w' => Config::lqipWidth(),
-                'q' => Config::lqipQuality(),
-                'blur' => Config::lqipBlur(),
-                'fm' => 'jpg',
-            ]);
+            Server::setActiveStripMetadata(true);
+            try {
+                $relCachePath = $server->makeImage($image->sourcePath, [
+                    'w' => Config::lqipWidth(),
+                    'q' => Config::lqipQuality(),
+                    'blur' => Config::lqipBlur(),
+                    'fm' => 'webp',
+                ]);
+            } finally {
+                Server::clearActiveStripMetadata();
+            }
             $bytes = $server->getCache()->read($relCachePath);
         } catch (Throwable $e) {
             rex_logger::logException($e);
             return '';
         }
 
-        $dataUri = 'data:image/jpeg;base64,' . base64_encode($bytes);
+        $dataUri = 'data:image/webp;base64,' . base64_encode($bytes);
         rex_file::put($cachePath, $dataUri);
         return $dataUri;
     }
 
     private function cacheFile(ResolvedImage $image): string
     {
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime);
+        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':' . self::CACHE_VERSION);
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_lqip/' . substr($hash, 0, 2) . '/' . $hash . '.txt'
