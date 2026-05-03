@@ -55,6 +55,11 @@ if (!class_exists('rex_path')) {
 if (!class_exists('rex_url')) {
     class rex_url
     {
+        public static function base(string $file = ''): string
+        {
+            return '/' . $file;
+        }
+
         public static function addonAssets(string $addon, string $file = ''): string
         {
             return '/assets/addons/' . $addon . '/' . $file;
