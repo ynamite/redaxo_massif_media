@@ -90,8 +90,15 @@ final class Preloader
             $imageSrcset = implode(', ', $srcsetParts);
 
             $mime = $primaryFormat === 'jpg' ? 'image/jpeg' : 'image/' . $primaryFormat;
+            // fetchpriority="high" satisfies Lighthouse's "LCP request discovery"
+            // audit. Without it the preload fetch sits at default image
+            // priority and competes with below-fold lazy images on slow
+            // connections — the warning specifically calls out that preloading
+            // alone isn't enough; the LCP fetch needs explicit high priority.
+            // Preloading is opt-in and semantically means "this is the
+            // above-the-fold hero", so always-on high priority is correct.
             $links[] = sprintf(
-                '<link rel="preload" as="image" type="%s" imagesrcset="%s" imagesizes="%s">',
+                '<link rel="preload" as="image" type="%s" imagesrcset="%s" imagesizes="%s" fetchpriority="high">',
                 htmlspecialchars($mime, ENT_QUOTES),
                 htmlspecialchars($imageSrcset, ENT_QUOTES),
                 htmlspecialchars($useSizes, ENT_QUOTES),
