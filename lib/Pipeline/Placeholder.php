@@ -43,17 +43,12 @@ final class Placeholder
 
         try {
             $server = Server::create();
-            Server::setActiveStripMetadata(true);
-            try {
-                $relCachePath = $server->makeImage($image->sourcePath, [
-                    'w' => Config::lqipWidth(),
-                    'q' => Config::lqipQuality(),
-                    'blur' => Config::lqipBlur(),
-                    'fm' => 'webp',
-                ]);
-            } finally {
-                Server::clearActiveStripMetadata();
-            }
+            $relCachePath = $server->makeImage($image->sourcePath, [
+                'w' => Config::lqipWidth(),
+                'q' => Config::lqipQuality(),
+                'blur' => Config::lqipBlur(),
+                'fm' => 'webp',
+            ]);
             $bytes = $server->getCache()->read($relCachePath);
         } catch (Throwable $e) {
             rex_logger::logException($e);
