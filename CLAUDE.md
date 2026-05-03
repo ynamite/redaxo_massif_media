@@ -79,6 +79,7 @@ pages/
 - **Defaults shipped**: most installs don't need to touch the settings page.
 - **Settings pages follow the viterex pattern** (see `~/Repositories/viterex/viterex-addon/pages/settings.php`): each tab is a self-contained PHP page that builds a `rex_config_form`, wraps it in a `rex_fragment('core/page/section.php')`, and echoes — no shared SettingsPage class.
 - **Always keep `README.md`, `CHANGELOG.md`, and this `CLAUDE.md` in sync** with code/convention changes. Each as its own commit. (See feedback memory.)
+- **`Image::picture()` and `Video::render()` use different verb names on purpose.** `Image::picture()` is named after the `<picture>` element it returns; `Video::render()` returns `<video>` and `picture()` would be misleading. The argument lists also differ in order (`alt` is 2nd on Image, 5th on Video) and `preload` has different shapes (bool on `Image::picture()` — controls `<link rel="preload">` injection; string on `Video::render()` — passes through to the `<video preload>` HTML attribute, accepting `'none'` / `'metadata'` / `'auto'`). These asymmetries reflect that images and videos have genuinely different semantics, and renaming would break every existing call site for ergonomic-only gain. Don't try to unify them.
 
 ## REDAXO API gotchas (collected the hard way)
 
