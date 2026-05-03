@@ -5,6 +5,14 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Blurhash-Feature komplett entfernt.** `Image::blurhash($src)`, der `withBlurhashAttr()`-Builder-Step, das `data-blurhash`-Attribut, das `$blurhash`-Feld auf `ResolvedImage`, der Compute-Pfad in `MetadataReader` (inkl. `kornrunner/blurhash`-Dependency und vendor-Verzeichnis), das Blurhash-Fieldset im **Placeholder**-Settings-Tab, der Blurhash-Eintrag in der Meta-Cache-TTL-Notice (`pages/settings.security.php`), die `massif_media_blurhash_legend`-Sprachzeile und die zugehörigen Tests sind weg. Bestehende `_meta/`-Sidecars enthalten noch einen unbenutzten `blurhash`-Key — harmlos, beim nächsten Schreiben fällt er weg. Stale `rex_config`-Zeilen (`blurhash_enabled`, `blurhash_components_x`, `blurhash_components_y`) bleiben liegen — kein Reader, kein Effekt. Der bisherige `composer update`-Schritt zog auch eine transitive `intervention/image` 3.11.7 → 3.11.8 mit.
+
+### Changed
+
+- **LQIP-Default `blur` auf `5` (vorher `40`).** Liefert eine merklich softere Inline-Vorschau. Installs, die den Wert nie über die Settings-Seite gesetzt haben, sehen automatisch das neue Verhalten — bestehende `_lqip/`-Cache-Dateien sind aber nach altem Wert generiert; einmal `Cache leeren`, damit sie neu berechnet werden.
+
 ### Fixed
 
 - **Checkbox-Settings (LQIP, Blurhash, CDN) ließen sich nicht von der UI aktivieren.** `rex_config_form::addCheckboxField` speichert getickte Checkboxen pipe-delimited (`'|1|'`), weil eine Checkbox-Gruppe mehrere Optionen halten kann. Die alten Reader (`Config::lqipEnabled` / `blurhashEnabled` / `cdnEnabled`) machten `(bool) (int) self::get(...)` — PHP int-castet `'|1|'` zu `0`, was die User-Aktivierung still wieder auf "aus" geflippt hat. Symptom: Box gehakt, gespeichert, kein LQIP / Blurhash / CDN-Output. Fix: neuer `Config::checkboxBool()` Helper geht direkt an `rex_config::get` (bypasst die Default-Fallback-Logik von `Config::get`, die einen User-Untick als "fehlend" behandelt und stattdessen das Default zurückgibt — wodurch sich eine Default-on Setting nicht abschalten ließe), strippt Pipes, dann int-castet. Drei Reader umgestellt. Tests in `tests/Unit/ConfigTest.php` locken die drei Storage-Shapes (`'|1|'`, `''`, plain int) ein. Gotcha in CLAUDE.md dokumentiert, damit künftige Checkbox-Settings nicht in dieselbe Falle treten.
