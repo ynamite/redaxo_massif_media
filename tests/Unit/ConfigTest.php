@@ -66,7 +66,7 @@ final class ConfigTest extends TestCase
         // been written (no rex_config::set call), the DEFAULTS path must run.
         self::assertTrue(Config::lqipEnabled());      // DEFAULTS[KEY_LQIP_ENABLED] = 1
         self::assertFalse(Config::cdnEnabled());      // DEFAULTS[KEY_CDN_ENABLED] = 0
-        self::assertFalse(Config::colorEnabled());    // DEFAULTS[KEY_COLOR_ENABLED] = 0
+        self::assertTrue(Config::colorEnabled());     // DEFAULTS[KEY_COLOR_ENABLED] = 1
     }
 
     public function testCheckboxBoolDistinguishesNeverWrittenFromExplicitNull(): void

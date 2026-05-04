@@ -430,7 +430,9 @@ final class PictureRendererTest extends TestCase
 
     public function testColorDisabledOmitsBackgroundColor(): void
     {
-        // Default state: KEY_COLOR_ENABLED = 0 (no seeding).
+        // KEY_COLOR_ENABLED defaults on; explicitly disable for this test.
+        rex_config::set(Config::ADDON, Config::KEY_COLOR_ENABLED, null);
+
         $html = $this->renderer()->render($this->image(), alt: 'x');
 
         self::assertStringNotContainsString('background-color', $html);

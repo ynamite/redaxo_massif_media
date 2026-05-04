@@ -46,7 +46,7 @@ final class Config
         self::KEY_LQIP_WIDTH => 32,
         self::KEY_LQIP_BLUR => 5,
         self::KEY_LQIP_QUALITY => 40,
-        self::KEY_COLOR_ENABLED => 0,
+        self::KEY_COLOR_ENABLED => 1,
         self::KEY_CDN_ENABLED => 0,
         self::KEY_CDN_BASE => '',
         self::KEY_CDN_URL_TEMPLATE => '',

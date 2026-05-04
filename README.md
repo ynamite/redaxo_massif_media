@@ -377,11 +377,11 @@ Animierte GIFs sind typischerweise 2–3× so groß wie das äquivalente animier
 
 Browser, die WebP unterstützen (alle aktuellen — seit Safari 14 universal), holen die WebP-Variante; ältere Browser bekommen das GIF. Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)` (Glides Standard-Encoder behält nur das erste Frame, deshalb läuft dieser Pfad an Glide vorbei). Die WebP-Variante wird einmalig pro Source generiert (kein Multi-Width-Pool — animierte WebPs sind die volle Quellgröße). Cache liegt unter `cache/{src}/animated.webp`. Erfordert Imagick mit WebP-Delegate; ohne sie wird die WebP-Source still weggelassen und der Browser bekommt nur das GIF. **Im CDN-Modus** entfällt der Wrapper komplett (das CDN macht die Encoding-Arbeit nicht für uns).
 
-### Dominante Farbe (optional, deaktiviert per Default)
+### Dominante Farbe (per Default aktiv)
 
-Alternative oder Ergänzung zu LQIP: **Dominante Farbe** berechnet aus der Quelle eine einzelne repräsentative Hex-Farbe und setzt sie als `background-color` im selben `style`-Attribut. Vorteile gegenüber LQIP allein: ~7 Bytes statt ~600 Bytes pro Bild, kein Decode-Roundtrip, sofort sichtbar — der Browser kann die Farbe noch vor dem ersten Repaint zeichnen.
+Auf neuen Installationen ist **Dominante Farbe** standardmäßig an. Berechnet aus der Quelle eine einzelne repräsentative Hex-Farbe und setzt sie als `background-color` im `style`-Attribut. ~7 Bytes statt ~600 Bytes pro Bild gegenüber reinem LQIP, kein Decode-Roundtrip, sofort sichtbar — der Browser zeichnet die Farbe noch vor dem ersten Repaint.
 
-Lässt sich **kombiniert** mit LQIP einsetzen: die Farbe paint zuerst, das LQIP-Bild überlagert sie sobald dekodiert, die fertige Variante überschreibt schließlich beides. Sinnvolle Reihenfolge im Style-Attribut wird vom Renderer garantiert. Aktivieren per Checkbox auf dem **Placeholder**-Tab.
+Lässt sich **kombiniert** mit LQIP einsetzen (Default): die Farbe paint zuerst, das LQIP-Bild überlagert sie sobald dekodiert, die fertige Variante überschreibt schließlich beides. Sinnvolle Reihenfolge im Style-Attribut wird vom Renderer garantiert. Deaktivieren per Checkbox auf dem **Placeholder**-Tab.
 
 Berechnung: Imagick `quantizeImage(1, COLORSPACE_SRGB)` auf einer 50 px breiten Working-Copy — sub-20ms auf üblichen Foto-Größen, ergibt einen 1-Pixel-äquivalenten Mittelwert. Cache liegt unter `cache/_color/<2-char>/<xxh64>.txt`. Erfordert die `imagick`-PHP-Extension; ohne sie wird die Farbe still übersprungen.
 
@@ -398,7 +398,7 @@ Alle Einstellungen sind über die Backend-Seite **AddOns → MASSIF Media → Ei
 | `image_sizes` | `[16, 32, 48, 64, 96, 128, 256, 384]` | Kleine Breakpoints (next/image) |
 | `default_sizes` | `(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw` | Default `sizes` Attribut |
 | `lqip_*` | aktiviert, 32 px, blur 5, q 40 | LQIP-Tuning |
-| `color_enabled` | deaktiviert | Dominante Farbe als `background-color` (kombinierbar mit LQIP) |
+| `color_enabled` | aktiviert | Dominante Farbe als `background-color` (kombinierbar mit LQIP) |
 | `cdn_*` | deaktiviert | CDN-Override (Base + Template) |
 
 ## URL-Schema
