@@ -771,6 +771,17 @@ Technisch wird dafür PHP `FILTER_VALIDATE_BOOLEAN` verwendet.
 
 Fehlt ein Attribut komplett, greift der Default aus `Video::render()`. Das ist bewusst nicht direkt in `REX_VIDEO` verdoppelt, damit API-Default-Wechsel nahtlos auch auf bestehende Slice-Inhalte wirken können.
 
+### Hinweise zu `poster`
+
+Der `poster`-Wert wird vor dem Rendern validiert:
+
+- **Volle URLs** (`https://...`, `http://...`, `//cdn...`), **absolute Pfade** (`/assets/...`) und **Data-URIs** (`data:image/...`) werden unverändert durchgereicht — Remote-Existenz wird nicht geprüft.
+- **Blosser Mediapool-Filename** (`hero-still.jpg`): wenn die Datei nicht unter `rex_path::media($poster)` lesbar ist und auch keinen `rex_media`-Eintrag hat, wird das `poster`-Attribut komplett weggelassen und der Vorfall via `rex_logger` geloggt. Das verhindert einen Layout-Kollaps in WebKit / Blink (siehe Hintergrund unten).
+
+**Hintergrund:** Browser handhaben einen kaputten `<video poster>`-URL inkonsistent. WebKit / Blink behalten die 0×0-Box des broken-image-Status als Intrinsic-Size des Video-Elements, bis die Video-Metadaten geladen sind — das Element kollabiert auf null Höhe, solange kein `width` / `height` gesetzt ist. Die HTML5-Spec verlangt eigentlich Fallback zu "no poster"-Verhalten, aber Engines divergieren. Sicherer ist: keine `poster`-Attribute emittieren, von denen wir wissen dass sie kaputt sind.
+
+**Empfehlung:** Setze für robustes Layout immer `width` und `height` (oder `aspect-ratio` via CSS), unabhängig vom Poster-Status. Für responsive Poster aus dem Mediapool siehe das `as="url"`-Pattern in der REX_PIC-Doku — `REX_VIDEO[poster="REX_PIC[src='hero.jpg' width='1280' as='url']"]` liefert eine signierte URL aus der Glide-Pipeline.
+
 ---
 
 ## Scope und Performance von REX_VIDEO
