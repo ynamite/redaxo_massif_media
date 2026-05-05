@@ -1,12 +1,12 @@
 package: massif_media
-version: 1.0.0
+version: 1.0.0-beta
 author: Yves Torres
 supportpage: massif.ch
 
 requires:
-  redaxo: '^5.13.0'
+  redaxo: "^5.13.0"
   php:
-    version: '>=8.2'
+    version: ">=8.2"
 
 installer_ignore:
   - .DS_Store
@@ -18,19 +18,19 @@ installer_ignore:
   - _legacy_reference
 
 page:
-  title: 'MASSIF Media'
+  title: "MASSIF Media"
   perm: massif_media[]
   icon: rex-icon fa-image
   subpages:
     settings:
-      title: 'Einstellungen'
+      title: "Einstellungen"
       icon: rex-icon fa-cog
       subpages:
-        general: { title: 'Allgemein' }
-        placeholder: { title: 'Placeholder' }
-        cdn: { title: 'CDN' }
-        security: { title: 'Sicherheit & Cache' }
+        general: { title: "Allgemein" }
+        placeholder: { title: "Placeholder" }
+        cdn: { title: "CDN" }
+        security: { title: "Sicherheit & Cache" }
     docs:
-      title: 'Dokumentation'
+      title: "Dokumentation"
       icon: rex-icon fa-book
       subPath: README.md

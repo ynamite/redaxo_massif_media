@@ -6,3 +6,6 @@
 node_modules/
 .phpunit.cache/
 .worktrees/
+.superpowers
+.claude
+docs

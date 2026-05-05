@@ -51,6 +51,7 @@ jobs:
             -x "docs/superpowers/*" \
             -x "*.log" \
             -x "*.DS_Store" \
+            -x "CLAUDE.md" \
             -x "*Thumbs.db"
 
       - name: Upload release asset
