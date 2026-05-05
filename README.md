@@ -431,6 +431,43 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String. Gerendert wird daraus
 
 ---
 
+### Single-URL-Modus mit `as="url"`
+
+Manchmal braucht man nicht das volle `<picture>`-Markup, sondern nur **eine einzelne URL** auf eine bestimmte Variante — zum Beispiel als `poster` für ein `REX_VIDEO`, in einem Open-Graph-`<meta>`-Tag, in einem CSS `background-image` oder in einer JS-Sprite-Logik.
+
+Mit dem Attribut `as="url"` wird statt `<picture>`-Markup nur die signierte URL einer einzelnen Variante zurückgegeben:
+
+```text
+REX_PIC[src="hero.jpg" width="1280" as="url"]
+```
+
+Wird zu (gekürzt):
+
+```text
+/assets/addons/massif_media/cache/hero.jpg/avif-1280-50.avif?s=…&v=…
+```
+
+Alle Crop- und Filter-Attribute funktionieren analog zum normalen Modus — `width`, `height`, `ratio`, `fit`, `focal`, `format`, `quality` und sämtliche Bildfilter (Brightness, Sharpen, Watermark etc.). Render-Attribute wie `alt`, `sizes`, `loading`, `decoding`, `fetchpriority`, `preload` und `class` werden im URL-Modus ignoriert (sie betreffen nur das `<img>`-Element).
+
+**Verschachtelung mit `REX_VIDEO`:** Der Platzhalter kann direkt als Wert eines anderen `REX_VAR`-Attributs verwendet werden — REDAXO löst verschachtelte `rex_var`-Aufrufe rekursiv auf. Damit lässt sich das HTML5-Limit "kein `srcset` für Video-Poster" elegant umgehen, indem aus der responsiven Pipeline eine sinnvolle Einzel-URL gewählt wird:
+
+```text
+REX_VIDEO[
+  src="hero.mp4"
+  poster="REX_PIC[src='hero-still.jpg' width='1280' as='url']"
+  width="1920"
+  height="1080"
+]
+```
+
+**Wichtig zum Cache-Rebuild:** `REX_PIC[…]` wird beim Article-Cache-Build in PHP-Code übersetzt und im Cache abgelegt. Bestehende Slices, die `REX_PIC` verwenden, profitieren erst vom neuen `as="url"`-Verhalten, nachdem der Article-Cache neu aufgebaut wurde — entweder über **System → Cache leeren** im Backend oder durch ein Versions-Update des Addons (das den Cache implizit invalidiert).
+
+**Cache-Sharing mit `<picture>`:** Die zurückgelieferte URL geht durch denselben Glide-Cache wie das `<picture>`-Markup — `as="url"` mit denselben Parametern wie eine Variante im normalen Modus liefert die identische On-Disk-Cache-Datei. Kein zweiter Cache, keine Duplikation.
+
+**SVG / GIF:** Wie im normalen Modus liefert das Addon für Passthrough-Quellen die rohe Mediapool-URL zurück — `width`, `format` und Filter werden still ignoriert.
+
+---
+
 ## REX_PIC Attribute
 
 | Attribut        | Typ    | Default                                         | Beschreibung                                                        |
@@ -448,6 +485,9 @@ Der Editor sieht im WYSIWYG nur den `REX_PIC[…]` String. Gerendert wird daraus
 | `preload`       | bool   | `false`                                         | `"true"` injiziert ein `<link rel="preload">` in den `<head>`       |
 | `class`         | string | —                                               | CSS-Klasse(n) für `<img>` beziehungsweise `<picture>`               |
 | `fit`           | string | `cover`, wenn `ratio` oder `height` gesetzt ist | `cover`, `contain`, `stretch` oder `none`                           |
+| `as`            | string | — (volles `<picture>`-Markup)                   | Auf `"url"` setzen → liefert nur die signierte URL einer Variante zurück (siehe **Single-URL-Modus**) |
+| `format`        | string | erstes Format aus Settings → typischerweise AVIF | nur in Verbindung mit `as="url"`: `avif`, `webp` oder `jpg`        |
+| `quality`       | int    | aus Format-Settings                             | nur in Verbindung mit `as="url"`: `1..100`                          |
 
 Wichtig zu `width`:
 
