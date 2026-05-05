@@ -6,7 +6,6 @@ namespace Ynamite\Media\Pipeline;
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Fit;
-use Ynamite\Media\Glide\FitTokenBuilder;
 
 /**
  * Collects <link rel="preload"> entries during rendering.
@@ -61,33 +60,26 @@ final class Preloader
             }
             $useFormats = $entry['formats'] ?? $formats;
             $useSizes = $entry['sizes'] ?? $sizes;
-            $useWidths = $srcsetBuilder->build($image->intrinsicWidth, $entry['widths']);
-            if ($useWidths === []) {
+
+            $ctx = RenderContext::build(
+                image: $image,
+                width: $entry['width'],
+                height: $entry['height'],
+                ratio: $entry['ratio'],
+                fit: $entry['fit'] ?? null,
+                widthsOverride: $entry['widths'],
+                srcsetBuilder: $srcsetBuilder,
+            );
+            if ($ctx->widths === []) {
                 continue;
             }
 
             // Preload only the most-preferred (first) format — typically AVIF.
             $primaryFormat = strtolower((string) ($useFormats[0] ?? 'jpg'));
             $primaryQuality = $entry['quality'][$primaryFormat] ?? null;
-
-            $effectiveRatio = $entry['ratio'];
-            if ($effectiveRatio === null && ($entry['height'] ?? 0) > 0 && ($entry['width'] ?? 0) > 0) {
-                $effectiveRatio = $entry['width'] / $entry['height'];
-            }
-            $fit = $entry['fit'] ?? null;
-            $fitToken = null;
-            if ($fit !== null && $fit !== Fit::NONE && $effectiveRatio !== null) {
-                $fitToken = FitTokenBuilder::build($fit, $image->focalPoint);
-            }
             $filterParams = $entry['filterParams'] ?? [];
 
-            $srcsetParts = [];
-            foreach ($useWidths as $w) {
-                $h = ($effectiveRatio !== null && $fitToken !== null) ? (int) round($w / $effectiveRatio) : null;
-                $url = $urlBuilder->build($image, $w, $primaryFormat, $primaryQuality, $h, $fitToken, $filterParams);
-                $srcsetParts[] = $url . ' ' . $w . 'w';
-            }
-            $imageSrcset = implode(', ', $srcsetParts);
+            $imageSrcset = $ctx->buildSrcset($urlBuilder, $image, $primaryFormat, $primaryQuality, $filterParams);
 
             $mime = $primaryFormat === 'jpg' ? 'image/jpeg' : 'image/' . $primaryFormat;
             // fetchpriority="high" satisfies Lighthouse's "LCP request discovery"
