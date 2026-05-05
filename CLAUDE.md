@@ -40,6 +40,7 @@ lib/
 │   ├── AnimatedWebpEncoder.php            # bypasses Glide (single-frame encoder) — Imagick coalesce + writeImages(adjoin=true) for animated-GIF → animated-WebP. Single intrinsic-width variant per source; cache path `{src}/animated.webp`.
 │   ├── CacheStats.php                     # recursive du + per-kind categorisation (meta / lqip / color / animated / variants), 5-min memoized to `cache/_stats.json`. Drives the Sicherheit & Cache backend panel.
 │   ├── CacheInvalidator.php               # per-asset cache wipe — fires on MEDIA_UPDATED / MEDIA_DELETED so focal-point edits reflect on next render without nuking the global cache. Removes `cache/{filename}/`, the `_meta` / `_lqip` / `_color` sidecars at the *current* mtime hash. File-replacement leaves a tiny orphan under the old hash (accepted; documented).
+│   ├── RenderContext.php                  # readonly VO: shared render-state resolution (effectiveRatio, fitToken, effectiveMaxWidth, widths). Built once per render entry; consumed by both PictureRenderer and Preloader so URLs string-match.
 │   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
 ├── View/{Picture,Passthrough}Renderer.php # full HTML emission
 ├── Glide/                                 # league/glide integration
