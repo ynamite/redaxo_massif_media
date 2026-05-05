@@ -101,6 +101,25 @@ final class RexVideoTest extends TestCase
         self::assertStringNotContainsString('playsinline:', $code);
     }
 
+    public function testGetOutputEmitsLinkPreloadAsCamelCaseBool(): void
+    {
+        // REX_VIDEO attr is lowercase `linkpreload`; the Video::render() param
+        // is camelCase `linkPreload`. The RexVideo bridge has to translate.
+        $codeTrue = $this->buildOutput(['src' => 'hero.mp4', 'linkpreload' => 'true']);
+        $codeFalse = $this->buildOutput(['src' => 'hero.mp4', 'linkpreload' => 'false']);
+        $codeMissing = $this->buildOutput(['src' => 'hero.mp4']);
+
+        self::assertIsString($codeTrue);
+        self::assertIsString($codeFalse);
+        self::assertIsString($codeMissing);
+        self::assertStringContainsString('linkPreload: true', $codeTrue);
+        self::assertStringContainsString('linkPreload: false', $codeFalse);
+        // Missing attribute → nothing emitted, so Video::render()'s default
+        // (`linkPreload: false`) takes effect at call time.
+        self::assertStringNotContainsString('linkPreload', $codeMissing);
+        self::assertStringNotContainsString('linkpreload', $codeMissing);
+    }
+
     public function testGetOutputCombinesEverything(): void
     {
         $code = $this->buildOutput([

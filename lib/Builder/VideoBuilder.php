@@ -13,6 +13,7 @@ use RuntimeException;
 use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Loading;
+use Ynamite\Media\Pipeline\Preloader;
 
 final class VideoBuilder
 {
@@ -27,6 +28,7 @@ final class VideoBuilder
     private bool $controls = true;
     private bool $playsinline = true;
     private string $preload = 'metadata';
+    private bool $linkPreload = false;
     private Loading $loading = Loading::LAZY;
     private ?string $class = null;
 
@@ -100,6 +102,30 @@ final class VideoBuilder
         return $this;
     }
 
+    /**
+     * Inject `<link rel="preload">` entries into the page `<head>` for this
+     * video and (when present and preloadable) its poster.
+     *
+     * Orthogonal to `preload()` — that's the HTML `<video preload>` attribute,
+     * which controls whether the browser prefetches metadata / data after the
+     * `<video>` element is parsed. `linkPreload` runs the preload during the
+     * head-parse phase, before the body. Set both to `true` / `'auto'` for
+     * above-the-fold hero videos where the LCP is the video.
+     *
+     * Poster preload semantics are conservative: only posters that are URLs
+     * (`://`), absolute paths, or data URIs are preloaded. Bare-filename
+     * posters (which the browser would resolve relative to the page URL —
+     * a known asymmetry tracked as a v2 candidate) are skipped silently to
+     * avoid emitting a preload URL that doesn't match what `<video poster>`
+     * actually fetches. The recipe for a responsive Mediapool poster URL is
+     * `Image::url(...)` (or `REX_PIC[as=url]`).
+     */
+    public function linkPreload(bool $on = true): self
+    {
+        $this->linkPreload = $on;
+        return $this;
+    }
+
     public function loading(Loading|string $loading): self
     {
         $this->loading = is_string($loading) ? Loading::from($loading) : $loading;
@@ -132,6 +158,10 @@ final class VideoBuilder
         $mtime = (int) (filemtime($absPath) ?: 0);
         $url = $this->buildUrl($filename, $mtime);
 
+        $validatedPoster = ($this->poster !== null && $this->poster !== '')
+            ? self::validatePoster($this->poster)
+            : null;
+
         $attrs = [];
         if ($this->class !== null && $this->class !== '') {
             $attrs['class'] = $this->class;
@@ -142,16 +172,20 @@ final class VideoBuilder
         if ($this->height !== null) {
             $attrs['height'] = (string) $this->height;
         }
-        if ($this->poster !== null && $this->poster !== '') {
-            $valid = self::validatePoster($this->poster);
-            if ($valid !== null) {
-                $attrs['poster'] = $valid;
-            }
+        if ($validatedPoster !== null) {
+            $attrs['poster'] = $validatedPoster;
         }
         if ($this->alt !== null && $this->alt !== '') {
             $attrs['aria-label'] = $this->alt;
         }
         $attrs['preload'] = $this->preload;
+
+        if ($this->linkPreload) {
+            Preloader::queueLink($url, 'video', self::videoMimeType($ext));
+            if ($validatedPoster !== null && self::isPosterPreloadable($validatedPoster)) {
+                Preloader::queueLink($validatedPoster, 'image');
+            }
+        }
 
         $bools = [];
         if ($this->controls) {
@@ -216,6 +250,48 @@ final class VideoBuilder
      * be a behaviour change for users who currently pass same-folder
      * relative paths and rely on browser-relative URL resolution.
      */
+    /**
+     * Map a video filename extension to its preload `<link type>` MIME.
+     *
+     * Returning null (unknown extension) tells the caller to omit `type=` —
+     * browsers accept the preload without it; emitting a wrong MIME would
+     * cause the preload to be ignored.
+     *
+     *   mp4 / m4v → video/mp4 (m4v is technically MPEG-4 Visual but every
+     *               container that uses .m4v extension carries an MP4 stream)
+     *   webm      → video/webm
+     *   ogv / ogg → video/ogg
+     *   mov       → video/quicktime  (NOT video/mov — that's not a registered MIME
+     *               and Safari's preload scheduler ignores it)
+     */
+    private static function videoMimeType(string $ext): ?string
+    {
+        return match (strtolower($ext)) {
+            'mp4', 'm4v' => 'video/mp4',
+            'webm' => 'video/webm',
+            'ogv', 'ogg' => 'video/ogg',
+            'mov' => 'video/quicktime',
+            default => null,
+        };
+    }
+
+    /**
+     * Only preload posters whose URL the browser will actually fetch the way
+     * we emit it. Bare-filename posters (passed validatePoster() because the
+     * mediapool entry exists) get rendered as `<video poster="hero.jpg">`,
+     * which the browser resolves relative to the page URL — almost never
+     * what the user wants, and emitting a `<link rel="preload">` for the
+     * Mediapool URL would create an inconsistent fetch. The user should
+     * route through `Image::url()` / `REX_PIC[as=url]` for the responsive
+     * recipe.
+     */
+    private static function isPosterPreloadable(string $poster): bool
+    {
+        return str_contains($poster, '://')
+            || str_starts_with($poster, '/')
+            || str_starts_with($poster, 'data:');
+    }
+
     private static function validatePoster(string $poster): ?string
     {
         if (

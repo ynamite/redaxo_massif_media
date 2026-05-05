@@ -14,7 +14,7 @@ use rex_var;
  *   REX_VIDEO[src="hero.mp4" poster="hero.jpg" autoplay="true" muted="true" loop="true"]
  *
  * Recognized attributes: src (required), poster, width, height, alt, class,
- * preload, loading, autoplay, muted, loop, controls, playsinline.
+ * preload, loading, autoplay, muted, loop, controls, playsinline, linkpreload.
  *
  * Substitution happens during article cache generation (REDAXO core's
  * `replaceObjectVars` calls `rex_var::parse` per slice). The PHP expression
@@ -43,14 +43,23 @@ final class RexVideo extends rex_var
             }
         }
 
-        // Bool attrs: emit only when present, so Video::render()'s asymmetric
-        // defaults (autoplay/muted/loop default false; controls/playsinline
-        // default true) survive when the editor omits the attribute.
+        // Bool attrs where rex_var name == Video::render() param name. Emit
+        // only when present, so Video::render()'s asymmetric defaults
+        // (autoplay/muted/loop default false; controls/playsinline default
+        // true) survive when the editor omits the attribute.
         foreach (['autoplay', 'muted', 'loop', 'controls', 'playsinline'] as $key) {
             $raw = $this->getArg($key);
             if ($raw !== null) {
                 $args[] = $key . ': ' . (filter_var($raw, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false');
             }
+        }
+
+        // REX_VAR attribute names are lowercase (REDAXO convention); the
+        // matching Video::render() param is camelCase. Hand-mapped because
+        // it's the only multi-word bool today.
+        $linkPreloadRaw = $this->getArg('linkpreload');
+        if ($linkPreloadRaw !== null) {
+            $args[] = 'linkPreload: ' . (filter_var($linkPreloadRaw, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false');
         }
 
         return '\\Ynamite\\Media\\Video::render(' . implode(', ', $args) . ')';

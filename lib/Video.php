@@ -29,6 +29,7 @@ class Video
         string $preload = 'metadata',
         Loading|string $loading = Loading::LAZY,
         ?string $class = null,
+        bool $linkPreload = false,
     ): string {
         $b = self::for($src);
         if ($poster !== null) {
@@ -53,6 +54,9 @@ class Video
             $b->loop();
         }
         $b->controls($controls)->playsinline($playsinline)->preload($preload)->loading($loading);
+        if ($linkPreload) {
+            $b->linkPreload();
+        }
         if ($class !== null) {
             $b->class($class);
         }
