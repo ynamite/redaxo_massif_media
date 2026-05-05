@@ -2,158 +2,472 @@
 
 Guidance for Claude Code working in this repository.
 
-## What this is
+## Project
 
-**MASSIF Media** — a standalone REDAXO 5 addon (`package: massif_media`, PHP namespace `Ynamite\Media\` → `lib/`) for responsive image and video rendering. Greenfield, separated from the original `redaxo-massif` kitchen-sink addon.
+**MASSIF Media** is a standalone REDAXO 5 addon for responsive image and video rendering.
 
-Design spec: `/Users/yvestorres/.claude/plans/this-directory-is-a-luminous-candy.md`.
+- REDAXO package: `massif_media`
+- PHP namespace: `Ynamite\Media\` → `lib/`
+- Baseline: PHP 8.2+
+- Origin: split out from the old `redaxo-massif` kitchen-sink addon
+- Coexists with `redaxo-massif`; there is **no migration shim**
+  - legacy projects keep using `Ynamite\Massif\Media\...`
+  - new code uses `Ynamite\Media\...`
 
-The addon **coexists with `redaxo-massif`**. There's no migration shim — old call sites in legacy projects keep using `Ynamite\Massif\Media\...` from `redaxo-massif`; new code uses `Ynamite\Media\...` from this addon.
+Design spec, if needed: `/Users/yvestorres/.claude/plans/this-directory-is-a-luminous-candy.md`.
 
-## What it does
+## Product scope
 
-- Emits modern `<picture>` markup (AVIF/WebP/JPG) with browser-side format negotiation. SVG/GIF passthrough.
-- On-demand resizing via `league/glide` (Imagick driver, sRGB normalization manipulator).
-- Cache lives at `rex_path::addonAssets('massif_media', 'cache/')`. Cache misses are served by a `PACKAGES_INCLUDED` (EARLY) hook in REDAXO's frontend — no addon-specific webserver config required. Optional `.htaccess` / nginx snippet serve cache hits directly for the fastpath.
-- HMAC-SHA256 signed URLs prevent disk-fill abuse.
-- Optional CDN override (ImageKit / Cloudinary / Imgix template).
-- Tabbed backend settings page under **AddOns → MASSIF Media → Einstellungen** (sub-tabs: Allgemein / Placeholder / CDN / Sicherheit & Cache).
-- Documentation tab under **AddOns → MASSIF Media → Dokumentation** that renders `README.md` directly via `subPath:` in `package.yml`.
-- `REX_PIC[src="..." alt="..." ...]` and `REX_VIDEO[src="..." poster="..." ...]` placeholders via native `rex_var`s for content editors. Substitution happens at article-cache-build time, not on every render.
-- Preload via `<link rel="preload">` injected into `<head>` via `OUTPUT_FILTER`.
-- Focal-point support via the optional `focuspoint` addon's `med_focuspoint` field.
+The addon provides:
 
-## Architecture
+- modern `<picture>` output with AVIF/WebP/JPG browser negotiation
+- SVG/GIF passthrough
+- responsive video rendering
+- on-demand resizing through `league/glide` with Imagick
+- HMAC-signed cache URLs to prevent disk-fill abuse
+- optional CDN URL generation for ImageKit / Cloudinary / Imgix-style templates
+- optional external HTTPS image sources with SSRF protection, local origin caching, TTL, and conditional GET
+- LQIP placeholders, dominant colour extraction, focal-point support, and preload injection
+- backend settings under **AddOns → MASSIF Media → Einstellungen**
+- backend docs under **AddOns → MASSIF Media → Dokumentation**, rendered from `README.md`
+- editor-facing `REX_PIC[...]` and `REX_VIDEO[...]` placeholders via native `rex_var`
 
+## Core invariants
+
+Do not casually change these. They are load-bearing.
+
+### Public API
+
+- `Image::picture()` returns `<picture>` markup.
+- `Image::url()` returns a single generated image URL for posters, OG tags, CSS backgrounds, etc.
+- `Video::render()` returns `<video>` markup.
+- The image and video APIs are intentionally asymmetric:
+  - `Image::picture(..., preload: bool)` controls head preload injection.
+  - `Video::render(..., preload: 'none|metadata|auto', linkPreload: bool)` separates the HTML `preload` attribute from `<link rel="preload">`.
+- Do not unify these names or parameter shapes for aesthetics; that would break call sites and semantics.
+
+### Source model
+
+All image input flows through `SourceInterface`:
+
+```php
+key(): string
+absolutePath(): string
+cacheBust(): string
+isExternal(): bool
 ```
+
+Every cache key, URL, placeholder, colour, endpoint, and metadata read must be based on `source.key()` plus `source.cacheBust()`. Do not reintroduce filename/mtime-only logic.
+
+Supported source types:
+
+- mediapool file / `rex_media` → `MediapoolSource`
+- HTTPS URL → `ExternalSource`
+
+### Cache routing
+
+Cache URL routing is self-contained.
+
+- Runtime cache path: `rex_path::addonAssets('massif_media', 'cache/')`
+- Cache misses are handled by `Glide\RequestHandler` via `PACKAGES_INCLUDED` with `rex_extension::EARLY`.
+- The addon must work without `.htaccess` or nginx config.
+- Apache/nginx snippets are optional fastpaths for cache hits only.
+- When adding support for another web server, prefer the PHP hook. Only add server config for proven cache-hit performance wins.
+
+Request-handler pattern:
+
+1. return immediately in backend
+2. cheaply check URI prefix first
+3. clean output buffers
+4. `session_abort()`
+5. handle response
+6. `exit`
+
+### Cache path shapes
+
+Endpoint parsing must keep supporting all four shapes:
+
+```text
+{src}/{fmt}-{w}-{q}.{ext}
+{src}/{fmt}-{w}-{h}-{fitToken}-{q}.{ext}
+{src}/{fmt}-{w}-{q}-f{hash}.{ext}
+{src}/{fmt}-{w}-{h}-{fitToken}-{q}-f{hash}.{ext}
+```
+
+Rules:
+
+- `{src}` is the asset key / directory part.
+- `fitToken` is `cover-{X}-{Y}`, `contain`, or `stretch`.
+- filter hash comes from `CacheKeyBuilder::hashFilterParams()`.
+- filter blob for `&f=` comes from `CacheKeyBuilder::encodeFilterBlob()`.
+- fit/focal token logic comes from `FitTokenBuilder`.
+- Do not duplicate these formulas elsewhere.
+
+### External URLs
+
+External images are cached under:
+
+```text
+cache/_external/<urlHash>/
+```
+
+- `_external/` is reserved and structurally safe: REDAXO mediapool filenames cannot start with `_`.
+- External sources bypass the CDN branch; the upstream may already be a CDN.
+- Use a per-bucket Glide server via `Server::createForExternal($source)`.
+- `ExternalManifest` is the source of truth for URL, ETag, Last-Modified, fetchedAt, and TTL.
+- `ExternalSourceFactory::resolveByHash()` is the endpoint read path and must not perform network IO.
+- Conditional GET `304` must still bump `fetchedAt`.
+- External fetch is synchronous on first render / expired TTL. Keep this trade-off unless a queue/placeholder system is introduced.
+
+### Rendering order
+
+For `<picture>` output:
+
+- art-direction `<source media="...">` entries must come **before** default format sources
+- the fallback `<img>` always uses the default variant
+- builder-level filters do **not** cascade into art-direction variants; each art variant owns its own `filterParams`
+
+## Directory map
+
+```text
 lib/
-├── Image.php, Pic.php, Video.php          # public API: static one-liners + ::for() builders. `Image::url()` is the single-URL escape hatch (no `<picture>` markup) for `<video poster>` / OG tags / CSS bg-image — shares the Glide cache file with the matching `picture()` variant of the same width / format / quality. Accepts mediapool filename, rex_media, OR HTTPS URL (string with `://` routes to the external pipeline).
-├── Builder/{Image,Video}Builder.php       # fluent builders. `ImageBuilder->art([…])` adds art-direction variants (one `<source media="…">` per format per variant before the default format-keyed sources).
-├── Source/                                # source polymorphism — replaces ResolvedImage's flat `sourcePath`/`absolutePath`/`mtime` triple
-│   ├── SourceInterface.php                # key()/absolutePath()/cacheBust()/isExternal() — the seam used by MetadataReader, UrlBuilder, Placeholder, DominantColor, Endpoint
-│   ├── MediapoolSource.php                # readonly: filename + absolutePath + mtime + optional rex_media (for med_focuspoint reads)
-│   ├── ExternalSource.php                 # readonly: url + hash (xxh64(url)[:16]) + absolutePath (`_external/<hash>/_origin.bin`) + fetchedAt + etag + remoteLastModified + ttlSeconds
-│   ├── MediapoolSourceFactory.php         # rex_media | filename → MediapoolSource (extracts existing `rex_path::media()` resolution)
-│   ├── ExternalSourceFactory.php          # url → ExternalSource. Owns: SsrfGuard validate → manifest read → conditional GET via HttpFetcher → manifest persist. `resolveByHash()` is the read-side companion used by Endpoint (no network IO).
-│   ├── ExternalManifest.php               # read/write `_manifest.json` sidecar (url + etag + lastModified + fetchedAt + ttl). Single source of truth for the `cache/_external/<hash>/` layout (bucketDir/originPath/manifestPath statics).
-│   ├── HttpFetcher.php                    # symfony/http-client wrapper — streaming GET into tmp+rename, conditional GET with If-None-Match/If-Modified-Since, max-bytes via on_progress, total timeout, max redirects. Test-injectable HttpClientInterface for MockHttpClient.
-│   ├── HttpFetchResult.php                # readonly: notModified flag + new etag + new lastModified
-│   └── SsrfGuard.php                      # pre-resolve host via gethostbynamel + reject loopback/private/link-local/CGNAT/multicast/broadcast IPv4. Returns [host, ipv4] for symfony's `'resolve'` option (CURLOPT_RESOLVE) — pins the connection to defeat DNS rebinding.
-├── Pipeline/                              # single-purpose units, composable
-│   ├── ImageResolver.php                  # rex_media | filename | URL → ResolvedImage. Thin dispatcher: `://` in string → ExternalSourceFactory, otherwise → MediapoolSourceFactory. Then MetadataReader::read.
-│   ├── MetadataReader.php                 # intrinsic dims + focal, cached in `_meta/<hash>.json`. Hash key = xxh64(source.key():source.cacheBust()) — same formula for both source types. `read(SourceInterface)` and `metaCachePath(SourceInterface)` (replaces (filename, mtime) signature).
-│   ├── ResolvedImage.php                  # readonly value object: SourceInterface $source + intrinsicWidth/Height + mime + sourceFormat + focalPoint + isAnimated. (Replaced flat sourcePath/absolutePath/mtime triple from v1.)
-│   ├── SrcsetBuilder.php                  # next/image dual-pool widths
-│   ├── UrlBuilder.php                     # signed Glide URL or CDN URL. Uses `$image->source->key()` for cache-path `<src>` and `->cacheBust()` for `&v=`. External sources bypass the CDN branch (upstream is already a CDN).
-│   ├── Placeholder.php                    # 32×32 base64 WebP LQIP via Glide (metadata stripping shared with all variants via StripMetadata; CACHE_VERSION-bound key for self-invalidation across encoding contract changes). cachePathFor(SourceInterface) keyed on source.key()+cacheBust().
-│   ├── DominantColor.php                  # single #rrggbb extracted via Imagick quantizeImage(1, COLORSPACE_SRGB) — independent of LQIP, paints first when both enabled. cachePathFor(SourceInterface).
-│   ├── AnimatedWebpEncoder.php            # bypasses Glide (single-frame encoder) — Imagick coalesce + writeImages(adjoin=true) for animated-GIF → animated-WebP. Mediapool only — UrlBuilder::buildAnimatedWebp short-circuits on isExternal(). cacheFile(string $sourceKey).
-│   ├── CacheStats.php                     # recursive du + per-kind categorisation (meta / lqip / color / animated / external / variants), 5-min memoized to `cache/_stats.json`. Drives the Sicherheit & Cache backend panel.
-│   ├── CacheInvalidator.php               # mediapool: invalidate(string $filename) — fires on MEDIA_UPDATED / MEDIA_DELETED so focal-point edits reflect on next render without nuking the global cache. Removes `cache/{filename}/`, the `_meta` / `_lqip` / `_color` sidecars at the *current* mtime hash. File-replacement leaves a tiny orphan under the old hash (accepted; documented). External: invalidateUrl(string $url) — TTL-driven naturally; manual call drops the entire `cache/_external/<hash>/` bucket.
-│   ├── RenderContext.php                  # readonly VO: shared render-state resolution (effectiveRatio, fitToken, effectiveMaxWidth, widths). `build()` for the responsive `<picture>` path; `resolveSingleVariant()` for the single-URL path (`Image::url()`). Both go through the private `deriveFitState()` helper so the `RATIO_EQUAL_EPSILON` short-circuit + COVER/CONTAIN width cap stay locked across paths — drift would mean `Image::url($w)` returns a URL that doesn't exist in the rendered `<picture srcset>`.
-│   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
-├── View/                                  # full HTML emission
-│   ├── PictureRenderer.php                # `<picture><source>...</picture>`. Optional `array $artVariants` param: emits per-variant `<source media="…" type="…" srcset="…">` before the default format-keyed sources (browser cascade picks the first match).
-│   ├── PassthroughRenderer.php            # SVG/GIF — emits raw mediapool URL or external URL (instanceof ExternalSource branch).
-│   └── ArtDirectionVariant.php            # readonly VO for one art-direction entry (media + src + width/height/ratio/focal/fit/filterParams). `fromArray()` is the array-shape constructor used by ImageBuilder->art() and the cached PHP emitted by RexPic.
-├── Glide/                                 # league/glide integration
-│   ├── Server.php                         # mediapool: `Server::create()` (source FS = `rex_path::media()`, cache FS = addon `cache/`). External: `Server::createForExternal($source)` — per-bucket Glide server with source FS + cache FS both rooted at `cache/_external/<hash>/`, `cachePathCallable` produces flat `<spec>.<ext>` (no path prefix under `_origin.bin`). Both share `cacheSpecWithExt()` so the spec format stays in lockstep across source types. `for(SourceInterface)` dispatches.
-│   ├── ColorProfile.php                   # custom manipulator (sRGB normalize via transformImageColorspace)
-│   ├── StripMetadata.php                  # custom manipulator (Imagick stripImage) — runs unconditionally for every variant; pairs with ColorProfile (after sRGB transform the embedded profile is stale, browser default = sRGB matches pixels)
-│   ├── CacheKeyBuilder.php                # filter-param hash + base64url blob (single source of truth for &f= and -f{hash})
-│   ├── Endpoint.php                       # cache-URL handler (HMAC verify + Glide makeImage + send). When parsed source begins with `_external/`, dispatches to `makeExternal()` which reads the manifest via ExternalSourceFactory::resolveByHash and invokes the per-bucket Glide server.
-│   ├── FilterParams.php                   # filter translation map + clamping + hex validation
-│   ├── FitTokenBuilder.php                # Fit + focal → 'cover-X-Y' / 'contain' / 'stretch' (single source of truth)
-│   ├── RequestHandler.php                 # PACKAGES_INCLUDED hook → Endpoint::handle for self-contained routing
-│   └── Signature.php                      # HMAC sign + verify (optional extraPayload arg). Unchanged for v2 — the external URL is implicitly bound by the cache path which now embeds `_external/<hash>`.
-├── Var/{RexPic,RexVideo}.php              # rex_var subclasses — REX_PIC[...] / REX_VIDEO[...] substitution at article-cache-build time. RexPic gains `art='[…]'` JSON attr (parsed via getArg, json_decode, allowlist key validation, emits `art: json_decode(<json>, true)` PHP literal).
-├── Config.php                             # rex_config wrapper + typed accessors. EXTERNAL_TTL_SECONDS / EXTERNAL_TIMEOUT_SECONDS / EXTERNAL_MAX_BYTES / EXTERNAL_HOST_ALLOWLIST live alongside the LQIP/CDN/sign-key keys.
-├── Enum/{Loading,Decoding,FetchPriority,Fit}.php
-└── Exception/ImageNotFoundException.php
+├── Image.php, Pic.php, Video.php
+├── Builder/
+│   ├── ImageBuilder.php
+│   └── VideoBuilder.php
+├── Source/
+│   ├── SourceInterface.php
+│   ├── MediapoolSource*.php
+│   ├── ExternalSource*.php
+│   ├── ExternalManifest.php
+│   ├── HttpFetcher.php
+│   └── SsrfGuard.php
+├── Pipeline/
+│   ├── ImageResolver.php
+│   ├── MetadataReader.php
+│   ├── ResolvedImage.php
+│   ├── SrcsetBuilder.php
+│   ├── UrlBuilder.php
+│   ├── Placeholder.php
+│   ├── DominantColor.php
+│   ├── AnimatedWebpEncoder.php
+│   ├── CacheStats.php
+│   ├── CacheInvalidator.php
+│   ├── RenderContext.php
+│   └── Preloader.php
+├── View/
+│   ├── PictureRenderer.php
+│   ├── PassthroughRenderer.php
+│   └── ArtDirectionVariant.php
+├── Glide/
+│   ├── Server.php
+│   ├── Endpoint.php
+│   ├── RequestHandler.php
+│   ├── Signature.php
+│   ├── CacheKeyBuilder.php
+│   ├── FitTokenBuilder.php
+│   ├── FilterParams.php
+│   ├── ColorProfile.php
+│   └── StripMetadata.php
+├── Var/
+│   ├── RexPic.php
+│   └── RexVideo.php
+├── Config.php
+├── Enum/
+└── Exception/
 
 pages/
-├── index.php                              # parent dispatcher (echoes title, includes current subpage)
-├── settings.php                           # settings tab dispatcher (includes current sub-subpage)
-├── settings.general.php                   # tab: formats, qualities, breakpoints, default sizes
-├── settings.placeholder.php               # tab: LQIP
-├── settings.cdn.php                       # tab: CDN config
-└── settings.security.php                  # tab: sign-key + cache-clear actions + TTLs
+├── index.php
+├── settings.php
+├── settings.general.php
+├── settings.placeholder.php
+├── settings.cdn.php
+└── settings.security.php
 ```
 
-**Cache-URL routing is self-contained**: `lib/Glide/RequestHandler.php` registers a `PACKAGES_INCLUDED` (EARLY) hook that catches `/assets/addons/massif_media/cache/…` URLs in REDAXO's frontend `index.php`, calls `Glide\Endpoint::handle()` and `exit`s. Works on every web server REDAXO itself runs on (Apache, nginx, Herd, Valet) without addon-specific server-config. `assets/.htaccess` is shipped as an optional Apache fastpath that serves cache **hits** directly (skipping the PHP boot); `assets/nginx.conf.example` is the equivalent for standalone nginx (per-site `server` block with own `root`). Both are pure performance optimization — the addon works without them.
+## Development conventions
 
-**Cache-path key has four shapes** depending on whether the request involves crop and/or filters: `{src}/{fmt}-{w}-{q}.{ext}` (legacy), `{src}/{fmt}-{w}-{h}-{fitToken}-{q}.{ext}` (crop), `{src}/{fmt}-{w}-{q}-f{hash}.{ext}` (filters), `{src}/{fmt}-{w}-{h}-{fitToken}-{q}-f{hash}.{ext}` (crop + filters). The cache layout is **asset-keyed** — source path is the directory portion (preserves any subdirectories from the mediapool layout), transform spec is the basename's stem. `fitToken` is `cover-{X}-{Y}` / `contain` / `stretch`. `{hash}` is the first 8 hex chars of `md5(json_encode(ksort($filterParams)))` — produced by `CacheKeyBuilder::hashFilterParams` (single source of truth; the matching base64url blob for the `&f=` query param comes from `CacheKeyBuilder::encodeFilterBlob`). `Endpoint::parseCachePath` accepts all four shapes; `Endpoint::handle` translates `cover-X-Y` to Glide's `crop-X-Y` at the boundary, and `Server::cachePath` normalizes the reverse direction so both call sites produce the same on-disk path — load-bearing for the static-direct fastpath on cache hits.
+- Use PHP 8.2+ features: `readonly`, enums, named args.
+- PSR-4 comes from `composer.json`.
+- Run `composer dump-autoload` after adding classes.
+- `vendor/` is committed so REDAXO Connect ZIP installs work without `composer install`.
+- Before committing release vendor changes, run `composer install --no-dev` and `bin/check-vendor`.
+- User-facing strings are German.
+- Code identifiers are English.
+- Defaults should be good enough that most installs do not touch settings.
+- Keep `README.md`, `CHANGELOG.md`, and `CLAUDE.md` in sync with code/convention changes.
 
-**Common operation: add the cache-URL routing to a new web-server type** — don't add web-server config files. Trust the `PACKAGES_INCLUDED` hook. Only add a `.htaccess` / nginx-snippet if there's a measurable cache-hit fastpath win on that environment.
+## Tests
 
-## Conventions
+Commands:
 
-- **PHP 8.2+** baseline. Uses `readonly` value objects, enums, named args.
-- **PSR-4** via `composer.json`. Run `composer dump-autoload` after adding new files.
-- **`vendor/` is committed** so REDAXO Connect ZIP installs work without `composer install`.
-- **Tests live under `tests/`** (PHPUnit ^11). Run `composer test` (full), `composer test:unit` (fast, no Glide / FS), `composer test:integration` (Glide + temp FS, slower). Every new pure-logic function gets a unit test in `tests/Unit/` mirroring the source layout. Every new public-API entry point gets at least one integration test in `tests/Integration/`. Manual verification on `~/Herd/viterex-installer-default/` remains the gate for the REDAXO frontend boot path (`RequestHandler::handle`, `OUTPUT_FILTER` preload injection, the backend Documentation tab) — those layers are deliberately not unit-tested.
-- **German for user-facing strings** (lang file, README, settings page legends, log messages).
-- **English for code identifiers** (class names, method names, vars).
-- **Defaults shipped**: most installs don't need to touch the settings page.
-- **Settings pages follow the viterex pattern** (see `~/Repositories/viterex/viterex-addon/pages/settings.php`): each tab is a self-contained PHP page that builds a `rex_config_form`, wraps it in a `rex_fragment('core/page/section.php')`, and echoes — no shared SettingsPage class.
-- **Always keep `README.md`, `CHANGELOG.md`, and this `CLAUDE.md` in sync** with code/convention changes. Each as its own commit. (See feedback memory.)
-- **`Image::picture()` and `Video::render()` use different verb names on purpose.** `Image::picture()` is named after the `<picture>` element it returns; `Video::render()` returns `<video>` and `picture()` would be misleading. The argument lists also differ in order (`alt` is 2nd on Image, 5th on Video) and `preload` has different shapes — bool on `Image::picture()` (controls `<link rel="preload">` injection); string on `Video::render()` (passes through to the `<video preload>` HTML attribute, accepting `'none'` / `'metadata'` / `'auto'`). For Video, `<link rel="preload">` injection is a SEPARATE bool param `linkPreload` (added later for LCP-hero-video cases), not folded into `preload`. The split is deliberate: the HTML `preload` attribute and the head-injected preload link control different phases (post-body fetch vs. head-parse fetch); for an above-the-fold hero video both should be set (`preload: 'auto'`, `linkPreload: true`). Image's `preload: bool` does both at once because there's no separate HTML attribute — for a `<picture>` LCP, the same flag triggers both behaviours. These asymmetries reflect that images and videos have genuinely different semantics, and renaming would break every existing call site for ergonomic-only gain. Don't try to unify them.
+```bash
+composer test              # full suite
+composer test:unit         # fast, no Glide / FS
+composer test:integration  # Glide + temp FS, slower
+```
 
-## REDAXO API gotchas (collected the hard way)
+Expectations:
 
-- **`pages/index.php` is required** when the addon declares `subpages:` in `package.yml`. Without it, REDAXO throws "page path 'pages/index.php' neither exists as standalone path nor as package subpath" on the parent route. Pattern: echo title + `rex_be_controller::includeCurrentPageSubPath()`.
-- **`pages/settings.php` for nested subpages** does the same dispatch — when settings has its own subpages (Allgemein/Placeholder/…), `pages/settings.php` calls `includeCurrentPageSubPath()` and the sub-tab files are `pages/settings.{name}.php` (dot-separated, phpmailer convention).
-- **`subPath: README.md` in `package.yml` subpages** renders a Markdown file as the page body — no PHP page file needed. Used for the Dokumentation tab.
-- **`rex_request::isPost()` does not exist.** Use the global function `rex_request_method() === 'post'` instead. Same applies to other request method checks.
-- **`rex_config_form::factory($addon)` auto-handles save/validation/styling** for scalar config values (text, number, checkbox, textarea). For complex shapes (arrays, maps), flatten to scalar storage (CSV strings, separate keys per format) and parse on read in `Config.php` typed accessors. Do not hand-roll `<form>` HTML for settings — use this.
-- **`addTextField` auto-injects `class="form-control"`** but `addInputField('number', ...)` does **not**. Always explicitly call `$f->setAttribute('class', 'form-control')` after `setLabel(...)` on number/email/etc. inputs, otherwise they render unstyled next to text fields. **Pair it with an inline width** — `form-control` stretches the input to 100% of the container, which looks absurd for short numeric values. Use `$f->setAttribute('style', 'width: 100px')` for 1–3-digit ranges (quality 1–100, LQIP dimensions); `'width: 140px'` for 5–7-digit ranges (TTL seconds). **Also pair with a placeholder sourced from `Config::DEFAULTS`** — `rex_config_form` renders empty inputs on fresh installs (no saved `rex_config` value yet); a placeholder shows the user what the default would be. Use `$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_…])` so the hint stays in sync if a default ever changes.
-- **In namespaced files**, REDAXO classes (`rex_url`, `rex_view`, `rex_path`, `rex_dir`, `rex_csrf_token`, `rex_media`, `rex_logger`, etc.) need explicit `use rex_xxx;` imports. Global functions (`rex_post`, `rex_get`, `rex_request_method`, …) do not.
-- **`rex_dir::delete($path, $deleteSelf = false)`** purges contents but keeps the directory itself — use this from the `CACHE_DELETED` hook so the cache dir stays on disk for subsequent writes.
-- **Glide's `setCachePathCallable()` requires a non-static closure** **and** **must not reference `self::` / `static::` in the body**. Glide internally does `Closure::bind($callable, $this, static::class)` (`vendor/league/glide/src/Server.php:365`) before invoking it. Two consequences: (a) `static fn (…)` closures can't be bound — PHP throws `Warning: Cannot bind an instance to a static closure`. (b) Even on a non-static closure, the bind rescopes `self::` / `static::` to `League\Glide\Server`, so a body like `self::cachePath(…)` resolves at runtime against Glide's class, not yours, and fails with `Call to undefined method League\Glide\Server::cachePath()`. Use either an unaliased class name (`Server::cachePath(…)` — resolved at compile time via the file's namespace) or the FQCN (`\Ynamite\Media\Glide\Server::cachePath(…)`). Same pattern applies to any other Glide callable that may get bound in future versions.
-- **Self-contained URL routing via `PACKAGES_INCLUDED` (EARLY)** — for addons that need to handle a custom URL pattern without requiring `.htaccess` / nginx tweaks, register at `rex_extension::register('PACKAGES_INCLUDED', […, 'handle'], rex_extension::EARLY)` and short-circuit in the handler with: `if (rex::isBackend()) return;` (cheap fast-path), then match `parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)`, then `rex_response::cleanOutputBuffers(); session_abort();`, do the work, `exit;`. Pattern lifted from `rex_media_manager::init` / `sendMedia`. The hook fires on every frontend request, so the URI-prefix check must be the first thing — anything else and you'll add overhead to every page render. `EARLY` priority guarantees you run before `yrewrite` / Article-Rendering. URLs that don't match get an early return and never call into your code beyond the cheap prefix check.
-- **Glide's `fit=crop-{X}-{Y}` rejects decimal coordinates.** The regex at `vendor/league/glide/src/Manipulators/Size.php:118` is `/^(crop)(-[\d]{1,3}-[\d]{1,3}(?:-[\d]{1,3}(?:\.\d+)?)?)*$/` — only the third token (zoom) accepts a decimal. The first two (X, Y) must be 1-3-digit integers. Our focal-point storage (`MetadataReader::normalizeFocal` → `formatFocal`) uses `%g` format which can emit decimals like `50.5%` for a stored `0.505` value. Always `(int) round((float) $x)` before formatting the Glide token, otherwise Glide's Size manipulator falls through to its default fit (which is `contain`, not `crop`) and the focal point is silently ignored. `FitTokenBuilder::parseFocalToInts()` is the single source of truth — call `FitTokenBuilder::build()` (which calls it internally) from any path that needs to emit crop coords; do not re-implement.
-- **Glide's `fit=contain` does NOT letterbox / pad.** It resizes the image proportionally to fit inside the requested w×h box — one dimension hits the box, the other comes out smaller (so the output isn't actually w×h, contrary to what some Glide docs imply). If you need true letterbox with a colored background, that has to happen on the CSS side or via a separate Glide manipulator stack. The `Fit::CONTAIN` enum value passes straight through to Glide.
-- **`rex_var` substitution is article-cache-bound.** Native REX_VARs registered via `rex_var::register('REX_PIC', \Ynamite\Media\Var\RexPic::class)` are resolved when REDAXO builds the Article-Cache (in `replaceObjectVars()` at `addons/structure/plugins/content/lib/article_content_base.php:523`). The output of `getOutput()` is a PHP-code string that gets baked into the cache file and `eval`'d on every render. Side effect: changing `getOutput()` requires a `Cache leeren` for stored slice content to pick up new behavior. Bumping the addon version usually triggers this via REDAXO's normal version-up flow. Document this prominently when migrating from OUTPUT_FILTER to `rex_var`. Args from `key="value"` syntax come pre-parsed via `rex_string::split()` (handles quoting); use `getParsedArg('key')` for string passthrough (already-quoted-as-PHP-literal, supports nested REX_VARs) and `getArg('key')` for raw values you need to preprocess (numerics, booleans, custom parsing). **Mode-flag attributes must use `getArg`, not `getParsedArg`** — `as="url"` in REX_PIC branches `getOutput()` between `Image::picture(...)` and `Image::url(...)` PHP-literal emission. Comparing `getParsedArg('as')` to `'url'` would fail because getParsedArg returns the quoted PHP literal `'url'` (with surrounding quotes), not the bare string. Same gotcha applies to the existing `preload` attribute. Editor recipe for nested rex_vars (responsive video poster): `REX_VIDEO[poster="REX_PIC[src='hero.jpg' width='1280' as='url']"]` — REDAXO's `getParsedArg` on `poster` recursively evaluates the inner REX_PIC because that's how nested rex_var support is plumbed.
-- **`Glide\Server::$activeFilterParams` is request-scoped static state.** `Endpoint::handle` sets it via `Server::setActiveFilters($filterParams)` before each `makeImage` call so the `cachePathCallable` closure (invoked internally by Glide for cache lookups) produces paths consistent with the URL emission's filter hash. `clearActiveFilters` runs in a `finally` block to avoid leaking state between hypothetical multi-handle runs in one process. The property is **public** because Glide's `Closure::bind($callable, $this, static::class)` rescopes the closure to `League\Glide\Server`; private access from the rebound closure scope would fail at runtime — same root cause as the `self::cachePath()` gotcha above. Tests that exercise filtered Glide paths must reset this in `tearDown` — `Server::clearActiveFilters()` is public for that reason. The static-state approach is acceptable here because (a) `handle()` is the single caller in production, (b) it `exit`s after one request, (c) `clearActiveFilters` runs unconditionally via `finally`. If a future change introduces multiple concurrent Glide pipelines in one PHP process, this pattern needs revisiting.
-- **`vendor/` is committed but must be `--no-dev` for releases.** Local dev: `composer install` (resolves dev deps including PHPUnit). Before any commit touching `vendor/`: `composer install --no-dev` to strip dev packages. Run `bin/check-vendor` to verify the working tree is clean of dev packages — it scans for known PHPUnit-family directories under `vendor/` (`phpunit`, `sebastian`, `myclabs`, `phar-io`, `theseer`, `phpdocumentor`, `nikic/php-parser`, `staabm`) and exits non-zero if any are present.
-- **Glide's encoder is single-frame.** Reading an animated GIF with `Imagick::readImage` and writing via `writeImage` (Glide's path) silently drops every frame after the first — the output WebP/AVIF/JPEG is a static still. Animated outputs need `Imagick::coalesceImages()` (materialises each frame as full-canvas pixels) followed by `writeImages($path, true)` (the `$adjoin=true` flag preserves all frames in the container). `lib/Pipeline/AnimatedWebpEncoder.php` lives outside the Glide pipeline for this reason — `Endpoint::handle` detects the `/animated.webp` cache-path suffix and dispatches to the encoder before reaching `Server::makeImage`. URL signing reuses `Signature::sign` against the bare cache path (no filter blob), so the HMAC story is identical to other variants.
-- **`Imagick::COLORSPACE_RGB` is linear-light, NOT what users see.** `quantizeImage` / `getImageHistogram` / any "average colour" computation in `COLORSPACE_RGB` returns gamma-encoded values that are dramatically darker than the perceived dominant colour (a `#3366aa` source comes back as `#0922a8` because each channel is the linear-light value, ready to be re-gamma'd back to sRGB). Always pass `Imagick::COLORSPACE_SRGB` for any colour-extraction Imagick op the user will see. Pair with `ImagickPixel::getColor(2)` on Q16 builds — `getColor(0)` returns 0-65535 quantum-scaled values; `getColor(2)` is always 0-255. `lib/Pipeline/DominantColor.php` is the canonical example.
-- **`rex_config_form::addCheckboxField` storage shapes are subtle.** Three paths `Config::checkboxBool` has to survive: (1) **Ticked** stores pipe-delimited (`'|1|'` for one option, `'|1|2|'` for multi-option groups). A naive `(bool) (int) $value` on `'|1|'` evaluates to `false` because PHP int-casts strings that don't start with a digit to `0` — strip the pipes first. (2) **Unticked** stores `null`, NOT empty string. Browsers don't submit unchecked checkboxes, so `rex_form_base::elementPostValue` returns null for the missing field, the form calls `setValue(null)`, and `config_form::save` hands `rex_config::set(ns, key, null)` to storage. **`rex_config::has` doesn't help here** — it's `isset`-based and returns false for null values too, indistinguishable from "key was never written." The only public way to tell them apart is `array_key_exists($key, rex_config::get(ADDON))` against the whole-namespace dict. Without that distinction, an unticked default-on checkbox silently re-reads as the default and the user can't actually turn it off (the original bug; rediscovered when LQIP wouldn't disable from the backend). (3) **Never written** falls back to `Config::DEFAULTS` (plain ints `1` / `0`), giving fresh installs sane behaviour. `Config::checkboxBool($key)` handles all three; never write `(bool) (int) self::get(...)` for checkbox-backed configs. Tests in `tests/Unit/ConfigTest.php` lock all four code paths (ticked / legacy-empty-string / explicit-null / never-written) plus the never-written-vs-explicit-null distinction.
-- **`med_focuspoint` updates DON'T touch the file mtime.** The `focuspoint` addon writes the focal point as a column on `rex_media` (`med_focuspoint`), not as anything that touches the underlying disk file. Any cache keyed on `xxh64(filename:mtime)` will therefore return the OLD focal point after a backend save — the hash didn't change. Symptom from the user's perspective: drag the focuspoint marker, save, refresh frontend, see no change. Generalises beyond focal point to anything writing to media metadata columns (potential future fields). The fix lives in `boot.php` — `MEDIA_UPDATED` and `MEDIA_DELETED` listeners call `Pipeline\CacheInvalidator::invalidate($filename)`, which deletes all four cache buckets (`cache/{filename}/`, plus the three `_meta` / `_lqip` / `_color` sidecars at the _current_ mtime hash). Note the second-order subtlety for file-replacement updates: by the time the EP fires, mtime has already advanced, so the "current" hash is the new one and the old hash-keyed sidecars become orphans (~50 B – 2 KB each). Accepted: variants directory is the bulky part and is wiped path-keyed; meta/lqip/color regenerate fresh on next read; "Cache leeren" still nukes everything if orphan accumulation ever matters. The orphan trade-off is pinned by `tests/Unit/Pipeline/CacheInvalidatorTest::testCurrentHashDeletionMissesOrphansAfterFileReplacement` so anyone tempted to "fix" it sees the trade-off in writing.
-- **`<link rel="preload" as="video"` MIME-mapping pitfalls.** `VideoBuilder::videoMimeType()` maps file extensions to preload `type` MIME strings: `mp4`/`m4v` → `video/mp4`, `webm` → `video/webm`, `ogv`/`ogg` → `video/ogg`, `mov` → **`video/quicktime`** (NOT `video/mov` — that's not a registered IANA MIME type and Safari's preload scheduler silently ignores the preload entry when the type doesn't match the actual response Content-Type). Unknown extensions deliberately omit the `type` attribute rather than guess — browsers accept the preload without `type`, and a wrong `type` makes the preload silently invalid. Pair with the Safari historical caveat: `<link rel="preload" as="video">` had bugs in older Safari versions (12.x), but modern Safari (15+) honours it; for older-browser support, the existing `<video preload="auto">` HTML attribute remains the universal fallback (which is why `linkPreload` is orthogonal to `preload`, not folded into it).
-- **`<video poster>` collapses layout when the URL fails to load.** Symptom: WebKit / Blink treat the broken-image's 0×0 box as the video element's intrinsic size until video metadata loads. With no `width` / `height` HTML attrs, the video collapses to 0 height and looks "missing." The HTML5 spec says a failed poster should fall back to "no poster" — engines diverge. `VideoBuilder::validatePoster()` is conservative: bare filenames are checked for `is_readable(rex_path::media(...))` and `rex_media::get(...)` non-null — definitively-missing ones are dropped (and logged). Anything URL-shaped (`://`, leading `/`, `data:`) passes through because we can't cheaply verify remote / arbitrary paths. The drop returns control to the browser's default 300×150 video rendering, no collapse. Note the deliberate gap: a bare-filename poster that exists in the mediapool gets emitted as `<video poster="hero-still.jpg">`, which the browser resolves relative to the page URL — almost never correct. Treated as a v2 candidate (see "Out of scope" above) because aligning resolution with `src` would be a behaviour change. **Recipe for the user**: pass a fully-qualified poster URL via `Image::url('hero-still.jpg', width: 1280)` (or `REX_PIC[src='...' width='...' as='url']` nested in `REX_VIDEO[poster=...]`).
-- **REDAXO's `installAssets()` silently drops `.git*` files.** The copy goes through `rex_finder` which has `ignoreSystemStuff` on by default; the filter (`src/core/lib/util/finder.php:230` in REDAXO core) does `stripos($filename, $pattern) === 0` against `['.DS_Store', 'Thumbs.db', 'desktop.ini', '.svn', '_svn', 'CVS', '_darcs', '.arch-params', '.monotone', '.bzr', '.git', '.hg']`. The `.git` entry is meant to skip `.git/` directories during deployment but also catches anything starting with `.git` — so `.gitignore`, `.gitkeep`, `.gitattributes` shipped under the addon's `assets/` never reach the runtime location. Workaround: write such files programmatically from `install.php` using `rex_file::put($path, $content)` after `installAssets()` has run. We do this for the cache-protection `.gitignore` at `rex_path::addonAssets(Config::ADDON, '.gitignore')`. The source-tree `assets/.gitignore` is still useful — it keeps generated cache files out of _this_ addon's git history during local dev — but is redundant for the runtime install path.
-- **The `_external/` cache prefix is reserved.** External URL buckets live under `cache/_external/<urlHash>/`. The leading underscore matches the existing convention for sidecar prefixes (`_meta/`, `_lqip/`, `_color/`) — REDAXO mediapool filenames cannot start with `_`, so collisions are structurally prevented. `Endpoint::parseCachePath` doesn't special-case the prefix; it sees `_external/<hash>` as just another `<src>` directory. The decisive routing happens in `Endpoint::handle` which dispatches to `makeExternal()` when the parsed source begins with `_external/`. Don't add `_external` collision checks elsewhere — the prefix is the contract, not the runtime.
-- **Two Glide servers, not one, when external URLs are in play.** Mediapool source filesystem at `rex_path::media()` is wide enough to span the whole pool; external URLs would need that filesystem to also reach `redaxo/data/addons/massif_media/cache/_external/<hash>/_origin.bin`, which it doesn't (and finding a common root that works on every REDAXO deploy is fragile). Solution: per-bucket Glide server via `Server::createForExternal($source)` with source FS + cache FS both rooted at `cache/_external/<hash>/`. The trade-off: the per-bucket server uses a different `cachePathCallable` (flat `<spec>.<ext>` with no path prefix) because the bucket directory IS the URL-side `<src>` — Glide's makeImage path is just `_origin.bin` and we don't want it nested under `_origin.bin/<spec>.<ext>` on disk. `Server::cacheSpecWithExt()` is the shared spec-builder both callables go through, so the on-disk spec format stays bit-identical across the two servers. Adding a third source type (e.g., S3) would follow the same per-bucket pattern.
-- **`symfony/http-client` "headers" parameter and Symfony's HTTP-client iteration semantics.** When using `MockHttpClient` in tests, the captured `$options['headers']` from a request callback is associative when set via `'headers' => ['If-None-Match' => '"abc"']` — but the actual transport may also surface them as a list of `Name: value` strings. `HttpFetcherTest::testConditionalGetHeadersPropagate` walks both shapes via a tolerant assertion (`is_int($key)` distinguishes list-of-strings from associative). If you see a header-shape test fail with "header not found", check whether you're matching on associative key vs. line string. Same shape ambiguity in the response: `$response->getHeaders(false)` returns `array<string, list<string>>` — the inner array is always a list, even for single-valued headers. Read with care.
-- **Symfony `'on_progress'` callback throwing is the documented body-size-cap mechanism.** `HttpFetcher::fetch` enforces `EXTERNAL_MAX_BYTES` by checking `$dlNow > $maxBytes` inside `'on_progress'` and throwing `TransportException` mid-stream. Symfony aborts the connection cleanly on transport-exception bubbling. Don't try to use `'max_duration'` for size — it's wall-clock, not bytes. Don't try to read-then-truncate — the body is fully buffered before then on slow connections, defeating the cap.
-- **External-URL fetch is sync, on first render of the URL.** When `Image::picture('https://…')` hits a URL that isn't in the cache (or whose TTL has expired), the PHP request blocks on the `HttpFetcher::fetch` round-trip. Worst case: ~1 s for a typical CDN, longer for slow upstreams. Acceptable trade-off for v2 — async fetch would need a job runner and a placeholder mechanism, both out of scope. If a slow upstream becomes a real production problem, the path is: (a) extend `EXTERNAL_TTL_SECONDS` so refreshes are rarer, (b) add a `EXTERNAL_TIMEOUT_SECONDS` ceiling and accept that some renders log a TransportException, (c) eventually wire to a queue. Don't lower the timeout below 5 s without measuring — public CDNs do occasional 2–4 s tails on cold edges.
-- **`gethostbynamel` is IPv4-only.** Hosts that publish only AAAA records (rare on image-hosting CDNs) will fail SSRF validation and the fetch is rejected. Documented trade-off in `SsrfGuard` — extending the IP block-list to IPv6 (`::1`, `fc00::/7`, `fe80::/10`, plus the v4-mapped-in-v6 forms) plus picking up AAAA via `dns_get_record` is a bigger surface area than the practical hit rate justifies. If a real host gets caught by this, the right fix is to add the IPv6 path; don't disable the SSRF guard.
-- **Conditional GET 304 still bumps `fetchedAt`.** When the upstream answers 304, `HttpFetcher` returns `notModified: true` and preserves the existing etag/lastModified — but `ExternalSourceFactory::resolve` advances `fetchedAt` to `time()` regardless. This is load-bearing for the URL-cache-busting story: the emitted `&v={fetchedAt}` is what tells the browser the resource hasn't changed, and freezing `fetchedAt` at the original fetch would mean the browser keeps revalidating against our PHP endpoint forever. Move `fetchedAt` forward on every successful round-trip (304 OR 200), only update body+etag on 200. Tests in `ExternalSourceFactoryTest::testExpiredManifestTriggersConditionalGetWith304BumpsFetchedAt` lock this.
-- **REX_PIC `art` attribute uses `getArg`, NOT `getParsedArg`.** Same gotcha as `as="url"` and `preload`: `getParsedArg('art')` would return the JSON string already wrapped in PHP-literal quotes (`"'[…]'"`), making `json_decode` fail because the JSON would have an extra leading/trailing `'`. `getArg('art')` returns the raw bare JSON string from the slice editor. Then `json_decode($raw, true, depth: 4, flags: JSON_THROW_ON_ERROR)` parses it. The cached PHP emission uses `var_export($json, true)` to PHP-escape the JSON-string-as-PHP-string and wraps in `json_decode(..., true)` — round-tripping through JSON at runtime is robust against future class renames (no hardcoded `\Ynamite\Media\View\ArtDirectionVariant::__construct` in the slice cache). Bad JSON or missing required keys logs a warning via `rex_logger::factory()->log('warning', …)` and the picture renders without art direction (no 500 on editor typos).
-- **Builder-level filters do NOT cascade to art-direction variants.** `Image::for($src)->blur(8)->art([…])->render()` applies the blur ONLY to the default variant. Variants are self-describing — each carries its own `filterParams` array. This is intentional design: "anderer Crop auf Mobile" and "anderer Filter auf Mobile" are orthogonal mental models, mixing them would surprise users. Documented in `View\PictureRenderer::render`'s `$filterParams` vs. per-variant `$variant->filterParams` comment. If a future user-need arises for "all variants share a default filter", the right path is a separate `->artFiltersBaseline()` setter that explicitly merges into each variant's filterParams; don't change the existing behaviour.
-- **`<picture>` cascade order matters: art-direction sources before format defaults.** Browsers iterate `<source>` top-to-bottom and pick the first match — `media` filters by viewport, `type` filters by format support. Putting an art-direction variant AFTER the default format-keyed sources means the variant never gets picked (default has no `media=`, always matches). `PictureRenderer::render` emits art-direction sources first specifically to honour this. Tests in `Integration/ArtDirectionPictureTest::testArtDirectionEmitsMediaKeyedSourcesBeforeDefaults` lock the ordering. The fallback `<img>` always uses the default variant — HTML5 says the `<img>` is the fallback for browsers that don't understand `<picture>` at all, so a single Variant-Aware `<img>` would have no semantic value.
+- new pure logic → unit test under `tests/Unit/`, mirroring source layout
+- new public API entry point → at least one integration test
+- Glide/cache-path/filter/focal logic needs regression coverage
+- REDAXO frontend boot path is manually verified, not unit-tested
 
-## Reference: Statamic addon
+Manual verification target:
 
-The pipeline structure mirrors `~/Repositories/statamic/image` (the user's Statamic responsive-images addon). Key patterns ported: `ImageResolver`/`MetadataReader`/`Placeholder`/`SrcsetBuilder`/`UrlBuilder`/`PictureRenderer`/`PassthroughRenderer` split, Glide `setCachePathCallable`, ColorProfile manipulator.
+```text
+~/Herd/viterex-installer-default/
+```
 
-The original `Ynamite\Massif\Media` source from `redaxo-massif` previously lived under `_legacy_reference/` for porting reference; it was removed once the new addon was verified in a live install. Anything still in `redaxo-massif` is the canonical history.
+Manually check:
+
+- `RequestHandler::handle`
+- `OUTPUT_FILTER` preload injection
+- backend Documentation tab
+- article-cache-bound `rex_var` behaviour after changing `getOutput()`
+
+## REDAXO rules and gotchas
+
+### Backend pages
+
+- If `package.yml` declares `subpages:`, `pages/index.php` must exist.
+- `pages/index.php` should echo the title and call `rex_be_controller::includeCurrentPageSubPath()`.
+- Nested settings pages use the same dispatcher pattern in `pages/settings.php`.
+- Settings subpages are named `pages/settings.{name}.php`.
+- `subPath: README.md` in `package.yml` can render Markdown directly as a backend page.
+
+### Requests and config forms
+
+- `rex_request::isPost()` does not exist. Use `rex_request_method() === 'post'`.
+- Use `rex_config_form::factory($addon)` for settings. Do not hand-roll forms.
+- Store complex config as scalars and parse through typed accessors in `Config.php`.
+- `addTextField()` adds `form-control`; `addInputField('number', ...)` does not.
+- For number inputs, add:
+  - `class="form-control"`
+  - narrow inline width, e.g. `width: 100px` or `140px`
+  - placeholder from `Config::DEFAULTS[...]`
+
+### Namespaces
+
+In namespaced files:
+
+- import REDAXO classes explicitly: `use rex_url;`, `use rex_path;`, `use rex_media;`, etc.
+- global functions such as `rex_post`, `rex_get`, `rex_request_method` do not need imports
+
+### File/cache helpers
+
+- `rex_dir::delete($path, false)` deletes contents but keeps the directory.
+- Use this for cache-clearing hooks so the cache dir remains writable.
+- `installAssets()` silently drops files starting with `.git`.
+- Runtime `.gitignore` files under addon assets must be written from `install.php` via `rex_file::put()`.
+
+### `rex_var`
+
+Native `REX_PIC` / `REX_VIDEO` substitution is article-cache-bound.
+
+- `getOutput()` returns PHP code baked into REDAXO's article cache.
+- Changing `getOutput()` requires clearing the REDAXO cache for stored slices to pick up changes.
+- Use `getParsedArg()` for string passthrough that may contain nested REX_VARs.
+- Use `getArg()` for mode flags / raw values that must be inspected first.
+
+Important examples:
+
+- `as="url"` must use `getArg('as')`, not `getParsedArg('as')`.
+- `preload` mode flags must use `getArg()`.
+- `REX_PIC art='[...]'` JSON must use `getArg('art')`, then `json_decode(..., JSON_THROW_ON_ERROR)`.
+- Bad art JSON should log a warning and render without art direction, not 500.
+- Nested poster recipe:
+
+```text
+REX_VIDEO[poster="REX_PIC[src='hero.jpg' width='1280' as='url']"]
+```
+
+## Glide and media gotchas
+
+### Glide closures
+
+`setCachePathCallable()` requires a non-static closure and must not reference `self::` or `static::` inside the closure body.
+
+Use:
+
+```php
+Server::cachePath(...)
+// or
+\Ynamite\Media\Glide\Server::cachePath(...)
+```
+
+Reason: Glide binds the closure to `League\Glide\Server`, which breaks static closures and rescopes `self::` / `static::`.
+
+### Fit and focal points
+
+- Glide accepts `fit=crop-X-Y`, but X/Y must be integers.
+- Always use `FitTokenBuilder::build()`.
+- Do not emit decimal focal coordinates.
+- `fit=contain` does not letterbox; it only scales proportionally inside the requested box.
+
+### Filter state
+
+`Glide\Server::$activeFilterParams` is request-scoped static state.
+
+- `Endpoint::handle()` sets it before `makeImage()`.
+- `clearActiveFilters()` must run in `finally`.
+- Tests that touch filtered Glide paths should reset it in `tearDown()`.
+
+### Animated images
+
+Glide encodes only the first frame of animated GIFs.
+
+- Animated WebP must use `AnimatedWebpEncoder`.
+- Use `Imagick::coalesceImages()` and `writeImages($path, true)`.
+- Animated output is mediapool-only; external sources short-circuit.
+
+### Colour handling
+
+- Use `Imagick::COLORSPACE_SRGB` for user-visible colour extraction.
+- Do not use `COLORSPACE_RGB`; it produces linear-light values that look too dark.
+- Use `ImagickPixel::getColor(2)` to get 0–255 channel values.
+
+### Focal-point metadata
+
+The optional `focuspoint` addon stores focal points in `rex_media.med_focuspoint`; changing it does not touch file mtime.
+
+Therefore:
+
+- metadata/focal caches must not rely only on filename+mtime
+- `MEDIA_UPDATED` and `MEDIA_DELETED` must call `CacheInvalidator::invalidate($filename)`
+- old tiny sidecar orphans after file replacement are accepted; global cache clear removes them
+
+### Video
+
+- Preload MIME map:
+  - `mp4`, `m4v` → `video/mp4`
+  - `webm` → `video/webm`
+  - `ogv`, `ogg` → `video/ogg`
+  - `mov` → `video/quicktime`
+- Unknown video extensions should omit the `type` attribute instead of guessing.
+- Broken `<video poster>` URLs can collapse layout in WebKit/Blink.
+- `VideoBuilder::validatePoster()` should drop definitely missing bare mediapool filenames.
+- Existing bare filenames that do exist are still emitted as-is; symmetric poster resolution is out of scope for now.
+- Recommended poster recipe: pass a generated URL via `Image::url(...)` or nested `REX_PIC[..., as='url']`.
+
+## Config gotchas
+
+### Checkboxes
+
+`rex_config_form::addCheckboxField()` has three important storage states:
+
+1. ticked → pipe-delimited string, e.g. `|1|`
+2. unticked → `null`
+3. never written → missing key, should fall back to defaults
+
+Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)`.
+
+`rex_config::has()` cannot distinguish explicit `null` from a missing key. Use `array_key_exists($key, rex_config::get(ADDON))` when that distinction matters.
+
+### Cache invalidation
+
+- `CacheInvalidator::invalidate($filename)` deletes the variant directory and current `_meta`, `_lqip`, `_color` sidecars.
+- `CacheInvalidator::invalidateUrl($url)` drops the full external URL bucket.
+- Variant directories are path-keyed and are the bulky part.
+- Tiny old sidecar orphans after file replacement are accepted.
+
+## External fetch rules
+
+- SSRF guard uses IPv4 `gethostbynamel()` and rejects loopback/private/link-local/CGNAT/multicast/broadcast ranges.
+- The resolved IPv4 is passed through Symfony's `resolve` option to pin the connection and reduce DNS-rebinding risk.
+- IPv6-only hosts currently fail validation. Add proper IPv6 block-listing before supporting them; do not disable SSRF protection.
+- Enforce max body size in Symfony HTTP Client through `on_progress` throwing `TransportException`.
+- Do not read-then-truncate large responses.
+- Symfony request headers may appear either associative or as `Name: value` strings in tests; assertions must tolerate both shapes.
+- `$response->getHeaders(false)` returns `array<string, list<string>>`.
 
 ## Common operations
 
-- **Add a new public-API method**: add to `lib/Image.php` (or `lib/Video.php`) and the corresponding `lib/Builder/*Builder.php`.
-- **Tweak default config**: `lib/Config.php` `DEFAULTS` map. Don't forget the settings page form fields if user-editable.
-- **Add a new settings field**: add the constant + default + typed accessor in `lib/Config.php`, then add the `$form->addXField(...)` call to the appropriate `pages/settings.{tab}.php` file.
-- **Add a new settings tab**: declare it under `subpages:` of `settings:` in `package.yml`, create `pages/settings.{name}.php`, follow the same form-build-and-fragment pattern as the existing tabs.
-- **Add a Glide manipulator**: add a class in `lib/Glide/`, register in `Glide/Server.php` in BOTH `create()` and `createForExternal()` (the per-bucket external server is a separate factory; manipulators don't cascade automatically).
-- **Add a new source type** (e.g., S3): implement `Source\SourceInterface` (key/absolutePath/cacheBust/isExternal). Add a factory under `lib/Source/` that returns the new source. Branch in `Pipeline\ImageResolver::resolve` (e.g., scheme detection) to route to the new factory. If the source needs a per-bucket Glide server (like external URLs do — different filesystem root than mediapool), add a `Server::createForX($source)` factory that mirrors `createForExternal` and update `Server::for(SourceInterface)` and `Server::glideSourcePath(SourceInterface)` to dispatch on the new type.
-- **Add a new extension-point hook**: register in `boot.php`.
-- **Invalidate the cache for a single asset**: `CacheInvalidator::invalidate($filename)` — drops the variants directory plus the `_meta` / `_lqip` / `_color` sidecars in O(1). Already wired to `MEDIA_UPDATED` and `MEDIA_DELETED`; call directly only when reacting to a custom signal (e.g., a third-party metadata-edit hook). Cache-key formulas live on the owning Pipeline classes: `MetadataReader::metaCachePath`, `Placeholder::cachePathFor`, `DominantColor::cachePathFor` are public statics so the invalidator stays a thin orchestrator.
-- **Cut a release**: bump `version:` in `package.yml`, graduate items from `## [Unreleased]` to a new `## [x.y.z] — YYYY-MM-DD` block in `CHANGELOG.md`, commit. Then `gh release create vX.Y.Z --title "vX.Y.Z" --notes "<release notes>"`. The rest is automated by `.github/workflows/publish-to-redaxo.yml` on `release: published`: PHP 8.2 setup → `composer test:unit` quality gate → `composer install --no-dev` → `bin/check-vendor` verification → `massif_media.zip` build (excludes `.git/` `.github/` `.claude/` `.worktrees/` `bin/` `tests/` `phpunit.xml` `.phpunit.cache/` `docs/superpowers/` and OS junk) → attach to GitHub release via `softprops/action-gh-release@v2` → publish to my.redaxo.org via `FriendsOfREDAXO/installer-action@1.2.0`. Requires repo secrets `MYREDAXO_USERNAME` / `MYREDAXO_API_KEY` and a one-time addon registration at my.redaxo.org. Integration tests are deliberately not gated in CI (would need Imagick + temp FS on the runner) — run `composer test` locally before tagging if the change touches the Glide pipeline.
+### Add public API
 
-## Out of scope (v2 candidates)
+- add method to `lib/Image.php` or `lib/Video.php`
+- add matching builder method under `lib/Builder/`
+- add integration test
+- update README / CHANGELOG / CLAUDE if behaviour or conventions change
 
-- Art direction (multiple `<source media="...">` per breakpoint).
-- External URL sources (Glide-fetch from arbitrary URLs).
-- **Symmetric `poster` resolution.** `VideoBuilder::buildUrl()` resolves the `src` arg as a mediapool filename (with mtime cache-buster); `poster` is treated as a raw URL string with only validate-and-drop on missing local files. Bare-filename posters that DO exist still get emitted as-is (`<video poster="hero-still.jpg">`), which the browser then resolves relative to the page URL — almost never what the user wants. Aligning the two would be a behaviour change for users currently passing same-folder relative paths and relying on browser-relative URL resolution; the safer migration would be a `->resolvePoster(bool)` opt-in. Postponed; the immediate value-add (no layout collapse on typo'd posters) is delivered by the validate-and-drop fix alone.
+### Change default config
+
+- update `Config::DEFAULTS`
+- update typed accessor if needed
+- update settings form field if user-editable
+- add/adjust tests for parsing behaviour
+
+### Add settings field
+
+- add key constant in `Config.php`
+- add default
+- add typed accessor
+- add field to the right `pages/settings.{tab}.php`
+- use `rex_config_form`
+
+### Add settings tab
+
+- declare under `settings:` → `subpages:` in `package.yml`
+- create `pages/settings.{name}.php`
+- follow the existing form + `rex_fragment('core/page/section.php')` pattern
+
+### Add Glide manipulator
+
+- add class under `lib/Glide/`
+- register in both `Server::create()` and `Server::createForExternal()`
+- add tests for mediapool and external paths if behaviour differs
+
+### Add source type
+
+- implement `SourceInterface`
+- add factory under `lib/Source/`
+- route in `ImageResolver::resolve()`
+- update `Server::for()` and `Server::glideSourcePath()`
+- if the filesystem root differs from the mediapool root, add a per-bucket server factory like `createForExternal()`
+
+### Add extension point
+
+- register in `boot.php`
+- keep frontend hooks extremely cheap on non-matching requests
+
+### Cut a release
+
+1. update `version:` in `package.yml`
+2. move `CHANGELOG.md` items from `[Unreleased]` to `## [x.y.z] — YYYY-MM-DD`
+3. run tests locally; run full suite if Glide/pipeline changed
+4. run `composer install --no-dev`
+5. run `bin/check-vendor`
+6. commit
+7. create GitHub release:
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "<release notes>"
+```
+
+Release publishing is handled by `.github/workflows/publish-to-redaxo.yml` on `release: published`.
+
+CI quality gate:
+
+- PHP 8.2 setup
+- `composer test:unit`
+- `composer install --no-dev`
+- `bin/check-vendor`
+- ZIP build
+- attach ZIP to GitHub release
+- publish to my.redaxo.org
+
+Required repo secrets:
+
+- `MYREDAXO_USERNAME`
+- `MYREDAXO_API_KEY`
+
+Integration tests are not CI-gated; run them locally before tagging when touching Glide/cache/rendering.
+
+## Out of scope / v2 candidates
+
+- symmetric mediapool resolution for existing bare-filename video posters
+- async external URL fetching / queue-backed prewarming
+- true letterboxed `contain` output via image manipulation
+- IPv6 support in `SsrfGuard`
+- shared default filters for all art-direction variants
