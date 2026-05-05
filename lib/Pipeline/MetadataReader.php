@@ -34,7 +34,7 @@ final class MetadataReader
         );
     }
 
-    public function metaCachePath(string $filename, int $mtime): string
+    public static function metaCachePath(string $filename, int $mtime): string
     {
         $hash = hash('xxh64', $filename . ':' . $mtime);
         return rex_path::addonAssets(
@@ -45,7 +45,7 @@ final class MetadataReader
 
     private function loadCachedMeta(string $filename, int $mtime): ?array
     {
-        $path = $this->metaCachePath($filename, $mtime);
+        $path = self::metaCachePath($filename, $mtime);
         if (!is_file($path)) {
             return null;
         }
@@ -55,7 +55,7 @@ final class MetadataReader
 
     private function saveCachedMeta(string $filename, int $mtime, array $meta): void
     {
-        $path = $this->metaCachePath($filename, $mtime);
+        $path = self::metaCachePath($filename, $mtime);
         rex_file::put($path, json_encode($meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 

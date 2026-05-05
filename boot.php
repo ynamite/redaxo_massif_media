@@ -6,6 +6,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Glide\RequestHandler;
+use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Var\RexPic;
 use Ynamite\Media\Var\RexVideo;
@@ -51,3 +52,18 @@ rex_extension::register('CACHE_DELETED', static function (): void {
         rex_dir::delete($cacheDir, false);
     }
 });
+
+// MEDIA_UPDATED / MEDIA_DELETED → drop the per-asset cache so the next render
+// rebuilds with fresh metadata. Critical for focal-point edits, which only
+// touch a database column (file mtime stays the same → meta-cache hash stays
+// the same → cached entry returns the OLD focal point unless we explicitly
+// invalidate). Same closure handles both EPs — payload shape is identical
+// (params['filename']).
+$invalidateMediaCache = static function (rex_extension_point $ep): void {
+    $filename = $ep->getParam('filename');
+    if (is_string($filename) && $filename !== '') {
+        CacheInvalidator::invalidate($filename);
+    }
+};
+rex_extension::register('MEDIA_UPDATED', $invalidateMediaCache);
+rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);

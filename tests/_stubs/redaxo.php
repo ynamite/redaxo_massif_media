@@ -155,6 +155,14 @@ if (!class_exists('rex_file')) {
             $contents = @file_get_contents($file);
             return $contents === false ? $default : $contents;
         }
+
+        public static function delete(string $file): bool
+        {
+            if (!file_exists($file)) {
+                return true;
+            }
+            return @unlink($file);
+        }
     }
 }
 

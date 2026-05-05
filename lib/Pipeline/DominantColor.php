@@ -85,7 +85,12 @@ final class DominantColor
 
     private function cacheFile(ResolvedImage $image): string
     {
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':' . self::CACHE_VERSION);
+        return self::cachePathFor($image->sourcePath, $image->mtime);
+    }
+
+    public static function cachePathFor(string $filename, int $mtime): string
+    {
+        $hash = hash('xxh64', $filename . ':' . $mtime . ':' . self::CACHE_VERSION);
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
