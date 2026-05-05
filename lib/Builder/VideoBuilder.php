@@ -143,7 +143,10 @@ final class VideoBuilder
             $attrs['height'] = (string) $this->height;
         }
         if ($this->poster !== null && $this->poster !== '') {
-            $attrs['poster'] = $this->poster;
+            $valid = self::validatePoster($this->poster);
+            if ($valid !== null) {
+                $attrs['poster'] = $valid;
+            }
         }
         if ($this->alt !== null && $this->alt !== '') {
             $attrs['aria-label'] = $this->alt;
@@ -189,6 +192,50 @@ final class VideoBuilder
             rex_logger::logException($e);
             return '';
         }
+    }
+
+    /**
+     * Drop poster references to local mediapool files that don't exist.
+     *
+     * Browsers handle a missing `<video poster>` URL poorly: WebKit/Blink hold
+     * the broken-image's 0×0 box as the video's intrinsic size until video
+     * metadata loads, which collapses the layout when no `width`/`height`
+     * attrs are set. The HTML5 spec says a failed poster should fall back to
+     * "no poster", but engines diverge. The robust fix is to never emit a
+     * poster URL that we know is broken.
+     *
+     * Validation is conservative: only bare filenames (treated as mediapool
+     * references) are checked for existence. URLs (containing `://`),
+     * absolute paths (`/...` or `//...`), and data URIs (`data:...`) pass
+     * through unchanged because we can't cheaply verify them. Returns null
+     * when the bare filename can be definitively shown not to exist on disk
+     * AND has no `rex_media` record — caller drops the attribute.
+     *
+     * Out of scope (a v2 candidate): normalising bare-filename posters to
+     * full mediapool URLs the way `buildUrl()` does for `src`. That would
+     * be a behaviour change for users who currently pass same-folder
+     * relative paths and rely on browser-relative URL resolution.
+     */
+    private static function validatePoster(string $poster): ?string
+    {
+        if (
+            str_contains($poster, '://')
+            || str_starts_with($poster, '/')
+            || str_starts_with($poster, 'data:')
+        ) {
+            return $poster;
+        }
+        $absPath = rex_path::media($poster);
+        if (is_readable($absPath)) {
+            return $poster;
+        }
+        if (rex_media::get($poster) !== null) {
+            return $poster;
+        }
+        rex_logger::logException(
+            new RuntimeException('massif_media: poster not found: ' . $poster),
+        );
+        return null;
     }
 
     private function buildUrl(string $filename, int $mtime): string
