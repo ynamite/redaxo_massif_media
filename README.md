@@ -441,7 +441,8 @@ Auf dem **Sicherheit & Cache**-Tab im Backend zeigt eine Übersichts-Tabelle, wi
 
 - **Backend "Cache leeren"** (UI oder `console cache:clear`): das Addon hängt sich an `CACHE_DELETED` und leert den eigenen Cache mit.
 - **"Addon Cache jetzt leeren"** auf dem **Sicherheit & Cache**-Tab: gezielt nur unseren Cache.
-- **Quelländerung**: REDAXO ändert den `mtime`, dadurch ändert sich der `?v=` Parameter — Browser/CDN holen die neue URL. Das Disk-File ist dann zwar noch da, aber Anfragen mit neuem `?v=` bleiben Cache-Hits, weil `?v=` nicht Teil des Datei-Pfades ist. Bei Bedarf das Addon-Cache leeren oder REDAXO-Cache leeren.
+- **Mediapool-Änderungen automatisch (per Asset)**: das Addon hängt sich an `MEDIA_UPDATED` und `MEDIA_DELETED` und wirft beim ersten EP-Feuer den kompletten Cache für die betroffene Datei weg — Varianten-Verzeichnis, Animated-WebP, Meta-Sidecar, LQIP-Data-URI, Dominante-Farbe-Hex. Wichtig vor allem für **Focus-Point-Änderungen via `focuspoint`-Addon**: die schreiben nur die DB-Spalte `med_focuspoint`, ohne die Datei auf Disk anzufassen — der `mtime` bleibt stabil, der Meta-Cache-Hash auch, ohne aktive Invalidierung würde der Frontend-Renderer den alten Focus-Point weiter ausliefern. Greift jetzt automatisch beim Speichern; kein manueller Cache-Leeren mehr nötig.
+- **Datei-Replacement** (gleicher Dateiname, neuer Inhalt): `MEDIA_UPDATED` feuert ebenfalls. Das Varianten-Verzeichnis wird komplett geleert. Meta/LQIP/Color sind `mtime`-gekeyed: der neue Hash zeigt auf einen frischen Eintrag, der beim nächsten Read entsteht — die alten Sidecar-Files bleiben unter dem alten Hash liegen (50 Bytes – 2 KB pro Datei, korrektheits-irrelevant; das nächste manuelle Cache-Leeren räumt sie weg).
 
 ## Sicherheit
 
