@@ -27,7 +27,7 @@ The addon **coexists with `redaxo-massif`**. There's no migration shim — old c
 
 ```
 lib/
-├── Image.php, Pic.php, Video.php          # public API: static one-liners + ::for() builders
+├── Image.php, Pic.php, Video.php          # public API: static one-liners + ::for() builders. `Image::url()` is the single-URL escape hatch (no `<picture>` markup) for `<video poster>` / OG tags / CSS bg-image — shares the Glide cache file with the matching `picture()` variant of the same width / format / quality.
 ├── Builder/{Image,Video}Builder.php       # fluent builders
 ├── Pipeline/                              # single-purpose units, composable
 │   ├── ImageResolver.php                  # rex_media | filename → ResolvedImage
@@ -40,7 +40,7 @@ lib/
 │   ├── AnimatedWebpEncoder.php            # bypasses Glide (single-frame encoder) — Imagick coalesce + writeImages(adjoin=true) for animated-GIF → animated-WebP. Single intrinsic-width variant per source; cache path `{src}/animated.webp`.
 │   ├── CacheStats.php                     # recursive du + per-kind categorisation (meta / lqip / color / animated / variants), 5-min memoized to `cache/_stats.json`. Drives the Sicherheit & Cache backend panel.
 │   ├── CacheInvalidator.php               # per-asset cache wipe — fires on MEDIA_UPDATED / MEDIA_DELETED so focal-point edits reflect on next render without nuking the global cache. Removes `cache/{filename}/`, the `_meta` / `_lqip` / `_color` sidecars at the *current* mtime hash. File-replacement leaves a tiny orphan under the old hash (accepted; documented).
-│   ├── RenderContext.php                  # readonly VO: shared render-state resolution (effectiveRatio, fitToken, effectiveMaxWidth, widths). Built once per render entry; consumed by both PictureRenderer and Preloader so URLs string-match.
+│   ├── RenderContext.php                  # readonly VO: shared render-state resolution (effectiveRatio, fitToken, effectiveMaxWidth, widths). `build()` for the responsive `<picture>` path; `resolveSingleVariant()` for the single-URL path (`Image::url()`). Both go through the private `deriveFitState()` helper so the `RATIO_EQUAL_EPSILON` short-circuit + COVER/CONTAIN width cap stay locked across paths — drift would mean `Image::url($w)` returns a URL that doesn't exist in the rendered `<picture srcset>`.
 │   └── Preloader.php                      # static queue drained by OUTPUT_FILTER
 ├── View/{Picture,Passthrough}Renderer.php # full HTML emission
 ├── Glide/                                 # league/glide integration
@@ -128,6 +128,5 @@ The original `Ynamite\Massif\Media` source from `redaxo-massif` previously lived
 
 ## Out of scope (v2 candidates)
 
-- Fully automated Favicon generation (basically what realfavicongenerator.net does).
 - Art direction (multiple `<source media="...">` per breakpoint).
 - External URL sources (Glide-fetch from arbitrary URLs).
