@@ -1,0 +1,66 @@
+name: Publish release
+
+on:
+  release:
+    types:
+      - published
+
+# softprops/action-gh-release needs write access to attach the zip
+# back to the triggering release. Default GITHUB_TOKEN is read-only.
+permissions:
+  contents: write
+
+jobs:
+  build-release-and-redaxo-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer
+
+      - name: Install Composer dependencies (with dev for tests)
+        run: composer install --optimize-autoloader --no-interaction
+
+      - name: Run unit tests
+        run: composer test:unit
+
+      - name: Reinstall Composer dependencies without dev
+        run: composer install --no-dev --optimize-autoloader --no-interaction
+
+      - name: Verify vendor is dev-free
+        run: bash bin/check-vendor
+
+      - name: Create release archive
+        run: |
+          zip -r massif_media.zip . \
+            -x "massif_media.zip" \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x ".gitignore" \
+            -x ".claude/*" \
+            -x ".worktrees/*" \
+            -x "bin/*" \
+            -x "tests/*" \
+            -x "phpunit.xml" \
+            -x ".phpunit.cache/*" \
+            -x "docs/superpowers/*" \
+            -x "*.log" \
+            -x "*.DS_Store" \
+            -x "*Thumbs.db"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: massif_media.zip
+          name: massif_media-${{ github.event.release.tag_name }}.zip
+
+      - uses: FriendsOfREDAXO/installer-action@1.2.0
+        with:
+          myredaxo-username: ${{ secrets.MYREDAXO_USERNAME }}
+          myredaxo-api-key: ${{ secrets.MYREDAXO_API_KEY }}
+          description: ${{ github.event.release.body }}
