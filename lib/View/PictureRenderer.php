@@ -9,17 +9,15 @@ use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
-use Ynamite\Media\Glide\FitTokenBuilder;
 use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\Placeholder;
+use Ynamite\Media\Pipeline\RenderContext;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
 
 final class PictureRenderer
 {
-    private const RATIO_EQUAL_EPSILON = 0.001;
-
     public function __construct(
         private SrcsetBuilder $srcsetBuilder,
         private UrlBuilder $urlBuilder,
@@ -55,41 +53,16 @@ final class PictureRenderer
         $sizes ??= Config::defaultSizes();
         $formats = $this->normalizeFormats($formats ?? Config::formats());
 
-        // Resolve effective ratio: explicit > derived from width+height > null.
-        $effectiveRatio = $ratio;
-        if ($effectiveRatio === null && $height !== null && $height > 0 && $width !== null && $width > 0) {
-            $effectiveRatio = $width / $height;
-        }
-
-        // Resolve effective fit. Default depends on whether a target box is set.
-        $effectiveFit = $fit ?? ($effectiveRatio !== null ? Fit::COVER : Fit::NONE);
-
-        // Decide whether we actually need to crop for this render. Skip when:
-        // - fit is NONE (caller opted out), or
-        // - no target box (no ratio derived), or
-        // - ratio matches intrinsic within epsilon (no point cropping the same shape).
-        $intrinsicRatio = $image->aspectRatio();
-        $needsCrop = $effectiveFit !== Fit::NONE
-            && $effectiveRatio !== null
-            && $intrinsicRatio > 0
-            && abs($effectiveRatio - $intrinsicRatio) > self::RATIO_EQUAL_EPSILON;
-
-        $fitToken = null;
-        $effectiveMaxWidth = null;
-        if ($needsCrop) {
-            $fitToken = FitTokenBuilder::build($effectiveFit, $image->focalPoint);
-            // For cover/contain, never ask Glide to upscale beyond what the source
-            // can deliver after cropping. Stretch is exempt — it can squish to any size.
-            if ($effectiveFit !== Fit::STRETCH && $effectiveRatio > 0) {
-                $effectiveMaxWidth = (int) min(
-                    $image->intrinsicWidth,
-                    (int) floor($image->intrinsicHeight * $effectiveRatio),
-                );
-            }
-        }
-
-        $widths = $this->srcsetBuilder->build($image->intrinsicWidth, $widthsOverride, $effectiveMaxWidth);
-        if ($widths === []) {
+        $ctx = RenderContext::build(
+            image: $image,
+            width: $width,
+            height: $height,
+            ratio: $ratio,
+            fit: $fit,
+            widthsOverride: $widthsOverride,
+            srcsetBuilder: $this->srcsetBuilder,
+        );
+        if ($ctx->widths === []) {
             return '';
         }
 
@@ -101,7 +74,7 @@ final class PictureRenderer
                 continue;
             }
             $quality = $qualityOverride[$fmt] ?? null;
-            $srcset = $this->buildSrcset($image, $widths, $fmt, $quality, $effectiveRatio, $fitToken, $filterParams);
+            $srcset = $ctx->buildSrcset($this->urlBuilder, $image, $fmt, $quality, $filterParams);
             $sources[] = sprintf(
                 '<source type="image/%s" srcset="%s" sizes="%s">',
                 self::escape($this->mimeSubtype($fmt)),
@@ -111,16 +84,16 @@ final class PictureRenderer
         }
 
         $fallbackQuality = $qualityOverride[$fallbackFormat] ?? null;
-        $fallbackSrcset = $this->buildSrcset($image, $widths, $fallbackFormat, $fallbackQuality, $effectiveRatio, $fitToken, $filterParams);
+        $fallbackSrcset = $ctx->buildSrcset($this->urlBuilder, $image, $fallbackFormat, $fallbackQuality, $filterParams);
 
-        $midIdx = (int) floor((count($widths) - 1) / 2);
-        $midWidth = $widths[$midIdx];
-        $midHeight = ($effectiveRatio !== null && $fitToken !== null)
-            ? (int) round($midWidth / $effectiveRatio)
+        $midIdx = (int) floor((count($ctx->widths) - 1) / 2);
+        $midWidth = $ctx->widths[$midIdx];
+        $midHeight = ($ctx->effectiveRatio !== null && $ctx->fitToken !== null)
+            ? (int) round($midWidth / $ctx->effectiveRatio)
             : null;
-        $fallbackSrc = $this->urlBuilder->build($image, $midWidth, $fallbackFormat, $fallbackQuality, $midHeight, $fitToken, $filterParams);
+        $fallbackSrc = $this->urlBuilder->build($image, $midWidth, $fallbackFormat, $fallbackQuality, $midHeight, $ctx->fitToken, $filterParams);
 
-        [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $effectiveRatio);
+        [$attrW, $attrH] = $this->computeIntrinsicAttrs($image, $width, $height, $ctx->effectiveRatio);
 
         $lqip = $this->placeholder->generate($image);
         $color = $this->dominantColor->generate($image);
@@ -164,24 +137,6 @@ final class PictureRenderer
         }
 
         return '<picture>' . implode('', $sources) . $this->renderImg($imgAttrs) . '</picture>';
-    }
-
-    private function buildSrcset(
-        ResolvedImage $image,
-        array $widths,
-        string $format,
-        ?int $quality,
-        ?float $effectiveRatio,
-        ?string $fitToken,
-        array $filterParams,
-    ): string {
-        $entries = [];
-        foreach ($widths as $w) {
-            $h = ($effectiveRatio !== null && $fitToken !== null) ? (int) round($w / $effectiveRatio) : null;
-            $url = $this->urlBuilder->build($image, $w, $format, $quality, $h, $fitToken, $filterParams);
-            $entries[] = $url . ' ' . $w . 'w';
-        }
-        return implode(', ', $entries);
     }
 
     /**
