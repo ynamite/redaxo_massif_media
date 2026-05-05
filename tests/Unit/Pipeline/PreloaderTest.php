@@ -93,6 +93,69 @@ final class PreloaderTest extends TestCase
         self::assertStringContainsString('<link rel="preload"', $html);
     }
 
+    public function testQueueLinkEmitsRawPreloadShape(): void
+    {
+        Preloader::queueLink('/media/clip.mp4?v=1', 'video', 'video/mp4');
+
+        $html = Preloader::drain();
+
+        self::assertStringContainsString('<link rel="preload"', $html);
+        self::assertStringContainsString('as="video"', $html);
+        self::assertStringContainsString('href="/media/clip.mp4?v=1"', $html);
+        self::assertStringContainsString('type="video/mp4"', $html);
+        self::assertStringContainsString('fetchpriority="high"', $html);
+        // Raw links must NOT carry imagesrcset / imagesizes — those are for
+        // responsive image preloads only.
+        self::assertStringNotContainsString('imagesrcset=', $html);
+        self::assertStringNotContainsString('imagesizes=', $html);
+    }
+
+    public function testQueueLinkOmitsTypeWhenNull(): void
+    {
+        Preloader::queueLink('/media/poster.jpg?v=1', 'image');
+
+        $html = Preloader::drain();
+
+        self::assertStringContainsString('as="image"', $html);
+        self::assertStringNotContainsString('type=', $html);
+    }
+
+    public function testDrainEmitsImageQueueBeforeRawLinks(): void
+    {
+        // Preload order matters for browser scheduling — image queue (the
+        // historical primary path) renders before raw links so existing
+        // call sites are unaffected by the new addition.
+        Preloader::queueLink('/media/clip.mp4?v=1', 'video', 'video/mp4');
+        Preloader::queue($this->image(), widths: [800, 1200], sizes: '100vw');
+
+        $html = Preloader::drain();
+
+        $imagePos = strpos($html, 'as="image"');
+        $videoPos = strpos($html, 'as="video"');
+        self::assertNotFalse($imagePos);
+        self::assertNotFalse($videoPos);
+        self::assertLessThan($videoPos, $imagePos);
+    }
+
+    public function testQueueLinkResetsAfterDrain(): void
+    {
+        Preloader::queueLink('/media/clip.mp4?v=1', 'video', 'video/mp4');
+        Preloader::drain();
+
+        // Second drain with no further queuing must be empty — confirms the
+        // raw queue resets identically to the image queue.
+        self::assertSame('', Preloader::drain());
+    }
+
+    public function testQueueLinkEscapesAttributes(): void
+    {
+        Preloader::queueLink('/media/file.mp4?a=1&b=2', 'video', 'video/mp4');
+
+        $html = Preloader::drain();
+
+        self::assertStringContainsString('href="/media/file.mp4?a=1&amp;b=2"', $html);
+    }
+
     public function testDrainCapsWidthsAtEffectiveMaxForCoverCrop(): void
     {
         // 5000×4000 source, 1:1 crop. PictureRenderer's <img srcset> caps at

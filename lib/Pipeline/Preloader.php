@@ -17,6 +17,9 @@ final class Preloader
     /** @var array<int, array{image: ResolvedImage, width: ?int, height: ?int, ratio: ?float, sizes: ?string, widths: ?array, formats: ?array, quality: ?array, fit: ?Fit, filterParams: array}> */
     private static array $queue = [];
 
+    /** @var array<int, array{href: string, as: string, type: ?string}> */
+    private static array $rawLinks = [];
+
     public static function queue(
         ResolvedImage $image,
         ?int $width = null,
@@ -36,12 +39,25 @@ final class Preloader
     }
 
     /**
+     * Queue a single-URL preload (no responsive srcset).
+     *
+     * Use for `<video>` src (`as="video"`) and `<video poster>` (`as="image"`)
+     * — both are single-URL by spec, so the responsive `imagesrcset` shape
+     * `queue()` produces would be wasted bytes. For responsive `<picture>`
+     * preloads, use `queue()` instead.
+     */
+    public static function queueLink(string $href, string $as, ?string $type = null): void
+    {
+        self::$rawLinks[] = compact('href', 'as', 'type');
+    }
+
+    /**
      * Drain the queue and return the rendered <link> tags.
      * Called by the OUTPUT_FILTER hook in boot.php.
      */
     public static function drain(): string
     {
-        if (self::$queue === []) {
+        if (self::$queue === [] && self::$rawLinks === []) {
             return '';
         }
 
@@ -98,11 +114,26 @@ final class Preloader
         }
 
         self::$queue = [];
+
+        foreach (self::$rawLinks as $link) {
+            $attrs = sprintf(
+                'as="%s" href="%s"',
+                htmlspecialchars($link['as'], ENT_QUOTES),
+                htmlspecialchars($link['href'], ENT_QUOTES),
+            );
+            if ($link['type'] !== null && $link['type'] !== '') {
+                $attrs .= sprintf(' type="%s"', htmlspecialchars($link['type'], ENT_QUOTES));
+            }
+            $links[] = '<link rel="preload" ' . $attrs . ' fetchpriority="high">';
+        }
+        self::$rawLinks = [];
+
         return implode('', $links);
     }
 
     public static function reset(): void
     {
         self::$queue = [];
+        self::$rawLinks = [];
     }
 }
