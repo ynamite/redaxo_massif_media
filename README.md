@@ -732,6 +732,37 @@ REX_VIDEO[src="hero.mp4" poster="hero.jpg" preload="auto" loading="eager"]
 
 ---
 
+### Hero-Video als LCP-Kandidat (mit `<link rel="preload">`)
+
+Wenn das Video selbst die grösste sichtbare Komponente im Viewport ist (z.B. autoplay-Hintergrundloop), kann zusätzlich ein `<link rel="preload">` in den `<head>` injiziert werden, damit der Browser das Video bereits während des Head-Parsings zu laden beginnt:
+
+```text
+REX_VIDEO[
+  src="hero.mp4"
+  poster="REX_PIC[src='hero-still.jpg' width='1280' as='url']"
+  width="1920"
+  height="1080"
+  autoplay="true"
+  muted="true"
+  loop="true"
+  preload="auto"
+  linkpreload="true"
+]
+```
+
+Das ergibt zwei Preload-Links im `<head>`:
+
+```html
+<link rel="preload" as="video" href="…/clip.mp4?v=…" type="video/mp4" fetchpriority="high">
+<link rel="preload" as="image" href="…/cache/hero-still.jpg/avif-1280-50.avif?…" fetchpriority="high">
+```
+
+`linkpreload` ist **orthogonal zu `preload`** — letzteres ist das HTML-`<video preload>`-Attribut (Fetch-Verhalten nach dem Body-Parse), `linkpreload` injiziert den Preload schon im Head. Beides setzen ist die korrekte Kombination für LCP-Hero-Videos.
+
+**Wichtig zum Poster-Preload:** Es wird nur dann ein `<link as="image">` für den Poster emittiert, wenn der Poster-Wert eine vollständige URL (`://`), ein absoluter Pfad oder eine Data-URI ist. Blosser Mediapool-Filename → kein Poster-Preload (er würde auf die Mediapool-URL zeigen, während der Browser das `<video poster>` relativ zur Page-URL auflöst — die Diskrepanz wäre verschwendete Bandbreite). Mit dem oben gezeigten `REX_PIC[as='url']`-Pattern liefert die Pipeline eine signierte absolute URL — Preload und tatsächlicher Fetch matchen byte-genau.
+
+---
+
 ## REX_VIDEO Attribute
 
 | Attribut      | Typ    | Default    | Beschreibung                                   |
@@ -742,7 +773,8 @@ REX_VIDEO[src="hero.mp4" poster="hero.jpg" preload="auto" loading="eager"]
 | `height`      | int    | —          | `height`-HTML-Attribut für Layout-Reservierung |
 | `alt`         | string | —          | Wird als `aria-label` ausgegeben               |
 | `class`       | string | —          | CSS-Klasse(n) für das `<video>`-Element        |
-| `preload`     | string | `metadata` | `none`, `metadata` oder `auto`                 |
+| `preload`     | string | `metadata` | `none`, `metadata` oder `auto` (HTML-Attribut) |
+| `linkpreload` | bool   | `false`    | `"true"` injiziert `<link rel="preload" as="video">` (und ein `<link as="image">` für ein URL-/Absolut-/Data-URI-Poster) in den `<head>` |
 | `loading`     | string | `lazy`     | `lazy` oder `eager`                            |
 | `autoplay`    | bool   | `false`    | Browser starten den Stream automatisch         |
 | `muted`       | bool   | `false`    | Tonspur stumm                                  |
