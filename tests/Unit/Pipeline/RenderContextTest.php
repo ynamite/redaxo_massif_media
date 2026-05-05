@@ -240,6 +240,115 @@ final class RenderContextTest extends TestCase
         self::assertStringContainsString('webp-400-400-cover-50-50', $srcset);
     }
 
+    public function testResolveSingleVariantReturnsExplicitWidth(): void
+    {
+        // Explicit width arg wins — no median lookup. No ratio → no fitToken,
+        // no targetHeight.
+        [$w, $h, $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(1600, 900),
+            width: 800,
+            height: null,
+            ratio: null,
+            fit: null,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertSame(800, $w);
+        self::assertNull($h);
+        self::assertNull($token);
+    }
+
+    public function testResolveSingleVariantPicksMedianFromCappedPool(): void
+    {
+        // 5000×4000 source, 1:1 crop → effectiveMaxWidth=4000. With config
+        // pool [16,32,48,64,96,128,256,384,640,750,828,1080,1200,1920,2048,3840]
+        // capped at 4000 (and intrinsic 5000 doesn't shrink it further), the
+        // surviving sorted pool ends with 3840 then 4000-cap. Median index =
+        // floor((count-1)/2). What matters: result is in the pool AND ≤ 4000.
+        [$w, , $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(5000, 4000),
+            width: null,
+            height: null,
+            ratio: 1.0,
+            fit: Fit::COVER,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertLessThanOrEqual(4000, $w);
+        self::assertGreaterThan(0, $w);
+        self::assertSame('cover-50-50', $token);
+    }
+
+    public function testResolveSingleVariantComputesHeightFromRatioWhenCropping(): void
+    {
+        // 1:1 crop on 1600×900: ratio=1.0, fitToken set, so target height
+        // must be round(width / 1.0) = width.
+        [$w, $h, $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(1600, 900),
+            width: 600,
+            height: null,
+            ratio: 1.0,
+            fit: Fit::COVER,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertSame(600, $w);
+        self::assertSame(600, $h);
+        self::assertSame('cover-50-50', $token);
+    }
+
+    public function testResolveSingleVariantOmitsHeightWhenRatioMatchesIntrinsic(): void
+    {
+        // 1600×900 has intrinsic ratio 16:9 ≈ 1.7777…. Requesting 16/9 falls
+        // inside RATIO_EQUAL_EPSILON so no crop is needed → fitToken=null,
+        // targetHeight=null. Picture path makes the same choice (no crop
+        // segment in cache path), so URL paths must agree.
+        [$w, $h, $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(1600, 900),
+            width: 800,
+            height: null,
+            ratio: 16 / 9,
+            fit: Fit::COVER,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertSame(800, $w);
+        self::assertNull($h);
+        self::assertNull($token);
+    }
+
+    public function testResolveSingleVariantPropagatesFocalPoint(): void
+    {
+        [, , $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(1600, 900, focal: '25% 75%'),
+            width: 400,
+            height: null,
+            ratio: 1.0,
+            fit: Fit::COVER,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertSame('cover-25-75', $token);
+    }
+
+    public function testResolveSingleVariantHonorsExplicitHeight(): void
+    {
+        // Explicit width AND height → ratio derived = 800/600. Fit defaults to
+        // COVER (since ratio is set), but 800/600 ≠ 1600/900 → crop applies.
+        [$w, $h, $token] = RenderContext::resolveSingleVariant(
+            image: $this->image(1600, 900),
+            width: 800,
+            height: 600,
+            ratio: null,
+            fit: null,
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        self::assertSame(800, $w);
+        self::assertSame(600, $h);
+        self::assertSame('cover-50-50', $token);
+    }
+
     public function testBuildSrcsetOmitsHeightWhenNotCropping(): void
     {
         $ctx = RenderContext::build(

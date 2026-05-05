@@ -7,7 +7,9 @@ namespace Ynamite\Media\Builder;
 use rex;
 use rex_logger;
 use rex_media;
+use rex_url;
 use Throwable;
+use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
@@ -19,6 +21,7 @@ use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\Preloader;
+use Ynamite\Media\Pipeline\RenderContext;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
@@ -338,6 +341,82 @@ final class ImageBuilder
             rex_logger::logException($e);
             return '';
         }
+    }
+
+    /**
+     * Return a single signed URL for one variant of this image — no `<picture>` markup.
+     *
+     * Use cases: `<video poster>` (HTML5 has no `srcset` for posters),
+     * Open Graph / Twitter card images (validators that don't grok `<picture>`),
+     * CSS `background-image`, JS-driven canvas / sprite usage. Honors all
+     * builder state — width / height / ratio / fit / focal / filters.
+     *
+     * Defaults:
+     *   - `$format` falls back to the first entry of `formats()` setter, else
+     *     `Config::formats()[0]`, else `'webp'` (matches `Preloader::drain()`).
+     *   - `$quality` falls back to the per-format value set via `quality()`
+     *     setter, else `Config::quality($format)`.
+     *   - Width: explicit setter wins; else median of the
+     *     `effectiveMaxWidth`-capped width pool — matches `PictureRenderer`'s
+     *     fallback `<img src>` choice (lib/View/PictureRenderer.php:89-90).
+     *
+     * Passthrough sources (SVG / GIF) return the bare mediapool URL — no Glide
+     * pipeline, dimensions and filters are silently ignored. Animated GIFs
+     * return the static GIF URL, NOT the animated WebP wrap, since
+     * `<video poster>` + animated WebP is undefined per HTML5 and CSS
+     * `background-image` of an animated WebP autoplays the loop, rarely the
+     * intended behaviour.
+     */
+    public function url(?string $format = null, ?int $quality = null): string
+    {
+        $resolver = new ImageResolver(new MetadataReader());
+        try {
+            $image = $resolver->resolve($this->src);
+        } catch (ImageNotFoundException $e) {
+            rex_logger::logException($e);
+            return '';
+        }
+
+        if ($this->focal !== null) {
+            $image = $this->withFocal($image, $this->focal);
+        }
+
+        if ($image->isPassthrough()) {
+            return rex_url::base() . 'media/' . $image->sourcePath;
+        }
+
+        $effectiveFormat = strtolower($format ?? $this->resolveDefaultFormat());
+        $effectiveQuality = $quality ?? ($this->qualityOverride[$effectiveFormat] ?? null);
+
+        [$targetWidth, $targetHeight, $fitToken] = RenderContext::resolveSingleVariant(
+            $image,
+            $this->width,
+            $this->height,
+            $this->ratio,
+            $this->fit,
+            new SrcsetBuilder(),
+        );
+
+        return (new UrlBuilder())->build(
+            $image,
+            $targetWidth,
+            $effectiveFormat,
+            $effectiveQuality,
+            $targetHeight,
+            $fitToken,
+            $this->filterParams,
+        );
+    }
+
+    private function resolveDefaultFormat(): string
+    {
+        $configured = $this->formatsOverride !== null && $this->formatsOverride !== []
+            ? $this->formatsOverride
+            : Config::formats();
+        if ($configured === []) {
+            return 'webp';
+        }
+        return strtolower((string) $configured[0]);
     }
 
     private function withFocal(ResolvedImage $image, string $focal): ResolvedImage

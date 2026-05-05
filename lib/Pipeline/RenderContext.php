@@ -41,6 +41,78 @@ final class RenderContext
         ?array $widthsOverride,
         SrcsetBuilder $srcsetBuilder,
     ): self {
+        [$effectiveRatio, $effectiveFit, $fitToken, $effectiveMaxWidth] =
+            self::deriveFitState($image, $width, $height, $ratio, $fit);
+
+        $widths = $srcsetBuilder->build($image->intrinsicWidth, $widthsOverride, $effectiveMaxWidth);
+
+        return new self($effectiveRatio, $effectiveFit, $fitToken, $effectiveMaxWidth, $widths);
+    }
+
+    /**
+     * Resolve `[width, height, fitToken]` for a single-URL emission.
+     *
+     * Mirrors `build()`'s effective-fit / `needsCrop` / `effectiveMaxWidth` logic
+     * (via the shared `deriveFitState` helper) so the picture path and the
+     * single-URL path agree on every cropping / cache-path decision — drift
+     * here would mean `Image::url($w)` returns a URL that doesn't actually exist
+     * in the rendered `<picture srcset>`.
+     *
+     * Default width selection: explicit `$width` if given, else median of the
+     * `effectiveMaxWidth`-capped width pool — matching `PictureRenderer`'s
+     * `<img src>` fallback choice (lib/View/PictureRenderer.php:89-90).
+     *
+     * @return array{0: int, 1: ?int, 2: ?string} [targetWidth, targetHeight, fitToken]
+     */
+    public static function resolveSingleVariant(
+        ResolvedImage $image,
+        ?int $width,
+        ?int $height,
+        ?float $ratio,
+        ?Fit $fit,
+        SrcsetBuilder $srcsetBuilder,
+    ): array {
+        [$effectiveRatio, , $fitToken, $effectiveMaxWidth] =
+            self::deriveFitState($image, $width, $height, $ratio, $fit);
+
+        if ($width !== null && $width > 0) {
+            $targetWidth = $width;
+        } else {
+            $widths = $srcsetBuilder->build($image->intrinsicWidth, null, $effectiveMaxWidth);
+            if ($widths === []) {
+                $targetWidth = $image->intrinsicWidth > 0 ? $image->intrinsicWidth : 1;
+            } else {
+                $midIdx = (int) floor((count($widths) - 1) / 2);
+                $targetWidth = $widths[$midIdx];
+            }
+        }
+
+        $targetHeight = null;
+        if ($height !== null && $height > 0) {
+            $targetHeight = $height;
+        } elseif ($effectiveRatio !== null && $effectiveRatio > 0 && $fitToken !== null) {
+            $targetHeight = (int) round($targetWidth / $effectiveRatio);
+        }
+
+        return [$targetWidth, $targetHeight, $fitToken];
+    }
+
+    /**
+     * Shared fit-state derivation. Returns `[effectiveRatio, effectiveFit,
+     * fitToken, effectiveMaxWidth]`. Both `build()` (responsive `<picture>`)
+     * and `resolveSingleVariant()` (single-URL emission) call this so the
+     * `RATIO_EQUAL_EPSILON` short-circuit and the COVER/CONTAIN width cap
+     * stay locked between the two paths.
+     *
+     * @return array{0: ?float, 1: Fit, 2: ?string, 3: ?int}
+     */
+    private static function deriveFitState(
+        ResolvedImage $image,
+        ?int $width,
+        ?int $height,
+        ?float $ratio,
+        ?Fit $fit,
+    ): array {
         $effectiveRatio = $ratio;
         if ($effectiveRatio === null && $height !== null && $height > 0 && $width !== null && $width > 0) {
             $effectiveRatio = $width / $height;
@@ -66,9 +138,7 @@ final class RenderContext
             }
         }
 
-        $widths = $srcsetBuilder->build($image->intrinsicWidth, $widthsOverride, $effectiveMaxWidth);
-
-        return new self($effectiveRatio, $effectiveFit, $fitToken, $effectiveMaxWidth, $widths);
+        return [$effectiveRatio, $effectiveFit, $fitToken, $effectiveMaxWidth];
     }
 
     /**
