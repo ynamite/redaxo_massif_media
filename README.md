@@ -265,6 +265,46 @@ Für Redakteure und Textfelder gibt es zusätzlich die Platzhalter `REX_PIC[…]
 
 ---
 
+## Einzel-URL ohne `<picture>`-Markup
+
+`Image::picture(...)` und `Image::for($src)->render()` liefern das vollständige `<picture>`-Markup mit `<source>`-Tags pro Format und Fallback-`<img>`. Es gibt aber Kontexte, in denen der Browser nur **eine** URL braucht — kein Markup, kein `srcset`:
+
+- `<video poster="…">` (HTML5 hat kein `srcset` für Poster)
+- Open Graph / Twitter-Card-`<meta>`-Tags (Validatoren stolpern teilweise über `<picture>`-spezifische Markups)
+- CSS `background-image`
+- JS-getriebene Canvas / Sprite-Logik
+
+Für genau diese Fälle gibt es `Image::url(...)`:
+
+```php
+use Ynamite\Media\Image;
+
+// Single signed URL via die volle Glide-Pipeline:
+$posterUrl = Image::url(
+    src:    'hero-still.jpg',
+    width:  1280,
+    format: 'webp',     // optional — Default: erstes Format aus Config::formats()
+    fit:    'cover',
+    focal:  '40% 30%',
+);
+
+// Verwendung als Video-Poster:
+echo Video::render(
+    src:    'hero.mp4',
+    poster: $posterUrl,
+    width:  1920,
+    height: 1080,
+);
+```
+
+Die zurückgegebene URL geht **durch denselben Glide-Cache** wie `picture()` — ein `Image::url(width: 1280, format: 'webp')` Aufruf teilt sich seine On-Disk-Cache-Datei mit der passenden `<picture>`-Variante derselben Breite / Format / Qualität. Kein zweiter Cache, keine Duplikation.
+
+`width` ist optional — ohne Angabe wird der Median des `effectiveMaxWidth`-gecappten Width-Pools gewählt (dieselbe Logik wie `PictureRenderer`s Fallback-`<img src>`).
+
+**SVG / GIF (Passthrough):** Es wird die rohe Mediapool-URL zurückgegeben — `width` / `format` / Filter werden still ignoriert. Animierte GIFs liefern die statische GIF-URL, **nicht** die animierte WebP-Variante (das `<video poster>` + animated-WebP-Konstrukt ist per HTML5 undefiniert; CSS `background-image` mit animiertem WebP loopt automatisch — selten gewollt).
+
+---
+
 # Bilder mit REX_PIC
 
 `REX_PIC[…]` ist ein REDAXO-nativer Platzhalter für Bilder.
