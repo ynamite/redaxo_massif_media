@@ -305,6 +305,148 @@ Die zurückgegebene URL geht **durch denselben Glide-Cache** wie `picture()` —
 
 ---
 
+## Externe URL-Quellen
+
+Jede Bild-API (`Image::picture`, `Image::url`, `Image::for($src)->...`) und `Video::render` / `Video::for` akzeptieren neben Mediapool-Filenames auch beliebige HTTPS-URLs:
+
+```php
+echo Image::picture(
+    src:   'https://images.example.com/hero.jpg',
+    alt:   'Hero',
+    ratio: 16 / 9,
+);
+
+// Single-URL für CSS / Open Graph:
+$ogImage = Image::url(
+    src:    'https://cdn.example.com/banner.jpg',
+    width:  1200,
+    format: 'jpg',
+);
+
+// Externe Quelle als Video-Poster:
+echo Video::render(
+    src:    'hero.mp4',
+    poster: Image::url(src: 'https://cdn.example.com/still.jpg', width: 1280),
+);
+
+// Externes Video direkt:
+echo Video::render(src: 'https://stream.example.com/clip.mp4', autoplay: true, muted: true, loop: true);
+```
+
+Beim ersten Render lädt das Addon das Original einmal via `symfony/http-client` herunter, schreibt es atomar nach `cache/_external/<urlHash>/_origin.bin` und schickt es danach durch dieselbe Glide-Pipeline wie ein Mediapool-Bild — `<source srcset>`-Generation, Format-Negotiation, AVIF/WebP/JPG-Encoding, Crop, Filter und LQIP funktionieren identisch. Die emittierten URLs zeigen auf den lokalen Cache (`/assets/addons/massif_media/cache/_external/<hash>/<spec>.<ext>`); der Original-URL leakt nirgends ins gerenderte HTML.
+
+**TTL-Refresh** statt Hammering: Default `external_ttl_seconds = 86400` (24 h). Nach Ablauf sendet der nächste Render einen Conditional GET (`If-None-Match` / `If-Modified-Since`) — 304 bumpt nur den `fetchedAt`-Timestamp (das `&v=`-Cache-Buster-Token bewegt sich, der Body bleibt); 200 mit neuem Body schreibt die Origin-Datei atomar neu und gibt das frische ETag in den Manifest. TTL ist im Backend-Tab **Sicherheit & Cache** unter *Externe URL-Quellen* einstellbar.
+
+**SSRF-Schutz**: Vor jedem Fetch wird der Hostname aufgelöst und gegen eine Block-Liste geprüft — Loopback (127/8, 0/8), Private (10/8, 172.16/12, 192.168/16), Link-Local (169.254/16), CGNAT (100.64/10), Multicast (224/4) und Broadcast (255.255.255.255) werden abgelehnt. Die validierte IP wird über Symfonys `'resolve'`-Option (= libcurl `CURLOPT_RESOLVE`) auf die Connection gepinnt — DNS-Rebinding zwischen Check und Connect ist damit ausgeschlossen.
+
+**Optionaler Host-Allowlist** (Defence-in-Depth zusätzlich zur HMAC-Signatur): `external_host_allowlist` als Textarea, ein Regex pro Zeile (anchored mit `^…$`). Default leer = alle Hosts erlaubt. Beispiel:
+
+```
+^images\.example\.com$
+^cdn\.example\.org$
+```
+
+**Body-Size-Cap** (Default 25 MB, `external_max_bytes`): mid-stream Abort wenn überschritten. **Connect-Timeout** Default 15 s (`external_timeout_seconds`).
+
+**Cache-Layout** für externe Quellen:
+
+```
+cache/_external/<xxh64(url)[:16]>/
+  _origin.bin           # geladenes Original (Glide liest hier)
+  _manifest.json        # { url, etag, lastModified, fetchedAt, ttl }
+  webp-1280-80.webp     # Glide-erzeugte Varianten — flache Spec ohne Path-Prefix
+  avif-1920-1080-cover-50-30-50.avif
+  ...
+```
+
+Der `_external/`-Präfix ist reserviert; Mediapool-Filenames können nicht mit `_` beginnen (gleiche Konvention wie die existierenden `_meta/`, `_lqip/`, `_color/`-Verzeichnisse).
+
+**CDN-Modus wird übersprungen.** Wenn `cdn_enabled` an ist, gehen Mediapool-Quellen wie gehabt durch das CDN-Template; externe Quellen routen aber weiter über den `_external/<hash>`-Pfad — der Upstream ist schon ein CDN, ihn nochmal durch unseren zu schicken wäre sinnlos. Externe `<video>`-Quellen werden dagegen direkt als `<video src="https://…">` emittiert (kein Proxy, kein Fetch).
+
+**Animated WebP** und **Art Direction** funktionieren für externe Bilder genauso wie für Mediapool-Bilder. Filter, Focal-Point per Setter (`->focal('50% 30%')`) und `fit`-Token funktionieren ebenfalls — externe Quellen haben keinen `med_focuspoint`-Wert auf einer rex_media-Row, aber per-Call-Override über `focal:` ist möglich.
+
+**Cache-Invalidierung** für externe URLs läuft via TTL-Refresh oder manuell:
+
+```php
+\Ynamite\Media\Pipeline\CacheInvalidator::invalidateUrl('https://images.example.com/hero.jpg');
+```
+
+— löscht den ganzen `cache/_external/<hash>/`-Bucket inklusive aller Varianten und der Sidecars. "Cache leeren" auf dem **Sicherheit & Cache**-Tab räumt alles inkl. externer Buckets weg.
+
+**Was nicht durch die externe Pipeline geht:** Animated-GIF-zu-WebP-Wrap (das ist eine Mediapool-Editor-Optimierung, externe Quellen werden im `<picture>` direkt verlinkt), und das `med_focuspoint`-Feld vom `focuspoint`-Addon (existiert nur auf Mediapool-Records).
+
+---
+
+## Art Direction
+
+Manchmal soll auf Mobile ein anderer Bild-**Crop** oder sogar eine ganz andere **Quelle** geladen werden als auf Desktop — ein Hochformat-Crop fürs Smartphone, das Wide-Angle-Original auf dem Laptop. Genau dafür gibt es Art Direction: mehrere `<source>`-Tags mit `media=`-Query, jede mit eigenem `srcset`.
+
+Im Builder:
+
+```php
+echo Image::for('hero-landscape.jpg')
+    ->alt('Hero')
+    ->ratio(16, 9)               // Default-Variante (Desktop): 16:9
+    ->art([
+        [
+            'media' => '(max-width: 600px)',
+            'src'   => 'hero-portrait.jpg',
+            'ratio' => 1,             // Mobile: quadratisch
+            'focal' => '50% 30%',     // anderes Focal
+        ],
+        [
+            'media' => '(max-width: 1024px)',
+            'src'   => 'hero-tablet.jpg',
+            'ratio' => 4 / 3,         // Tablet: 4:3
+        ],
+    ])
+    ->render();
+```
+
+`->art([...])` nimmt eine Liste von Variant-Maps. Pflichtfelder: `media` (eine beliebige CSS-Media-Query) und `src` (Mediapool-Filename, `rex_media`-Instanz oder externe HTTPS-URL — externe Quellen gehen transparent durch die externe Pipeline). Optional: `width`, `height`, `ratio` (`'16:9'` / `'4/3'` / `1.7777` werden alle akzeptiert), `focal` (`'50% 30%'`), `fit` (`'cover'` / `'contain'` / `'stretch'` / `'none'`), `filters` (friendly-keyed; wird durch `FilterParams::normalize` validiert).
+
+**Builder-Level-Filter (`->blur(5)`) gelten nur für die Default-Variante.** Jede `art`-Variante ist self-describing — eigenes `filterParams`. Das hält "anderer Crop auf Mobile" und "anderer Filter auf Mobile" sauber orthogonal:
+
+```php
+echo Image::for('hero.jpg')
+    ->blur(8)                 // Default-Variante: blur 8
+    ->art([
+        ['media' => '(max-width: 600px)', 'src' => 'hero-mobile.jpg', 'ratio' => 1],
+        // mobile variant: KEIN blur, weil sie ihre eigenen filterParams ([]) hat
+    ])
+    ->render();
+```
+
+**Browser-Cascade-Reihenfolge**: Art-Direction-`<source>`s werden **vor** den Format-keyed Default-Sources emittiert. Browsers iterieren `<source>` top-to-bottom und nehmen den ersten matchenden — `media` filtert by Viewport, `type` by Format-Support. Eine Variante bekommt einen eigenen `<source>` pro Format (also bei `formats: ['avif', 'webp', 'jpg']` und 2 Varianten = 6 Variant-Sources + 2 Default-Sources + 1 Fallback-`<img>`).
+
+**Das Fallback-`<img>`** bleibt single-Variant (Default-Source). HTML5 verlangt ein einziges `<img>`-Fallback für Browser ohne `<picture>`-Support; ohne Variant-Differenzierung ist das fine — Browsers, die mit `<picture>` umgehen können, nehmen sowieso eine Variante.
+
+**`<video>` bekommt kein Art Direction.** `<video><source media>` existiert technisch, aber UAs re-evaluieren die Quelle nicht beim Viewport-Resize, und der Use-Case (mobile vs. desktop crop) ist nicht das, was das Element vorsieht. Wer responsive Video-Posters braucht, geht via `Image::url()` für das Poster (siehe oben).
+
+### REX_PIC: Art Direction in Slice-Inhalten
+
+Im Editor-Slice via JSON-Attribut `art='[…]'`:
+
+```
+REX_PIC[
+  src="hero-landscape.jpg"
+  alt="Hero"
+  ratio="16:9"
+  art='[
+    {"media":"(max-width: 600px)", "src":"hero-portrait.jpg", "ratio":1, "focal":"50% 30%"},
+    {"media":"(max-width: 1024px)", "src":"hero-tablet.jpg", "ratio":"4/3"}
+  ]'
+]
+```
+
+`RexPic::getOutput` parst die JSON-Liste, validiert die erlaubten Keys (`media`, `src`, `width`, `height`, `ratio`, `focal`, `fit`, `filters`) und emittiert `art: json_decode(<json>, true)` als PHP-Literal in den Article-Cache. `Image::picture` re-validiert jede Entry zur Render-Zeit via `ArtDirectionVariant::fromArray`.
+
+**Bei Parse-Fehler** (kaputtes JSON, fehlende Pflicht-Keys) loggt das Addon eine Warning via `rex_logger::factory()->log('warning', …)` und rendert das `<picture>` ohne Art Direction — eine kaputte JSON im Slice wirft die Seite nicht in einen 500.
+
+`REX_VIDEO` hat **kein** `art`-Attribut (siehe oben — `<video>` ist semantisch single-source).
+
+---
+
 # Bilder mit REX_PIC
 
 `REX_PIC[…]` ist ein REDAXO-nativer Platzhalter für Bilder.
