@@ -34,11 +34,11 @@ final class UrlBuilder
     ): string {
         $quality ??= Config::quality($format);
 
-        if (Config::cdnEnabled()) {
+        if (Config::cdnEnabled() && !$image->source->isExternal()) {
             return $this->buildCdnUrl($image, $width, $format, $quality, $height, $fitToken, $filterParams);
         }
 
-        $cachePath = Server::cachePath($image->sourcePath, [
+        $cachePath = Server::cachePath($image->source->key(), [
             'fm' => $format,
             'w' => $width,
             'q' => $quality,
@@ -53,8 +53,9 @@ final class UrlBuilder
 
         $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
         $url .= '?s=' . $signature;
-        if ($image->mtime > 0) {
-            $url .= '&v=' . $image->mtime;
+        $bust = $image->source->cacheBust();
+        if ($bust !== '' && $bust !== '0') {
+            $url .= '&v=' . $bust;
         }
         if ($filterBlob !== '') {
             $url .= '&f=' . $filterBlob;
@@ -64,24 +65,29 @@ final class UrlBuilder
 
     /**
      * Build a signed URL for the animated WebP variant of an animated source.
-     * Returns '' when CDN mode is on (the CDN doesn't run our encoder) or when
-     * the source isn't actually animated. Caller falls back to the GIF in
-     * either case.
+     * Returns '' when CDN mode is on (the CDN doesn't run our encoder), when
+     * the source isn't actually animated, or when the source is external
+     * (animated GIF wrapping is opt-in for mediapool only — external URLs
+     * pass through their original byte stream). Caller falls back to the
+     * raw `<img>` in any of these cases.
      */
     public function buildAnimatedWebp(ResolvedImage $image): string
     {
-        // Mirror AnimatedWebpEncoder::shouldEncode — only animated GIFs in
-        // self-served (non-CDN) mode get the WebP wrap. Anything else returns
-        // '' and the caller falls back to the plain <img>.
-        if (!$image->isAnimated || $image->sourceFormat !== 'gif' || Config::cdnEnabled()) {
+        if (
+            !$image->isAnimated
+            || $image->sourceFormat !== 'gif'
+            || Config::cdnEnabled()
+            || $image->source->isExternal()
+        ) {
             return '';
         }
-        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->sourcePath);
+        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key());
         $signature = Signature::sign($cachePath);
         $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
         $url .= '?s=' . $signature;
-        if ($image->mtime > 0) {
-            $url .= '&v=' . $image->mtime;
+        $bust = $image->source->cacheBust();
+        if ($bust !== '' && $bust !== '0') {
+            $url .= '&v=' . $bust;
         }
         return $url;
     }
@@ -91,6 +97,11 @@ final class UrlBuilder
      *
      * Template tokens: {w}, {h}, {q}, {fm}, {fit}, {src}, {f}.
      * Existing templates without {h}/{fit}/{f} keep emitting the same URLs.
+     *
+     * Note: external-URL sources never go through the CDN — the upstream URL
+     * is already its own CDN, and reformatting it through ours would defeat
+     * the point. {@see UrlBuilder::build()} short-circuits the CDN branch
+     * when the source is external.
      */
     private function buildCdnUrl(
         ResolvedImage $image,
@@ -112,7 +123,7 @@ final class UrlBuilder
             '{w}' => (string) $width,
             '{q}' => (string) $quality,
             '{fm}' => $format,
-            '{src}' => $image->sourcePath,
+            '{src}' => $image->source->key(),
             '{h}' => $height !== null ? (string) $height : '',
             '{fit}' => $fitToken ?? '',
             '{f}' => $filterBlob,

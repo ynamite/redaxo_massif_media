@@ -5,39 +5,56 @@ declare(strict_types=1);
 namespace Ynamite\Media\Pipeline;
 
 use rex_media;
-use rex_path;
 use Ynamite\Media\Exception\ImageNotFoundException;
+use Ynamite\Media\Source\ExternalSourceFactory;
+use Ynamite\Media\Source\MediapoolSourceFactory;
+use Ynamite\Media\Source\SourceInterface;
 
+/**
+ * Front door for source resolution. Dispatches to the appropriate factory
+ * based on the input shape:
+ *
+ *   - `string` containing `://` → {@see ExternalSourceFactory} (HTTPS URL)
+ *   - `rex_media` or bare-filename string → {@see MediapoolSourceFactory}
+ *
+ * The resulting {@see SourceInterface} is fed to {@see MetadataReader} which
+ * computes / caches intrinsic dims + focal + format and wraps the source in
+ * a {@see ResolvedImage}.
+ */
 final class ImageResolver
 {
-    public function __construct(private MetadataReader $metadataReader)
-    {
+    private MediapoolSourceFactory $mediapoolFactory;
+    private ExternalSourceFactory $externalFactory;
+
+    public function __construct(
+        private MetadataReader $metadataReader,
+        ?MediapoolSourceFactory $mediapoolFactory = null,
+        ?ExternalSourceFactory $externalFactory = null,
+    ) {
+        $this->mediapoolFactory = $mediapoolFactory ?? new MediapoolSourceFactory();
+        $this->externalFactory = $externalFactory ?? new ExternalSourceFactory();
     }
 
     /**
-     * Resolve a source reference to a ResolvedImage.
-     *
-     * Accepts:
-     *   - rex_media object
-     *   - filename string (must exist in rex_path::media())
-     *
-     * @throws ImageNotFoundException if the file cannot be read.
+     * @throws ImageNotFoundException if the source cannot be resolved (mediapool
+     *   file unreadable, or external URL fetch failed).
      */
     public function resolve(string|rex_media $src): ResolvedImage
     {
-        if ($src instanceof rex_media) {
-            $filename = $src->getFileName();
-            $media = $src;
-        } else {
-            $filename = $src;
-            $media = rex_media::get($filename);
-        }
+        $source = is_string($src) && self::looksLikeUrl($src)
+            ? $this->externalFactory->resolve($src)
+            : $this->mediapoolFactory->resolve($src);
 
-        $absolutePath = rex_path::media($filename);
-        if (!is_readable($absolutePath)) {
-            throw new ImageNotFoundException(sprintf('Image not found or unreadable: %s', $filename));
-        }
+        return $this->metadataReader->read($source);
+    }
 
-        return $this->metadataReader->read($filename, $absolutePath, $media);
+    /**
+     * Lightweight URL detector. Anything containing `://` is routed to the
+     * external factory; the factory itself enforces the scheme allowlist
+     * (http/https only) and the SSRF guard.
+     */
+    private static function looksLikeUrl(string $src): bool
+    {
+        return str_contains($src, '://');
     }
 }

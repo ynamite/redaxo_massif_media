@@ -10,6 +10,7 @@ use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 /**
  * Exercises the real Imagick path of DominantColor against fixture images
@@ -53,13 +54,15 @@ final class DominantColorTest extends TestCase
         // quantizeImage(1) the result is very close but not bit-exact; allow
         // ±8 per channel slack.
         $image = new ResolvedImage(
-            sourcePath: 'landscape-800x600.jpg',
-            absolutePath: $this->fixturesDir . '/landscape-800x600.jpg',
+            source: new MediapoolSource(
+                filename: 'landscape-800x600.jpg',
+                absolutePath: $this->fixturesDir . '/landscape-800x600.jpg',
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: 800,
             intrinsicHeight: 600,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
-            mtime: 1_700_000_000,
         );
 
         $hex = (new DominantColor())->generate($image);
@@ -71,21 +74,19 @@ final class DominantColorTest extends TestCase
     public function testCacheHitOnSecondCall(): void
     {
         $image = new ResolvedImage(
-            sourcePath: 'portrait-600x800.jpg',
-            absolutePath: $this->fixturesDir . '/portrait-600x800.jpg',
+            source: new MediapoolSource(
+                filename: 'portrait-600x800.jpg',
+                absolutePath: $this->fixturesDir . '/portrait-600x800.jpg',
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: 600,
             intrinsicHeight: 800,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
-            mtime: 1_700_000_000,
         );
 
         $first = (new DominantColor())->generate($image);
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':v1');
-        $cachePath = rex_path::addonAssets(
-            Config::ADDON,
-            'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
-        );
+        $cachePath = DominantColor::cachePathFor($image->source);
         self::assertFileExists($cachePath, 'First call should have written the cache file.');
 
         // Second call returns the same value — and since we don't re-run

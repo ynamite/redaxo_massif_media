@@ -145,18 +145,23 @@ final class VideoBuilder
             return self::missingSrcMarker('');
         }
 
-        $media = $this->src instanceof rex_media ? $this->src : rex_media::get($filename);
-        $absPath = rex_path::media($filename);
-        if (!is_readable($absPath)) {
-            rex_logger::logException(
-                new RuntimeException('massif_media: video src not readable: ' . $filename),
-            );
-            return self::missingSrcMarker($filename);
-        }
+        $isExternal = is_string($this->src) && str_contains($this->src, '://');
 
-        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        $mtime = (int) (filemtime($absPath) ?: 0);
-        $url = $this->buildUrl($filename, $mtime);
+        if ($isExternal) {
+            $url = $this->src;
+            $ext = self::extFromUrl($url);
+        } else {
+            $absPath = rex_path::media($filename);
+            if (!is_readable($absPath)) {
+                rex_logger::logException(
+                    new RuntimeException('massif_media: video src not readable: ' . $filename),
+                );
+                return self::missingSrcMarker($filename);
+            }
+            $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            $mtime = (int) (filemtime($absPath) ?: 0);
+            $url = $this->buildMediapoolUrl($filename, $mtime);
+        }
 
         $validatedPoster = ($this->poster !== null && $this->poster !== '')
             ? self::validatePoster($this->poster)
@@ -244,11 +249,6 @@ final class VideoBuilder
      * through unchanged because we can't cheaply verify them. Returns null
      * when the bare filename can be definitively shown not to exist on disk
      * AND has no `rex_media` record — caller drops the attribute.
-     *
-     * Out of scope (a v2 candidate): normalising bare-filename posters to
-     * full mediapool URLs the way `buildUrl()` does for `src`. That would
-     * be a behaviour change for users who currently pass same-folder
-     * relative paths and rely on browser-relative URL resolution.
      */
     /**
      * Map a video filename extension to its preload `<link type>` MIME.
@@ -273,6 +273,20 @@ final class VideoBuilder
             'mov' => 'video/quicktime',
             default => null,
         };
+    }
+
+    /**
+     * Pull the file extension out of a URL path, ignoring query string and
+     * fragment. Returns lowercase. Used for `<source type="video/{ext}">`
+     * emission and the preload-link MIME map. Empty string for URLs without
+     * a recognizable extension (e.g. `/stream/123` from a CDN that hides the
+     * container) — in that case the `<source type>` becomes `video/` which
+     * browsers gracefully ignore.
+     */
+    private static function extFromUrl(string $url): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        return strtolower(pathinfo($path, PATHINFO_EXTENSION));
     }
 
     /**
@@ -314,7 +328,7 @@ final class VideoBuilder
         return null;
     }
 
-    private function buildUrl(string $filename, int $mtime): string
+    private function buildMediapoolUrl(string $filename, int $mtime): string
     {
         if (Config::cdnEnabled()) {
             $base = Config::cdnBase();

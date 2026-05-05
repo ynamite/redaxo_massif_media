@@ -42,18 +42,19 @@ final class AnimatedWebpEncoder
             return '';
         }
 
-        $cachePath = self::cacheFile($image->sourcePath);
+        $cachePath = self::cacheFile($image->source->key());
         if (is_file($cachePath) && filesize($cachePath) > 0) {
             return $cachePath;
         }
 
-        if (!extension_loaded('imagick') || !is_readable($image->absolutePath)) {
+        $absolutePath = $image->source->absolutePath();
+        if (!extension_loaded('imagick') || !is_readable($absolutePath)) {
             return '';
         }
 
         try {
             $im = new Imagick();
-            $im->readImage($image->absolutePath);
+            $im->readImage($absolutePath);
             // coalesceImages() materialises each frame as a full-canvas image,
             // which is what most WebP decoders expect. Without it some sources
             // produce broken output (frames overlap with prior-frame pixels).
@@ -77,11 +78,11 @@ final class AnimatedWebpEncoder
      * Cache path the encoder writes to. Public so URL builder + Endpoint can
      * agree on the same on-disk location without duplicating the construction.
      */
-    public static function cacheFile(string $sourcePath): string
+    public static function cacheFile(string $sourceKey): string
     {
         return rex_path::addonAssets(
             Config::ADDON,
-            'cache/' . self::cacheRelPath($sourcePath),
+            'cache/' . self::cacheRelPath($sourceKey),
         );
     }
 
@@ -91,9 +92,9 @@ final class AnimatedWebpEncoder
      * `{src}/animated.webp` shape — Endpoint matches the same string when
      * routing animated requests.
      */
-    public static function cacheRelPath(string $sourcePath): string
+    public static function cacheRelPath(string $sourceKey): string
     {
-        return $sourcePath . '/animated.webp';
+        return $sourceKey . '/animated.webp';
     }
 
     private function shouldEncode(ResolvedImage $image): bool

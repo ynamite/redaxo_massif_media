@@ -10,6 +10,7 @@ use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 /**
  * Locks in the gate conditions of DominantColor::generate. The Imagick-backed
@@ -44,13 +45,15 @@ final class DominantColorTest extends TestCase
     private function image(string $format = 'jpg'): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'hero.' . $format,
-            absolutePath: $this->tmpBase . '/media/hero.' . $format,
+            source: new MediapoolSource(
+                filename: 'hero.' . $format,
+                absolutePath: $this->tmpBase . '/media/hero.' . $format,
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: 800,
             intrinsicHeight: 600,
             mime: 'image/' . ($format === 'jpg' ? 'jpeg' : $format),
             sourceFormat: $format,
-            mtime: 1_700_000_000,
         );
     }
 
@@ -73,11 +76,7 @@ final class DominantColorTest extends TestCase
     {
         rex_config::set(Config::ADDON, Config::KEY_COLOR_ENABLED, 1);
         $image = $this->image();
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':v1');
-        $cachePath = rex_path::addonAssets(
-            Config::ADDON,
-            'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
-        );
+        $cachePath = DominantColor::cachePathFor($image->source);
         @mkdir(dirname($cachePath), 0777, true);
         file_put_contents($cachePath, '#deadbe');
 

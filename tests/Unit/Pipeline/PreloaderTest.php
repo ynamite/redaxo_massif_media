@@ -9,6 +9,7 @@ use rex_config;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 final class PreloaderTest extends TestCase
 {
@@ -26,13 +27,11 @@ final class PreloaderTest extends TestCase
     private function image(): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'hero.jpg',
-            absolutePath: '/tmp/hero.jpg',
+            source: new MediapoolSource(filename: 'hero.jpg', absolutePath: '/tmp/hero.jpg', mtime: 1_700_000_000),
             intrinsicWidth: 1600,
             intrinsicHeight: 900,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
-            mtime: 1_700_000_000,
         );
     }
 
@@ -60,8 +59,7 @@ final class PreloaderTest extends TestCase
     {
         // SVG / GIF can't be format-negotiated, no point preloading.
         $svg = new ResolvedImage(
-            sourcePath: 'logo.svg',
-            absolutePath: '/tmp/logo.svg',
+            source: new MediapoolSource(filename: 'logo.svg', absolutePath: '/tmp/logo.svg', mtime: 0),
             intrinsicWidth: 100,
             intrinsicHeight: 100,
             mime: 'image/svg+xml',
@@ -162,13 +160,11 @@ final class PreloaderTest extends TestCase
         // 4000 (min(5000, 4000*1)). If the preloader emits widths above 4000,
         // those URLs aren't in the rendered srcset and the preload is wasted.
         $bigImage = new ResolvedImage(
-            sourcePath: 'big.jpg',
-            absolutePath: '/tmp/big.jpg',
+            source: new MediapoolSource(filename: 'big.jpg', absolutePath: '/tmp/big.jpg', mtime: 1_700_000_000),
             intrinsicWidth: 5000,
             intrinsicHeight: 4000,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
-            mtime: 1_700_000_000,
         );
         Preloader::queue(
             $bigImage,

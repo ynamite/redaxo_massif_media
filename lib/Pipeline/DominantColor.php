@@ -10,6 +10,7 @@ use rex_logger;
 use rex_path;
 use Throwable;
 use Ynamite\Media\Config;
+use Ynamite\Media\Source\SourceInterface;
 
 /**
  * Computes (and caches) a single representative `#rrggbb` for a raster source,
@@ -23,8 +24,9 @@ use Ynamite\Media\Config;
  * any step throws, we log + return '' (caller treats empty as "skip").
  *
  * Cache layout mirrors `Placeholder`: `cache/_color/<2-char-prefix>/<hash>.txt`,
- * keyed on `xxh64(sourcePath:mtime:CACHE_VERSION)` so stored files self-
- * invalidate when the encoding contract bumps without needing a manual clear.
+ * keyed on `xxh64(source.key():source.cacheBust():CACHE_VERSION)` so stored
+ * files self-invalidate when the encoding contract bumps without needing a
+ * manual clear.
  */
 final class DominantColor
 {
@@ -41,7 +43,7 @@ final class DominantColor
             return '';
         }
 
-        $cachePath = $this->cacheFile($image);
+        $cachePath = self::cachePathFor($image->source);
         if (is_file($cachePath)) {
             $cached = (string) file_get_contents($cachePath);
             if ($cached !== '') {
@@ -49,13 +51,14 @@ final class DominantColor
             }
         }
 
-        if (!extension_loaded('imagick') || !is_readable($image->absolutePath)) {
+        $absolutePath = $image->source->absolutePath();
+        if (!extension_loaded('imagick') || !is_readable($absolutePath)) {
             return '';
         }
 
         try {
             $im = new Imagick();
-            $im->readImage($image->absolutePath);
+            $im->readImage($absolutePath);
             // Tiny working copy so quantize is fast on 6000×4000 sources.
             $im->scaleImage(50, 0);
             // COLORSPACE_SRGB (not COLORSPACE_RGB!) — Imagick's "RGB" is
@@ -83,14 +86,9 @@ final class DominantColor
         return $hex;
     }
 
-    private function cacheFile(ResolvedImage $image): string
+    public static function cachePathFor(SourceInterface $source): string
     {
-        return self::cachePathFor($image->sourcePath, $image->mtime);
-    }
-
-    public static function cachePathFor(string $filename, int $mtime): string
-    {
-        $hash = hash('xxh64', $filename . ':' . $mtime . ':' . self::CACHE_VERSION);
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':' . self::CACHE_VERSION);
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',

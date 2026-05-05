@@ -28,6 +28,10 @@ final class Config
     public const KEY_CDN_URL_TEMPLATE = 'cdn_url_template';
     public const KEY_METADATA_TTL_SECONDS = 'metadata_ttl_seconds';
     public const KEY_SENTINEL_TTL_SECONDS = 'sentinel_ttl_seconds';
+    public const KEY_EXTERNAL_TTL_SECONDS = 'external_ttl_seconds';
+    public const KEY_EXTERNAL_TIMEOUT_SECONDS = 'external_timeout_seconds';
+    public const KEY_EXTERNAL_MAX_BYTES = 'external_max_bytes';
+    public const KEY_EXTERNAL_HOST_ALLOWLIST = 'external_host_allowlist';
 
     /**
      * Defaults shipped with the addon. List-shaped values are stored as
@@ -52,6 +56,10 @@ final class Config
         self::KEY_CDN_URL_TEMPLATE => '',
         self::KEY_METADATA_TTL_SECONDS => 7_776_000,
         self::KEY_SENTINEL_TTL_SECONDS => 60,
+        self::KEY_EXTERNAL_TTL_SECONDS => 86_400,        // 24h
+        self::KEY_EXTERNAL_TIMEOUT_SECONDS => 15,
+        self::KEY_EXTERNAL_MAX_BYTES => 26_214_400,      // 25 MB
+        self::KEY_EXTERNAL_HOST_ALLOWLIST => '',         // empty = allow any host
     ];
 
     public static function get(string $key, mixed $fallback = null): mixed
@@ -146,6 +154,39 @@ final class Config
     public static function cdnUrlTemplate(): string
     {
         return (string) self::get(self::KEY_CDN_URL_TEMPLATE);
+    }
+
+    public static function externalTtlSeconds(): int
+    {
+        return max(0, (int) self::get(self::KEY_EXTERNAL_TTL_SECONDS));
+    }
+
+    public static function externalTimeoutSeconds(): int
+    {
+        return max(1, (int) self::get(self::KEY_EXTERNAL_TIMEOUT_SECONDS));
+    }
+
+    public static function externalMaxBytes(): int
+    {
+        return max(1024, (int) self::get(self::KEY_EXTERNAL_MAX_BYTES));
+    }
+
+    /**
+     * One regex per non-empty line. Empty list = allow any host.
+     *
+     * @return list<string>
+     */
+    public static function externalHostAllowlist(): array
+    {
+        $raw = (string) self::get(self::KEY_EXTERNAL_HOST_ALLOWLIST);
+        if ($raw === '') {
+            return [];
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $raw) ?: [];
+        return array_values(array_filter(
+            array_map('trim', $lines),
+            static fn(string $s): bool => $s !== '',
+        ));
     }
 
     /**

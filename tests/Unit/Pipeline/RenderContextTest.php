@@ -12,6 +12,7 @@ use Ynamite\Media\Pipeline\RenderContext;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
+use Ynamite\Media\Source\MediapoolSource;
 
 final class RenderContextTest extends TestCase
 {
@@ -30,14 +31,12 @@ final class RenderContextTest extends TestCase
     private function image(int $w = 1600, int $h = 900, ?string $focal = null): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'hero.jpg',
-            absolutePath: '/tmp/hero.jpg',
+            source: new MediapoolSource(filename: 'hero.jpg', absolutePath: '/tmp/hero.jpg', mtime: 1_700_000_000),
             intrinsicWidth: $w,
             intrinsicHeight: $h,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
             focalPoint: $focal,
-            mtime: 1_700_000_000,
         );
     }
 

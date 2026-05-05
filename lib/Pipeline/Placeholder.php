@@ -10,6 +10,7 @@ use rex_path;
 use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Glide\Server;
+use Ynamite\Media\Source\SourceInterface;
 
 final class Placeholder
 {
@@ -33,7 +34,7 @@ final class Placeholder
             return '';
         }
 
-        $cachePath = $this->cacheFile($image);
+        $cachePath = self::cachePathFor($image->source);
         if (is_file($cachePath)) {
             $cached = (string) file_get_contents($cachePath);
             if ($cached !== '') {
@@ -42,8 +43,8 @@ final class Placeholder
         }
 
         try {
-            $server = Server::create();
-            $relCachePath = $server->makeImage($image->sourcePath, [
+            $server = Server::for($image->source);
+            $relCachePath = $server->makeImage(Server::glideSourcePath($image->source), [
                 'w' => Config::lqipWidth(),
                 'q' => Config::lqipQuality(),
                 'blur' => Config::lqipBlur(),
@@ -60,14 +61,9 @@ final class Placeholder
         return $dataUri;
     }
 
-    private function cacheFile(ResolvedImage $image): string
+    public static function cachePathFor(SourceInterface $source): string
     {
-        return self::cachePathFor($image->sourcePath, $image->mtime);
-    }
-
-    public static function cachePathFor(string $filename, int $mtime): string
-    {
-        $hash = hash('xxh64', $filename . ':' . $mtime . ':' . self::CACHE_VERSION);
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':' . self::CACHE_VERSION);
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_lqip/' . substr($hash, 0, 2) . '/' . $hash . '.txt'

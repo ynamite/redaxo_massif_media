@@ -12,6 +12,7 @@ use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\UrlBuilder;
+use Ynamite\Media\Source\MediapoolSource;
 use Ynamite\Media\View\PassthroughRenderer;
 
 final class PassthroughRendererTest extends TestCase
@@ -24,8 +25,7 @@ final class PassthroughRendererTest extends TestCase
     private function svg(): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'logo.svg',
-            absolutePath: '/tmp/logo.svg',
+            source: new MediapoolSource(filename: 'logo.svg', absolutePath: '/tmp/logo.svg', mtime: 0),
             intrinsicWidth: 200,
             intrinsicHeight: 100,
             mime: 'image/svg+xml',
@@ -36,13 +36,11 @@ final class PassthroughRendererTest extends TestCase
     private function animatedGif(): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'spinner.gif',
-            absolutePath: '/tmp/spinner.gif',
+            source: new MediapoolSource(filename: 'spinner.gif', absolutePath: '/tmp/spinner.gif', mtime: 1_700_000_000),
             intrinsicWidth: 200,
             intrinsicHeight: 200,
             mime: 'image/gif',
             sourceFormat: 'gif',
-            mtime: 1_700_000_000,
             isAnimated: true,
         );
     }
@@ -180,8 +178,7 @@ final class PassthroughRendererTest extends TestCase
     {
         rex_path::_setBase(sys_get_temp_dir() . '/massif_passthrough_static_' . uniqid('', true));
         $static = new ResolvedImage(
-            sourcePath: 'static.gif',
-            absolutePath: '/tmp/static.gif',
+            source: new MediapoolSource(filename: 'static.gif', absolutePath: '/tmp/static.gif', mtime: 0),
             intrinsicWidth: 100,
             intrinsicHeight: 100,
             mime: 'image/gif',
@@ -199,8 +196,7 @@ final class PassthroughRendererTest extends TestCase
         // SVGs can technically have SMIL animation but the WebP encoder
         // rejects non-GIF sources, so UrlBuilder gates the same way.
         $animatedSvg = new ResolvedImage(
-            sourcePath: 'logo.svg',
-            absolutePath: '/tmp/logo.svg',
+            source: new MediapoolSource(filename: 'logo.svg', absolutePath: '/tmp/logo.svg', mtime: 0),
             intrinsicWidth: 100,
             intrinsicHeight: 100,
             mime: 'image/svg+xml',

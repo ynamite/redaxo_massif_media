@@ -75,6 +75,7 @@ $formatBytes = static function (int $bytes): string {
 $kindLabels = [
     'variants' => 'Varianten (avif/webp/jpg)',
     'animated' => 'Animated WebP',
+    'external' => 'Externe URLs (Origin + Varianten)',
     'lqip'     => 'LQIP (Inline Base64)',
     'color'    => 'Dominante Farbe',
     'meta'     => 'Metadata-Sidecars',
@@ -157,10 +158,43 @@ $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_SENTINEL_T
 $f->setAttribute('min', '5');
 $f->setNotice('Kurze TTL für fehlgeschlagene Reads (verhindert Hammering bei kaputten Assets).');
 
+$form->addFieldset('Externe URL-Quellen');
+
+$f = $form->addInputField('number', Config::KEY_EXTERNAL_TTL_SECONDS);
+$f->setLabel('External URL TTL');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 140px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_EXTERNAL_TTL_SECONDS]);
+$f->setAttribute('min', '60');
+$f->setNotice('Wie lange ein extern geladenes Bild als frisch gilt, bevor ein Conditional GET (304-Probe) auf das Original ausgelöst wird. Default: 86400 (24h).');
+
+$f = $form->addInputField('number', Config::KEY_EXTERNAL_TIMEOUT_SECONDS);
+$f->setLabel('External fetch timeout');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 100px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_EXTERNAL_TIMEOUT_SECONDS]);
+$f->setAttribute('min', '1');
+$f->setAttribute('max', '120');
+$f->setNotice('Inaktivitäts-Timeout pro Fetch in Sekunden. Default: 15.');
+
+$f = $form->addInputField('number', Config::KEY_EXTERNAL_MAX_BYTES);
+$f->setLabel('External max bytes');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 140px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_EXTERNAL_MAX_BYTES]);
+$f->setAttribute('min', '1024');
+$f->setNotice('Maximalgröße pro externer Quelle. Bei Überschreitung wird der Fetch abgebrochen. Default: 26214400 (25 MB).');
+
+$f = $form->addTextAreaField(Config::KEY_EXTERNAL_HOST_ALLOWLIST);
+$f->setLabel('External host allowlist');
+$f->setAttribute('rows', '4');
+$f->setAttribute('placeholder', "^images\\.example\\.com$\n^cdn\\.example\\.org$");
+$f->setNotice('Optional: Eine Regex pro Zeile (anchored). Ist die Liste leer, sind alle Hosts erlaubt. Bei nicht-leerer Liste muss der Hostname mindestens eines Pattern matchen.');
+
 $content = $form->getMessage() . $form->get();
 
 $fragment = new rex_fragment();
 $fragment->setVar('class', 'edit', false);
-$fragment->setVar('title', 'Cache TTLs', false);
+$fragment->setVar('title', 'Cache TTLs & externe Quellen', false);
 $fragment->setVar('body', $content, false);
 echo $fragment->parse('core/page/section.php');

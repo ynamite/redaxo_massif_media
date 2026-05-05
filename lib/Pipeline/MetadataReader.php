@@ -5,47 +5,44 @@ declare(strict_types=1);
 namespace Ynamite\Media\Pipeline;
 
 use rex_file;
-use rex_media;
 use rex_path;
 use Ynamite\Media\Config;
+use Ynamite\Media\Source\MediapoolSource;
+use Ynamite\Media\Source\SourceInterface;
 
 final class MetadataReader
 {
-    public function read(string $filename, string $absolutePath, ?rex_media $media): ResolvedImage
+    public function read(SourceInterface $source): ResolvedImage
     {
-        $mtime = (int) (filemtime($absolutePath) ?: 0);
-
-        $cached = $this->loadCachedMeta($filename, $mtime);
+        $cached = $this->loadCachedMeta($source);
         if ($cached === null) {
-            $cached = $this->computeMeta($filename, $absolutePath, $media);
-            $this->saveCachedMeta($filename, $mtime, $cached);
+            $cached = $this->computeMeta($source);
+            $this->saveCachedMeta($source, $cached);
         }
 
         return new ResolvedImage(
-            sourcePath: $filename,
-            absolutePath: $absolutePath,
+            source: $source,
             intrinsicWidth: (int) ($cached['width'] ?? 0),
             intrinsicHeight: (int) ($cached['height'] ?? 0),
             mime: (string) ($cached['mime'] ?? 'application/octet-stream'),
             sourceFormat: (string) ($cached['source_format'] ?? 'unknown'),
             focalPoint: isset($cached['focal']) && $cached['focal'] !== '' ? (string) $cached['focal'] : null,
-            mtime: $mtime,
             isAnimated: (bool) ($cached['is_animated'] ?? false),
         );
     }
 
-    public static function metaCachePath(string $filename, int $mtime): string
+    public static function metaCachePath(SourceInterface $source): string
     {
-        $hash = hash('xxh64', $filename . ':' . $mtime);
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust());
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json'
         );
     }
 
-    private function loadCachedMeta(string $filename, int $mtime): ?array
+    private function loadCachedMeta(SourceInterface $source): ?array
     {
-        $path = self::metaCachePath($filename, $mtime);
+        $path = self::metaCachePath($source);
         if (!is_file($path)) {
             return null;
         }
@@ -53,20 +50,21 @@ final class MetadataReader
         return is_array($json) ? $json : null;
     }
 
-    private function saveCachedMeta(string $filename, int $mtime, array $meta): void
+    private function saveCachedMeta(SourceInterface $source, array $meta): void
     {
-        $path = self::metaCachePath($filename, $mtime);
+        $path = self::metaCachePath($source);
         rex_file::put($path, json_encode($meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 
-    private function computeMeta(string $filename, string $absolutePath, ?rex_media $media): array
+    private function computeMeta(SourceInterface $source): array
     {
+        $absolutePath = $source->absolutePath();
         [$width, $height, $mime] = $this->probeDimensionsAndMime($absolutePath);
         $sourceFormat = $this->formatFromMime($mime);
 
         $focal = null;
-        if ($media !== null) {
-            $raw = $media->getValue('med_focuspoint');
+        if ($source instanceof MediapoolSource && $source->media !== null) {
+            $raw = $source->media->getValue('med_focuspoint');
             if (is_string($raw) && $raw !== '') {
                 $focal = $this->normalizeFocal($raw);
             }

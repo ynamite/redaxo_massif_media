@@ -11,6 +11,9 @@ use League\Glide\Server as GlideServer;
 use League\Glide\ServerFactory;
 use rex_path;
 use Ynamite\Media\Config;
+use Ynamite\Media\Source\ExternalSource;
+use Ynamite\Media\Source\MediapoolSource;
+use Ynamite\Media\Source\SourceInterface;
 
 final class Server
 {
@@ -33,6 +36,40 @@ final class Server
     public static function clearActiveFilters(): void
     {
         self::$activeFilterParams = [];
+    }
+
+    /**
+     * Build a Glide Server configured for the given source. Dispatches by
+     * source type:
+     *
+     *   - {@see MediapoolSource}: source FS rooted at `rex_path::media()`,
+     *     cache FS at `cache/`, cache-path callable produces
+     *     `{filename}/{spec}.{ext}`.
+     *   - {@see ExternalSource}:  source FS rooted at the per-URL bucket
+     *     `cache/_external/<hash>/`, cache FS at the same dir, cache-path
+     *     callable produces a flat `{spec}.{ext}` (no extra nesting under
+     *     `_origin.bin`).
+     */
+    public static function for(SourceInterface $source): GlideServer
+    {
+        return $source instanceof ExternalSource
+            ? self::createForExternal($source)
+            : self::createForMediapool();
+    }
+
+    /**
+     * Path string to pass to `$server->makeImage(...)`. Always relative to
+     * the source filesystem of the {@see Server::for()} return value.
+     *
+     *   - Mediapool: relative filename (the source key).
+     *   - External:  `_origin.bin` (constant; the per-bucket source FS only
+     *     contains the one fetched origin).
+     */
+    public static function glideSourcePath(SourceInterface $source): string
+    {
+        return $source instanceof ExternalSource
+            ? '_origin.bin'
+            : $source->key();
     }
 
     public static function create(?string $sourceDir = null, ?string $cacheDir = null): GlideServer
@@ -65,6 +102,55 @@ final class Server
         return $server;
     }
 
+    /**
+     * Mediapool variant — equivalent to the historical {@see Server::create()}
+     * defaults. Source FS at `rex_path::media()`, cache FS at our addon's
+     * cache directory.
+     */
+    public static function createForMediapool(): GlideServer
+    {
+        return self::create();
+    }
+
+    /**
+     * External variant — per-bucket Glide server. Source and cache filesystems
+     * are both rooted at `cache/_external/<hash>/`, so:
+     *
+     *   - `makeImage('_origin.bin', $params)` reads `cache/_external/<hash>/_origin.bin`
+     *   - the cache-path callable produces `<spec>.<ext>` (no path prefix), so
+     *     variants land at `cache/_external/<hash>/<spec>.<ext>` — matching the
+     *     URL emission's path which uses `_external/<hash>` as the cache-bucket
+     *     directory portion.
+     *
+     * Manipulators (ColorProfile, StripMetadata) match the mediapool server so
+     * encoding behaves identically across source types.
+     */
+    public static function createForExternal(ExternalSource $source): GlideServer
+    {
+        $bucketDir = rex_path::addonAssets(Config::ADDON, 'cache/_external/' . $source->hash . '/');
+
+        $sourceFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
+        $cacheFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
+
+        $driver = extension_loaded('imagick') ? 'imagick' : 'gd';
+
+        $server = ServerFactory::create([
+            'source' => $sourceFs,
+            'cache' => $cacheFs,
+            'driver' => $driver,
+        ]);
+
+        $server->setCachePathCallable(self::externalCachePathCallable());
+
+        $api = $server->getApi();
+        $manipulators = $api->getManipulators();
+        $manipulators[] = new ColorProfile();
+        $manipulators[] = new StripMetadata();
+        $api->setManipulators($manipulators);
+
+        return $server;
+    }
+
     public static function cachePathCallable(): Closure
     {
         // Two Glide gotchas, both rooted in `Closure::bind($callable, $this, static::class)`:
@@ -87,7 +173,23 @@ final class Server
     }
 
     /**
-     * Compute the cache path for a given source + params.
+     * Cache-path callable for the external Glide server. The path passed in is
+     * always `_origin.bin` (per {@see Server::glideSourcePath()}), but variants
+     * are stored flat under `cache/_external/<hash>/` — so we strip the path
+     * entirely and emit just `<spec>.<ext>`. The bucket directory itself is
+     * the `<src>` portion of the URL-side cache path; this callable fills in
+     * only the filename half.
+     */
+    public static function externalCachePathCallable(): Closure
+    {
+        return fn (string $path, array $params): string => Server::cacheSpecWithExt([
+            ...$params,
+            'filters' => Server::$activeFilterParams,
+        ]);
+    }
+
+    /**
+     * Compute the cache path for a given source key + params.
      *
      * Asset-keyed: {src}/{transformSpec}.{ext}.
      *
@@ -104,7 +206,28 @@ final class Server
      */
     public static function cachePath(string $path, array $params): string
     {
-        $fmt = strtolower((string) ($params['fm'] ?? pathinfo($path, PATHINFO_EXTENSION)));
+        // If `fm` is absent, fall back to the source path's extension so a
+        // `Server::cachePath('hero.png', ['w' => 1080, 'q' => 50])` call still
+        // derives the format. Mirrors the historical behaviour the URL builder
+        // relies on for callers that pass a Glide makeImage path verbatim.
+        if (!isset($params['fm']) || $params['fm'] === '') {
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
+            if ($ext !== '') {
+                $params['fm'] = $ext;
+            }
+        }
+        return $path . '/' . self::cacheSpecWithExt($params);
+    }
+
+    /**
+     * The filename half of the cache path — `{fmt}-{w}[-{h}-{fit}]-{q}[-f{hash}].{ext}`.
+     * Shared between mediapool ({@see Server::cachePath()}) and external
+     * ({@see Server::externalCachePathCallable()}) flows so the on-disk spec
+     * format stays in lockstep across source types.
+     */
+    public static function cacheSpecWithExt(array $params): string
+    {
+        $fmt = strtolower((string) ($params['fm'] ?? 'jpg'));
         $w = (int) ($params['w'] ?? 0);
         $q = (int) ($params['q'] ?? 80);
         $h = isset($params['h']) ? (int) $params['h'] : null;
@@ -129,7 +252,8 @@ final class Server
         if ($hash !== null) {
             $spec .= '-f' . $hash;
         }
+        $spec .= '.' . $fmt;
 
-        return sprintf('%s/%s.%s', $path, $spec, $fmt);
+        return $spec;
     }
 }

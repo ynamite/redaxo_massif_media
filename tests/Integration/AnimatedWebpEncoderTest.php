@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use rex_path;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 /**
  * Real Imagick path: feed the encoder an animated GIF fixture, assert it
@@ -50,13 +51,15 @@ final class AnimatedWebpEncoderTest extends TestCase
     private function fixture(): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'animated-3frame.gif',
-            absolutePath: $this->fixturesDir . '/animated-3frame.gif',
+            source: new MediapoolSource(
+                filename: 'animated-3frame.gif',
+                absolutePath: $this->fixturesDir . '/animated-3frame.gif',
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: 64,
             intrinsicHeight: 64,
             mime: 'image/gif',
             sourceFormat: 'gif',
-            mtime: 1_700_000_000,
             isAnimated: true,
         );
     }

@@ -9,6 +9,8 @@ use Throwable;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Source\ExternalSource;
+use Ynamite\Media\Source\ExternalSourceFactory;
 
 final class Endpoint
 {
@@ -78,9 +80,13 @@ final class Endpoint
 
             Server::setActiveFilters($filterParams);
             try {
-                $server = Server::create();
-                $relCachePath = $server->makeImage($parsed['source'], $params);
-                $bytes = $server->getCache()->read($relCachePath);
+                if (str_starts_with($parsed['source'], '_external/')) {
+                    $bytes = self::makeExternal($parsed['source'], $params);
+                } else {
+                    $server = Server::create();
+                    $relCachePath = $server->makeImage($parsed['source'], $params);
+                    $bytes = $server->getCache()->read($relCachePath);
+                }
             } finally {
                 Server::clearActiveFilters();
             }
@@ -99,6 +105,29 @@ final class Endpoint
     }
 
     /**
+     * External-URL variant pipeline. The cache-path source is `_external/<hash>`;
+     * we look up the persisted manifest to recover the URL, ensure the origin
+     * body is present (re-fetch if expired or missing), then run the per-bucket
+     * Glide server to produce the requested variant.
+     *
+     * The cache-bucket layout matches the URL emission's `_external/<hash>`
+     * key (see {@see Server::createForExternal()} for the symmetry guarantee).
+     */
+    private static function makeExternal(string $sourceKey, array $params): string
+    {
+        $hash = substr($sourceKey, strlen('_external/'));
+        $factory = new ExternalSourceFactory();
+        $source = $factory->resolveByHash($hash);
+        if ($source === null) {
+            throw new \RuntimeException('External source manifest not found for hash: ' . $hash);
+        }
+
+        $server = Server::createForExternal($source);
+        $relCachePath = $server->makeImage(Server::glideSourcePath($source), $params);
+        return $server->getCache()->read($relCachePath);
+    }
+
+    /**
      * Parse asset-keyed cache path back into its components.
      *
      * Path shape: {src}/{transformSpec}.{ext}, with transformSpec being one of:
@@ -106,6 +135,9 @@ final class Endpoint
      *   - {fmt}-{w}-{h}-{fitToken}-{q}               — crop, no filters
      *   - {fmt}-{w}-{q}-f{hash}                      — no crop, with filters
      *   - {fmt}-{w}-{h}-{fitToken}-{q}-f{hash}       — crop, with filters
+     *
+     * `{src}` is either a mediapool relative filename (preserves subdirs) or
+     * `_external/<hash>` for an external URL bucket.
      *
      * @return array{fmt: string, w: int, q: int, h: int|null, fit: string|null, hash: string|null, source: string}|null
      */
@@ -199,7 +231,11 @@ final class Endpoint
     private static function handleAnimated(string $cachePath): void
     {
         $src = substr($cachePath, 0, -strlen('/animated.webp'));
-        if ($src === '' || $src === false) {
+        // Defensive: animated WebP isn't emitted for external sources
+        // (UrlBuilder::buildAnimatedWebp short-circuits when isExternal()).
+        // A request that arrives here for an `_external/...` path is malformed
+        // — refuse rather than try to resolve.
+        if ($src === '' || str_starts_with($src, '_external/')) {
             self::respond(400, 'Bad request');
             return;
         }

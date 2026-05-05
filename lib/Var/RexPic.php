@@ -79,6 +79,16 @@ final class RexPic extends rex_var
             $args[] = $filterArg;
         }
 
+        // Art direction: JSON-encoded list of variants in the `art` attribute.
+        // Use getArg (NOT getParsedArg) — the value is bare JSON, not a PHP
+        // literal. Bad JSON / unknown keys log a warning and degrade
+        // gracefully (picture renders without art direction; broken JSON in
+        // editor input shouldn't 500 the page).
+        $artLiteral = self::buildArtArg($this);
+        if ($artLiteral !== null) {
+            $args[] = 'art: ' . $artLiteral;
+        }
+
         return '\\Ynamite\\Media\\Image::picture(' . implode(', ', $args) . ')';
     }
 
@@ -165,5 +175,77 @@ final class RexPic extends rex_var
         }
         $f = (float) $value;
         return $f > 0 ? $f : null;
+    }
+
+    /**
+     * Build the PHP array-literal for the `art:` named arg from the slice's
+     * `art` attribute (JSON). Returns null when the attribute is absent,
+     * empty, or invalid JSON / wrong shape — caller omits the named arg
+     * entirely (renders without art direction).
+     *
+     * Emits an array literal (NOT an `ArtDirectionVariant` constructor call)
+     * so the cached PHP survives a hypothetical class rename or namespace
+     * move. `Image::picture` re-validates via `ArtDirectionVariant::fromArray`
+     * at runtime; this side just sanitises the keys + value types.
+     */
+    private static function buildArtArg(RexPic $self): ?string
+    {
+        $raw = $self->getArg('art');
+        if (!is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($raw, true, depth: 4, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            \rex_logger::factory()->log(
+                'warning',
+                'massif_media: REX_PIC art attr JSON parse failed: ' . $e->getMessage(),
+            );
+            return null;
+        }
+        if (!is_array($decoded) || $decoded === []) {
+            return null;
+        }
+
+        $allowedKeys = ['media', 'src', 'width', 'height', 'ratio', 'focal', 'fit', 'filters'];
+        $clean = [];
+        foreach ($decoded as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $row = [];
+            foreach ($allowedKeys as $key) {
+                if (array_key_exists($key, $entry)) {
+                    $row[$key] = $entry[$key];
+                }
+            }
+            // media + src are required
+            if (!isset($row['media'], $row['src'])
+                || !is_string($row['media'])
+                || trim($row['media']) === ''
+                || !is_string($row['src'])
+                || trim($row['src']) === ''
+            ) {
+                continue;
+            }
+            $clean[] = $row;
+        }
+        if ($clean === []) {
+            return null;
+        }
+
+        // Re-encode as JSON and emit `json_decode(<json>, true)` in the
+        // cached PHP. var_export handles the JSON-string-as-PHP-string
+        // escaping (single quotes / backslashes), and Image::picture()
+        // re-validates each entry through ArtDirectionVariant::fromArray
+        // at runtime. Avoids fragile var_export-of-array-with-strings
+        // post-processing (e.g., a media query containing `)` would corrupt
+        // a naive long-array → short-array regex rewrite).
+        $json = json_encode($clean, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            return null;
+        }
+        return 'json_decode(' . var_export($json, true) . ', true)';
     }
 }

@@ -6,6 +6,7 @@ namespace Tests\Massif\Media\Unit\Pipeline;
 
 use PHPUnit\Framework\TestCase;
 use rex_path;
+use Tests\Massif\Media\Helpers\Sources;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\DominantColor;
@@ -72,9 +73,9 @@ final class CacheInvalidatorTest extends TestCase
 
         $variantPath = $this->cacheDir . '/' . $filename . '/webp-1200-q80.webp';
         $animatedPath = $this->cacheDir . '/' . $filename . '/animated.webp';
-        $metaPath = MetadataReader::metaCachePath($filename, $mtime);
-        $lqipPath = Placeholder::cachePathFor($filename, $mtime);
-        $colorPath = DominantColor::cachePathFor($filename, $mtime);
+        $metaPath = MetadataReader::metaCachePath(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $lqipPath = Placeholder::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $colorPath = DominantColor::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
 
         $this->seedFile($variantPath, 'webp-bytes');
         $this->seedFile($animatedPath, 'animated-bytes');
@@ -102,12 +103,12 @@ final class CacheInvalidatorTest extends TestCase
 
         $fooVariant = $this->cacheDir . '/' . $foo . '/webp-1200-q80.webp';
         $barVariant = $this->cacheDir . '/' . $bar . '/webp-1200-q80.webp';
-        $fooMeta = MetadataReader::metaCachePath($foo, $mtime);
-        $barMeta = MetadataReader::metaCachePath($bar, $mtime);
-        $fooLqip = Placeholder::cachePathFor($foo, $mtime);
-        $barLqip = Placeholder::cachePathFor($bar, $mtime);
-        $fooColor = DominantColor::cachePathFor($foo, $mtime);
-        $barColor = DominantColor::cachePathFor($bar, $mtime);
+        $fooMeta = MetadataReader::metaCachePath(Sources::mediapool(filename: $foo, mtime: $mtime));
+        $barMeta = MetadataReader::metaCachePath(Sources::mediapool(filename: $bar, mtime: $mtime));
+        $fooLqip = Placeholder::cachePathFor(Sources::mediapool(filename: $foo, mtime: $mtime));
+        $barLqip = Placeholder::cachePathFor(Sources::mediapool(filename: $bar, mtime: $mtime));
+        $fooColor = DominantColor::cachePathFor(Sources::mediapool(filename: $foo, mtime: $mtime));
+        $barColor = DominantColor::cachePathFor(Sources::mediapool(filename: $bar, mtime: $mtime));
 
         foreach ([$fooVariant, $barVariant, $fooMeta, $barMeta, $fooLqip, $barLqip, $fooColor, $barColor] as $p) {
             $this->seedFile($p);
@@ -169,8 +170,8 @@ final class CacheInvalidatorTest extends TestCase
         $newMtime = 1_700_000_500;
         $this->seedSourceFile($filename, $newMtime);
 
-        $oldMetaPath = MetadataReader::metaCachePath($filename, $oldMtime);
-        $newMetaPath = MetadataReader::metaCachePath($filename, $newMtime);
+        $oldMetaPath = MetadataReader::metaCachePath(Sources::mediapool(filename: $filename, mtime: $oldMtime));
+        $newMetaPath = MetadataReader::metaCachePath(Sources::mediapool(filename: $filename, mtime: $newMtime));
         self::assertNotSame($oldMetaPath, $newMetaPath, 'old/new mtimes must hash differently');
 
         $variantPath = $this->cacheDir . '/' . $filename . '/webp-1200-q80.webp';

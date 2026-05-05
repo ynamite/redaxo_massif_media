@@ -13,10 +13,12 @@ use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Fit;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\DominantColor;
+use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
+use Ynamite\Media\Source\MediapoolSource;
 use Ynamite\Media\View\PictureRenderer;
 
 final class PictureRendererTest extends TestCase
@@ -57,14 +59,16 @@ final class PictureRendererTest extends TestCase
         ?string $focal = null,
     ): ResolvedImage {
         return new ResolvedImage(
-            sourcePath: 'hero.jpg',
-            absolutePath: $this->tmpBase . '/media/hero.jpg',
+            source: new MediapoolSource(
+                filename: 'hero.jpg',
+                absolutePath: $this->tmpBase . '/media/hero.jpg',
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: $w,
             intrinsicHeight: $h,
             mime: 'image/jpeg',
             sourceFormat: 'jpg',
             focalPoint: $focal,
-            mtime: 1_700_000_000,
         );
     }
 
@@ -75,11 +79,7 @@ final class PictureRendererTest extends TestCase
     private function seedLqipCache(ResolvedImage $image, string $dataUri): void
     {
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 1);
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':v2');
-        $cachePath = rex_path::addonAssets(
-            Config::ADDON,
-            'cache/_lqip/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
-        );
+        $cachePath = Placeholder::cachePathFor($image->source);
         @mkdir(dirname($cachePath), 0777, true);
         file_put_contents($cachePath, $dataUri);
     }
@@ -91,11 +91,7 @@ final class PictureRendererTest extends TestCase
     private function seedColorCache(ResolvedImage $image, string $hex): void
     {
         rex_config::set(Config::ADDON, Config::KEY_COLOR_ENABLED, 1);
-        $hash = hash('xxh64', $image->sourcePath . ':' . $image->mtime . ':v1');
-        $cachePath = rex_path::addonAssets(
-            Config::ADDON,
-            'cache/_color/' . substr($hash, 0, 2) . '/' . $hash . '.txt',
-        );
+        $cachePath = DominantColor::cachePathFor($image->source);
         @mkdir(dirname($cachePath), 0777, true);
         file_put_contents($cachePath, $hex);
     }
@@ -301,8 +297,7 @@ final class PictureRendererTest extends TestCase
         // dimensions and the renderer should bail rather than emit broken HTML.
         $html = $this->renderer()->render(
             new ResolvedImage(
-                sourcePath: 'broken.jpg',
-                absolutePath: '/tmp/broken.jpg',
+                source: new MediapoolSource(filename: 'broken.jpg', absolutePath: '/tmp/broken.jpg', mtime: 0),
                 intrinsicWidth: 0,
                 intrinsicHeight: 0,
                 mime: 'image/jpeg',

@@ -9,6 +9,7 @@ use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\UrlBuilder;
+use Ynamite\Media\Source\ExternalSource;
 
 final class PassthroughRenderer
 {
@@ -26,12 +27,15 @@ final class PassthroughRenderer
      * resize pipeline (svg, gif, or unknown formats).
      *
      *   - SVG / static GIF / unknown:  plain <img> at intrinsic dims.
-     *   - Animated GIF:                <picture> with <source type="image/webp"
+     *   - Animated GIF (mediapool):    <picture> with <source type="image/webp"
      *                                  srcset="…/animated.webp"> + <img> GIF
      *                                  fallback. Modern browsers fetch the
      *                                  WebP (typ. 40-60% smaller); older
      *                                  browsers and CDN-mode installs fall
      *                                  through to the GIF.
+     *   - External-URL passthrough:    plain <img src="https://upstream...">.
+     *                                  No animated-WebP wrap (we don't proxy
+     *                                  bytes for external SVG/GIF).
      */
     public function render(
         ResolvedImage $image,
@@ -74,8 +78,12 @@ final class PassthroughRenderer
         Decoding $decoding,
         ?string $class,
     ): string {
+        $src = $image->source instanceof ExternalSource
+            ? $image->source->url
+            : rex_url::base() . 'media/' . $image->source->key();
+
         $attrs = [
-            'src' => rex_url::base() . 'media/' . $image->sourcePath,
+            'src' => $src,
             'width' => (string) $w,
             'height' => (string) $h,
             'alt' => $alt ?? '',

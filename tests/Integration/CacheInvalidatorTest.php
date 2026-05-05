@@ -10,6 +10,7 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 /**
  * End-to-end check: after MetadataReader writes meta.json for a fixture,
@@ -58,12 +59,13 @@ final class CacheInvalidatorTest extends TestCase
         $filename = 'landscape-800x600.jpg';
         $absolutePath = $this->tmpBase . '/media/' . $filename;
         $mtime = (int) filemtime($absolutePath);
+        $source = new MediapoolSource(filename: $filename, absolutePath: $absolutePath, mtime: $mtime);
 
-        $first = $this->reader->read($filename, $absolutePath, null);
+        $first = $this->reader->read($source);
         self::assertSame(800, $first->intrinsicWidth);
         self::assertInstanceOf(ResolvedImage::class, $first);
 
-        $metaPath = MetadataReader::metaCachePath($filename, $mtime);
+        $metaPath = MetadataReader::metaCachePath($source);
         self::assertFileExists($metaPath, 'first read should persist meta.json');
 
         // Seed a variant alongside meta to confirm the directory is wiped too.
@@ -78,7 +80,7 @@ final class CacheInvalidatorTest extends TestCase
         self::assertDirectoryDoesNotExist(dirname($variantPath));
 
         // Next read regenerates cleanly.
-        $second = $this->reader->read($filename, $absolutePath, null);
+        $second = $this->reader->read($source);
         self::assertSame(800, $second->intrinsicWidth);
         self::assertFileExists($metaPath, 'follow-up read should rewrite meta.json');
     }

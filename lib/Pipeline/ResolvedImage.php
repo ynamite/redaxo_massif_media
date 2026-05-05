@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Pipeline;
 
-final class ResolvedImage
+use Ynamite\Media\Source\SourceInterface;
+
+final readonly class ResolvedImage
 {
     public function __construct(
-        public readonly string $sourcePath,
-        public readonly string $absolutePath,
-        public readonly int $intrinsicWidth,
-        public readonly int $intrinsicHeight,
-        public readonly string $mime,
-        public readonly string $sourceFormat,
-        public readonly ?string $focalPoint = null,
-        public readonly int $mtime = 0,
-        public readonly bool $isAnimated = false,
+        public SourceInterface $source,
+        public int $intrinsicWidth,
+        public int $intrinsicHeight,
+        public string $mime,
+        public string $sourceFormat,
+        public ?string $focalPoint = null,
+        public bool $isAnimated = false,
     ) {
     }
 

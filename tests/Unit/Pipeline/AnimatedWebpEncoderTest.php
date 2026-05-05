@@ -9,6 +9,7 @@ use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 /**
  * Cheap-branch tests for AnimatedWebpEncoder: the gate (must be animated GIF)
@@ -42,13 +43,15 @@ final class AnimatedWebpEncoderTest extends TestCase
     private function image(string $format, bool $animated): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: 'src.' . $format,
-            absolutePath: $this->tmpBase . '/media/src.' . $format,
+            source: new MediapoolSource(
+                filename: 'src.' . $format,
+                absolutePath: $this->tmpBase . '/media/src.' . $format,
+                mtime: 1_700_000_000,
+            ),
             intrinsicWidth: 100,
             intrinsicHeight: 100,
             mime: 'image/' . $format,
             sourceFormat: $format,
-            mtime: 1_700_000_000,
             isAnimated: $animated,
         );
     }
@@ -69,7 +72,7 @@ final class AnimatedWebpEncoderTest extends TestCase
     public function testReturnsCachedPathWhenCacheFileAlreadyPresent(): void
     {
         $image = $this->image('gif', true);
-        $cachePath = AnimatedWebpEncoder::cacheFile($image->sourcePath);
+        $cachePath = AnimatedWebpEncoder::cacheFile($image->source->key());
         @mkdir(dirname($cachePath), 0777, true);
         file_put_contents($cachePath, "fake animated webp bytes (>0 length)");
 

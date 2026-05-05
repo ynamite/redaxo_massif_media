@@ -9,6 +9,7 @@ use rex_config;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\ResolvedImage;
+use Ynamite\Media\Source\MediapoolSource;
 
 final class PlaceholderTest extends TestCase
 {
@@ -22,8 +23,7 @@ final class PlaceholderTest extends TestCase
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 0);
 
         $image = new ResolvedImage(
-            sourcePath: 'hero.jpg',
-            absolutePath: '/tmp/hero.jpg',
+            source: new MediapoolSource(filename: 'hero.jpg', absolutePath: '/tmp/hero.jpg', mtime: 0),
             intrinsicWidth: 1600,
             intrinsicHeight: 900,
             mime: 'image/jpeg',
@@ -38,8 +38,7 @@ final class PlaceholderTest extends TestCase
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 1);
 
         $svg = new ResolvedImage(
-            sourcePath: 'logo.svg',
-            absolutePath: '/tmp/logo.svg',
+            source: new MediapoolSource(filename: 'logo.svg', absolutePath: '/tmp/logo.svg', mtime: 0),
             intrinsicWidth: 100,
             intrinsicHeight: 100,
             mime: 'image/svg+xml',

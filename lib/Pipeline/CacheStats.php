@@ -86,6 +86,7 @@ final class CacheStats
                 'lqip' => ['count' => 0, 'bytes' => 0],
                 'color' => ['count' => 0, 'bytes' => 0],
                 'animated' => ['count' => 0, 'bytes' => 0],
+                'external' => ['count' => 0, 'bytes' => 0],
                 'variants' => ['count' => 0, 'bytes' => 0],
             ],
         ];
@@ -152,6 +153,12 @@ final class CacheStats
         }
         if (str_starts_with($rel, '_color/')) {
             return 'color';
+        }
+        // Everything under _external/ — origin bytes, manifest, and per-bucket
+        // variant files — counts as external. We don't try to break out the
+        // origin vs variants further; the bucket is the unit of cleanup.
+        if (str_starts_with($rel, '_external/')) {
+            return 'external';
         }
         if (str_ends_with($rel, '/animated.webp')) {
             return 'animated';

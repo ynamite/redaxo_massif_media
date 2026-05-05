@@ -34,6 +34,7 @@ class Image
         ?string $class = null,
         Fit|string|null $fit = null,
         array $filters = [],
+        array $art = [],
     ): string {
         $b = self::for($src);
         if ($alt !== null) {
@@ -66,6 +67,9 @@ class Image
         }
         if ($filters !== []) {
             $b->filters($filters);
+        }
+        if ($art !== []) {
+            $b->art($art);
         }
         return $b->render();
     }

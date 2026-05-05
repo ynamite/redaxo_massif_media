@@ -25,6 +25,7 @@ use Ynamite\Media\Pipeline\RenderContext;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
+use Ynamite\Media\Source\ExternalSource;
 use Ynamite\Media\View\PassthroughRenderer;
 use Ynamite\Media\View\PictureRenderer;
 
@@ -48,6 +49,8 @@ final class ImageBuilder
     private ?string $class = null;
     /** @var array<string, scalar> Glide-keyed filter params. */
     private array $filterParams = [];
+    /** @var list<\Ynamite\Media\View\ArtDirectionVariant> */
+    private array $artVariants = [];
 
     public function __construct(string|rex_media $src)
     {
@@ -267,6 +270,36 @@ final class ImageBuilder
         return $this;
     }
 
+    /**
+     * Add art-direction variants — stacked `<source media="…">` groups before
+     * the default format-keyed sources, each with its own `src`, optional
+     * crop / focal / fit / filters.
+     *
+     * Each entry is either an {@see \Ynamite\Media\View\ArtDirectionVariant}
+     * instance or an array following the `fromArray()` shape:
+     *
+     *   ['media' => '(max-width: 600px)', 'src' => 'hero-mobile.jpg',
+     *    'ratio' => 1, 'focal' => '50% 30%']
+     *
+     * Builder-level filters apply to the default variant only — variants are
+     * self-describing. Variant `src` values follow the same string|rex_media
+     * convention as the main builder, including HTTPS URLs (which route
+     * through the external-fetch pipeline transparently).
+     *
+     * @param list<\Ynamite\Media\View\ArtDirectionVariant|array<string, mixed>> $variants
+     */
+    public function art(array $variants): self
+    {
+        $out = [];
+        foreach ($variants as $v) {
+            $out[] = $v instanceof \Ynamite\Media\View\ArtDirectionVariant
+                ? $v
+                : \Ynamite\Media\View\ArtDirectionVariant::fromArray($v);
+        }
+        $this->artVariants = $out;
+        return $this;
+    }
+
     public function render(): string
     {
         $resolver = new ImageResolver(new MetadataReader());
@@ -330,6 +363,7 @@ final class ImageBuilder
             $this->class,
             $this->fit,
             $this->filterParams,
+            $this->artVariants,
         );
     }
 
@@ -382,7 +416,9 @@ final class ImageBuilder
         }
 
         if ($image->isPassthrough()) {
-            return rex_url::base() . 'media/' . $image->sourcePath;
+            return $image->source instanceof ExternalSource
+                ? $image->source->url
+                : rex_url::base() . 'media/' . $image->source->key();
         }
 
         $effectiveFormat = strtolower($format ?? $this->resolveDefaultFormat());
@@ -422,14 +458,13 @@ final class ImageBuilder
     private function withFocal(ResolvedImage $image, string $focal): ResolvedImage
     {
         return new ResolvedImage(
-            sourcePath: $image->sourcePath,
-            absolutePath: $image->absolutePath,
+            source: $image->source,
             intrinsicWidth: $image->intrinsicWidth,
             intrinsicHeight: $image->intrinsicHeight,
             mime: $image->mime,
             sourceFormat: $image->sourceFormat,
             focalPoint: $focal,
-            mtime: $image->mtime,
+            isAnimated: $image->isAnimated,
         );
     }
 

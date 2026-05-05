@@ -6,6 +6,7 @@ namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
 use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Source\MediapoolSource;
 
 final class MetadataReaderTest extends TestCase
 {
@@ -19,13 +20,19 @@ final class MetadataReaderTest extends TestCase
         \rex_path::_setBase(sys_get_temp_dir() . '/massif_media_meta_' . uniqid('', true));
     }
 
+    private function source(string $filename): MediapoolSource
+    {
+        $absolutePath = $this->fixturesDir . '/' . $filename;
+        return new MediapoolSource(
+            filename: $filename,
+            absolutePath: $absolutePath,
+            mtime: (int) (filemtime($absolutePath) ?: 0),
+        );
+    }
+
     public function testReadsLandscapeIntrinsicDims(): void
     {
-        $resolved = $this->reader->read(
-            'landscape-800x600.jpg',
-            $this->fixturesDir . '/landscape-800x600.jpg',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('landscape-800x600.jpg'));
 
         self::assertSame(800, $resolved->intrinsicWidth);
         self::assertSame(600, $resolved->intrinsicHeight);
@@ -35,11 +42,7 @@ final class MetadataReaderTest extends TestCase
 
     public function testReadsPortraitIntrinsicDims(): void
     {
-        $resolved = $this->reader->read(
-            'portrait-600x800.jpg',
-            $this->fixturesDir . '/portrait-600x800.jpg',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('portrait-600x800.jpg'));
 
         self::assertSame(600, $resolved->intrinsicWidth);
         self::assertSame(800, $resolved->intrinsicHeight);
@@ -47,11 +50,7 @@ final class MetadataReaderTest extends TestCase
 
     public function testReadsPng(): void
     {
-        $resolved = $this->reader->read(
-            'square-400x400.png',
-            $this->fixturesDir . '/square-400x400.png',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('square-400x400.png'));
 
         self::assertSame(400, $resolved->intrinsicWidth);
         self::assertSame(400, $resolved->intrinsicHeight);
@@ -64,11 +63,7 @@ final class MetadataReaderTest extends TestCase
             $this->markTestSkipped('isAnimated detection needs Imagick.');
         }
 
-        $resolved = $this->reader->read(
-            'animated-3frame.gif',
-            $this->fixturesDir . '/animated-3frame.gif',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('animated-3frame.gif'));
 
         self::assertSame('gif', $resolved->sourceFormat);
         self::assertTrue($resolved->isAnimated, 'Animated GIF fixture has 3 frames; isAnimated should be true.');
@@ -80,11 +75,7 @@ final class MetadataReaderTest extends TestCase
             $this->markTestSkipped('isAnimated detection needs Imagick.');
         }
 
-        $resolved = $this->reader->read(
-            'tiny-32x32.gif',
-            $this->fixturesDir . '/tiny-32x32.gif',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('tiny-32x32.gif'));
 
         self::assertSame('gif', $resolved->sourceFormat);
         self::assertFalse($resolved->isAnimated);
@@ -92,11 +83,7 @@ final class MetadataReaderTest extends TestCase
 
     public function testJpegIsAnimatedFalse(): void
     {
-        $resolved = $this->reader->read(
-            'landscape-800x600.jpg',
-            $this->fixturesDir . '/landscape-800x600.jpg',
-            null,
-        );
+        $resolved = $this->reader->read($this->source('landscape-800x600.jpg'));
 
         self::assertFalse($resolved->isAnimated, 'JPEG short-circuits the probe and stays false.');
     }
