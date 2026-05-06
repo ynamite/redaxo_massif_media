@@ -1,5 +1,5 @@
 RewriteEngine On
-Options +FollowSymLinks -MultiViews
+Options +FollowSymLinks
 
 # Cache hit: serve the file direct (no PHP, no signature re-check).
 RewriteCond %{REQUEST_FILENAME} -f
