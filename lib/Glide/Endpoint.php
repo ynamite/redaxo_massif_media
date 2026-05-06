@@ -9,6 +9,7 @@ use Throwable;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Pipeline\WatermarkResolver;
 use Ynamite\Media\Source\ExternalSource;
 use Ynamite\Media\Source\ExternalSourceFactory;
 
@@ -75,8 +76,19 @@ final class Endpoint
                     ? 'crop-' . substr($parsed['fit'], strlen('cover-'))
                     : $parsed['fit'];
             }
+            // Translate `mark` for Glide's actual file lookup (mediapool name
+            // → "media/<name>", HTTPS URL → fetched-origin path under the
+            // external cache bucket). The TRANSLATED mark goes into Glide's
+            // makeImage params; the ORIGINAL untranslated $filterParams is
+            // what setActiveFilters / hashFilterParams see, so the on-disk
+            // cache path keyed by the URL-side hash stays consistent with
+            // what UrlBuilder emitted. Translation failure (bad URL, fetch
+            // error) drops the mark + companions silently — picture renders
+            // without watermark rather than 500-ing on an editor typo.
+            $processingFilterParams = self::translateMark($filterParams);
+
             // Merge filter params last so they can't override w/q/fm/h/fit accidentally.
-            $params = array_merge($filterParams, $params);
+            $params = array_merge($processingFilterParams, $params);
 
             Server::setActiveFilters($filterParams);
             try {
@@ -125,6 +137,48 @@ final class Endpoint
         $server = Server::createForExternal($source);
         $relCachePath = $server->makeImage(Server::glideSourcePath($source), $params);
         return $server->getCache()->read($relCachePath);
+    }
+
+    /**
+     * Translate the `mark` filter value to a path Glide's watermarks FS can
+     * resolve (rooted at `rex_path::base()` per {@see Server::create()}).
+     * Local marks get a `media/` prefix; HTTPS URLs go through
+     * {@see WatermarkResolver} → {@see ExternalSourceFactory} (SSRF + TTL +
+     * cached origin). On translation failure, drops `mark` and its
+     * companions (markpos / markpad / markalpha / marks / markw / markh /
+     * markfit) so Glide doesn't render half-broken watermark state — the
+     * picture comes out unwatermarked but otherwise correct.
+     *
+     * Only mutates the COPY for Glide processing — `$activeFilterParams`
+     * (used by {@see Server::cachePathCallable}) keeps the original value
+     * so the on-disk cache key matches the URL hash exactly.
+     *
+     * @param array<string,scalar> $filterParams
+     * @return array<string,scalar>
+     */
+    private static function translateMark(array $filterParams): array
+    {
+        if (!isset($filterParams['mark']) || !is_string($filterParams['mark']) || $filterParams['mark'] === '') {
+            return $filterParams;
+        }
+
+        $resolved = (new WatermarkResolver())->resolve($filterParams['mark']);
+        if ($resolved === null) {
+            unset(
+                $filterParams['mark'],
+                $filterParams['marks'],
+                $filterParams['markw'],
+                $filterParams['markh'],
+                $filterParams['markpos'],
+                $filterParams['markpad'],
+                $filterParams['markalpha'],
+                $filterParams['markfit'],
+            );
+            return $filterParams;
+        }
+
+        $filterParams['mark'] = $resolved;
+        return $filterParams;
     }
 
     /**

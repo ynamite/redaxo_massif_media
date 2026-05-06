@@ -469,12 +469,12 @@ final class ImageBuilder
     }
 
     /**
-     * In rex::isDebug() returns an HTML comment naming the missing src so
+     * In rex::isDebugMode() returns an HTML comment naming the missing src so
      * editors see the typo in the page source. Empty string in production.
      */
     private function missingSrcMarker(): string
     {
-        if (!rex::isDebug()) {
+        if (!rex::isDebugMode()) {
             return '';
         }
         $filename = $this->src instanceof rex_media ? $this->src->getFileName() : (string) $this->src;

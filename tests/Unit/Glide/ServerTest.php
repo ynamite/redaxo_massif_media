@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Massif\Media\Unit\Glide;
 
+use League\Glide\Manipulators\Watermark;
 use PHPUnit\Framework\TestCase;
+use rex_path;
 use Ynamite\Media\Glide\Server;
+use Ynamite\Media\Source\ExternalSource;
 
 final class ServerTest extends TestCase
 {
@@ -110,5 +113,56 @@ final class ServerTest extends TestCase
             '@^hero\.jpg/avif-1080-1080-cover-50-50-50-f[a-f0-9]{8}\.avif$@',
             $path,
         );
+    }
+
+    public function testMediapoolServerConfiguresWatermarksFilesystem(): void
+    {
+        // Glide's Watermark manipulator short-circuits when no watermarks
+        // filesystem is set, silently ignoring `mark`/`markpos`/etc. The
+        // mediapool itself is the watermark root, so users can write
+        // `mark="logo.png"` and have it resolve to `rex_path::media() . logo.png`.
+        rex_path::_setBase(sys_get_temp_dir() . '/massif_server_wmark_' . uniqid('', true));
+        @mkdir(rex_path::media(), 0777, true);
+
+        $server = Server::create();
+        $watermark = self::findWatermarkManipulator($server);
+
+        self::assertNotNull($watermark, 'Watermark manipulator missing from Glide pipeline');
+        self::assertNotNull($watermark->getWatermarks(), 'watermarks filesystem not configured — mark params will be ignored');
+    }
+
+    public function testExternalServerConfiguresWatermarksFilesystem(): void
+    {
+        // External sources still pull watermarks from the mediapool — the
+        // per-bucket cache dir holds only the fetched origin and its variants,
+        // never user-uploaded assets.
+        rex_path::_setBase(sys_get_temp_dir() . '/massif_server_wmark_ext_' . uniqid('', true));
+        @mkdir(rex_path::media(), 0777, true);
+
+        $external = new ExternalSource(
+            url: 'https://example.com/x.jpg',
+            hash: 'abc123',
+            absolutePath: rex_path::addonAssets('massif_media', 'cache/_external/abc123/_origin.bin'),
+            fetchedAt: 1700000000,
+            etag: null,
+            remoteLastModified: null,
+            ttlSeconds: 86400,
+        );
+
+        $server = Server::createForExternal($external);
+        $watermark = self::findWatermarkManipulator($server);
+
+        self::assertNotNull($watermark);
+        self::assertNotNull($watermark->getWatermarks());
+    }
+
+    private static function findWatermarkManipulator(\League\Glide\Server $server): ?Watermark
+    {
+        foreach ($server->getApi()->getManipulators() as $manipulator) {
+            if ($manipulator instanceof Watermark) {
+                return $manipulator;
+            }
+        }
+        return null;
     }
 }

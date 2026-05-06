@@ -183,6 +183,23 @@ final class RexPic extends rex_var
      * empty, or invalid JSON / wrong shape — caller omits the named arg
      * entirely (renders without art direction).
      *
+     * Three accepted JSON shapes (all decode to the same internal list):
+     *   1. comma-separated bare variants — `{"media":"…","src":"…"},{"media":"…"}`.
+     *      Idiomatic in slice content (looks like a list without the `[]` that
+     *      REDAXO's tokenizer can't handle). Resurrected via `[…]` wrap when
+     *      the primary parse fails.
+     *   2. object keyed by id — `{"sm":{"media":"…"},"md":{"media":"…"}}`.
+     *      Keys are free-form identifiers; values are variant objects. Order
+     *      preserved by PHP's `json_decode`. Distinguished from a single bare
+     *      variant by checking whether the FIRST value is itself an array.
+     *   3. single bare variant — `{"media":"…","src":"…"}` (one breakpoint
+     *      only). Detected when the decoded object's first value is scalar.
+     *   4. list — `[{"media":"…"},{"media":"…"}]`. Works for direct PHP calls
+     *      (`Image::picture(art: […])`); breaks in `REX_PIC[art='[…]']`
+     *      because REDAXO's `rex_var` tokenizer regex forbids unescaped `[`/`]`
+     *      inside a REX_VAR tag (`var.php::getMatches`). Accepted here for
+     *      symmetry with the PHP API.
+     *
      * Emits an array literal (NOT an `ArtDirectionVariant` constructor call)
      * so the cached PHP survives a hypothetical class rename or namespace
      * move. `Image::picture` re-validates via `ArtDirectionVariant::fromArray`
@@ -195,18 +212,18 @@ final class RexPic extends rex_var
             return null;
         }
 
-        try {
-            $decoded = json_decode($raw, true, depth: 4, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            \rex_logger::factory()->log(
-                'warning',
-                'massif_media: REX_PIC art attr JSON parse failed: ' . $e->getMessage(),
-            );
-            return null;
-        }
+        $decoded = self::decodeArtJson($raw);
         if (!is_array($decoded) || $decoded === []) {
             return null;
         }
+
+        // Parent src is guaranteed present here — getOutput() returns false
+        // before calling buildArtArg if the picture has no src. Captured raw
+        // (not parsed) so it's a JSON-safe string; nested REX_VARs in the
+        // parent src are not propagated into the variant — explicit per-variant
+        // src is required for that.
+        $parentSrc = $self->getArg('src');
+        $parentSrcFallback = is_string($parentSrc) && trim($parentSrc) !== '' ? $parentSrc : null;
 
         $allowedKeys = ['media', 'src', 'width', 'height', 'ratio', 'focal', 'fit', 'filters'];
         $clean = [];
@@ -219,6 +236,16 @@ final class RexPic extends rex_var
                 if (array_key_exists($key, $entry)) {
                     $row[$key] = $entry[$key];
                 }
+            }
+            // src auto-inherits from parent picture when omitted or blank —
+            // common for "same image, different crop/focal per breakpoint".
+            // Treat empty string as "use default" (friendlier than skipping).
+            if ((!array_key_exists('src', $row)
+                    || !is_string($row['src'])
+                    || trim($row['src']) === '')
+                && $parentSrcFallback !== null
+            ) {
+                $row['src'] = $parentSrcFallback;
             }
             // media + src are required
             if (!isset($row['media'], $row['src'])
@@ -247,5 +274,56 @@ final class RexPic extends rex_var
             return null;
         }
         return 'json_decode(' . var_export($json, true) . ', true)';
+    }
+
+    /**
+     * Decode the raw `art` attribute string into a list of variant arrays.
+     *
+     * Tries shapes in this order:
+     *   1. as-typed JSON (object keyed by id, list, or single bare variant)
+     *   2. `[…]`-wrapped — rescues comma-separated bare variants like
+     *      `{"m":…},{"m":…}` (the most natural slice-content shorthand;
+     *      not valid JSON without an outer wrapper, but the outer `[…]`
+     *      can't be in the source because REDAXO's tokenizer bars it).
+     *
+     * Single-bare-variant detection: if the decoded object's first value is
+     * scalar (e.g. `{"media":"…","src":"…"}` — looks like an object map but
+     * is actually one variant), wrap as a 1-elem list so the per-entry
+     * loop sees one variant rather than treating each scalar key/value pair
+     * as a separate (invalid) entry.
+     *
+     * Returns null on parse failure (logged via rex_logger so editors can
+     * find the typo in the system log) or empty input.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private static function decodeArtJson(string $raw): ?array
+    {
+        try {
+            $decoded = json_decode($raw, true, depth: 4, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $primaryError) {
+            try {
+                $decoded = json_decode('[' . $raw . ']', true, depth: 4, flags: JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                \rex_logger::factory()->log(
+                    'warning',
+                    'massif_media: REX_PIC art attr JSON parse failed: ' . $primaryError->getMessage(),
+                );
+                return null;
+            }
+        }
+
+        if (!is_array($decoded) || $decoded === []) {
+            return null;
+        }
+
+        // Single-bare-variant: object whose first value is scalar.
+        $first = $decoded[array_key_first($decoded)];
+        if (!is_array($first)) {
+            return [$decoded];
+        }
+
+        // List or keyed map → strip keys.
+        return array_values($decoded);
     }
 }

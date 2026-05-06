@@ -39,20 +39,42 @@ if (!class_exists('rex_path')) {
     class rex_path
     {
         private static string $base = '';
+        private static string $frontendRel = '';
 
         public static function _setBase(string $path): void
         {
             self::$base = rtrim($path, '/');
         }
 
+        /**
+         * Test-only: simulate a custom installer (Viterex) that offsets
+         * the public dir. `_setFrontendRel('public')` makes
+         * `rex_path::frontend()` return `<base>/public/`.
+         */
+        public static function _setFrontendRel(string $rel): void
+        {
+            self::$frontendRel = trim($rel, '/');
+        }
+
+        public static function base(string $file = ''): string
+        {
+            return self::$base . '/' . $file;
+        }
+
+        public static function frontend(string $file = ''): string
+        {
+            $prefix = self::$frontendRel === '' ? self::$base . '/' : self::$base . '/' . self::$frontendRel . '/';
+            return $prefix . $file;
+        }
+
         public static function media(string $file = ''): string
         {
-            return self::$base . '/media/' . $file;
+            return self::frontend('media/' . $file);
         }
 
         public static function addonAssets(string $addon, string $file = ''): string
         {
-            return self::$base . '/assets/addons/' . $addon . '/' . $file;
+            return self::frontend('assets/addons/' . $addon . '/' . $file);
         }
     }
 }
@@ -77,15 +99,30 @@ if (!class_exists('rex_logger')) {
     {
         /** @var list<\Throwable> */
         public static array $logged = [];
+        /** @var list<array{level: string, message: string}> */
+        public static array $messages = [];
+        private static ?self $instance = null;
 
         public static function logException(\Throwable $e): void
         {
             self::$logged[] = $e;
         }
 
+        public static function factory(): self
+        {
+            return self::$instance ??= new self();
+        }
+
+        public function log(string $level, string $message, array $context = [], ?string $file = null, ?int $line = null): void
+        {
+            self::$messages[] = ['level' => $level, 'message' => $message];
+        }
+
         public static function _reset(): void
         {
             self::$logged = [];
+            self::$messages = [];
+            self::$instance = null;
         }
     }
 }
@@ -182,7 +219,7 @@ if (!class_exists('rex')) {
             self::$isBackend = $value;
         }
 
-        public static function isDebug(): bool
+        public static function isDebugMode(): bool
         {
             return self::$isDebug;
         }

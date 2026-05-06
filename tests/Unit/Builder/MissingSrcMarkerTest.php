@@ -12,7 +12,7 @@ use Ynamite\Media\Builder\ImageBuilder;
 use Ynamite\Media\Builder\VideoBuilder;
 
 /**
- * Verifies the rex::isDebug()-gated <!-- src not found --> HTML comment that
+ * Verifies the rex::isDebugMode()-gated <!-- src not found --> HTML comment that
  * Image- and VideoBuilder emit when their source can't be read. In production
  * (debug off) both builders return ''; in debug mode the editor sees the
  * typo'd filename in the page source instead of an empty render.

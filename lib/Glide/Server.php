@@ -79,12 +79,24 @@ final class Server
 
         $sourceFs = new Filesystem(new LocalFilesystemAdapter($sourceDir));
         $cacheFs = new Filesystem(new LocalFilesystemAdapter($cacheDir));
+        // Watermarks FS is rooted at `rex_path::frontend()` — the proper
+        // REDAXO anchor for both `media/` and `assets/` subdirs (REDAXO
+        // resolves both via `frontend()` internally). Using `rex_path::base()`
+        // would break in installers like Viterex that override `frontend()`
+        // to `<base>/public/` — there `<base>/media/` doesn't exist; the
+        // actual mediapool is at `<base>/public/media/`. Path translation
+        // lives in {@see \Ynamite\Media\Pipeline\WatermarkResolver}; without
+        // any watermarks FS at all, Glide's Watermark manipulator returns
+        // the unmodified image (its `getImage()` short-circuits on a null
+        // filesystem) and `mark`/`markpos`/... params are silently ignored.
+        $watermarksFs = new Filesystem(new LocalFilesystemAdapter(rex_path::frontend()));
 
         $driver = extension_loaded('imagick') ? 'imagick' : 'gd';
 
         $server = ServerFactory::create([
             'source' => $sourceFs,
             'cache' => $cacheFs,
+            'watermarks' => $watermarksFs,
             'driver' => $driver,
         ]);
 
@@ -131,12 +143,21 @@ final class Server
 
         $sourceFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
         $cacheFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
+        // Same watermarks-FS rationale as {@see Server::create()}: rooted at
+        // `rex_path::frontend()` (the REDAXO public anchor that custom
+        // installers like Viterex offset to `<base>/public/`) so
+        // {@see \Ynamite\Media\Pipeline\WatermarkResolver} can address both
+        // mediapool marks (`media/logo.png`) and fetched external marks
+        // (`assets/addons/.../cache/_external/<hash>/_origin.bin`) through
+        // one filesystem regardless of the project layout.
+        $watermarksFs = new Filesystem(new LocalFilesystemAdapter(rex_path::frontend()));
 
         $driver = extension_loaded('imagick') ? 'imagick' : 'gd';
 
         $server = ServerFactory::create([
             'source' => $sourceFs,
             'cache' => $cacheFs,
+            'watermarks' => $watermarksFs,
             'driver' => $driver,
         ]);
 
