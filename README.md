@@ -425,21 +425,32 @@ echo Image::for('hero.jpg')
 
 ### REX_PIC: Art Direction in Slice-Inhalten
 
-Im Editor-Slice via JSON-Attribut `art='[…]'`:
+Im Editor-Slice via JSON-Attribut `art='…'`. Der natürlichste Shape sind **komma-separierte Variant-Objekte** ohne Outer-Wrapper — sieht aus wie eine Liste, ohne die `[…]` die REDAXO im Tag-Kontext ohnehin nicht akzeptiert:
 
 ```
 REX_PIC[
-  src="hero-landscape.jpg"
+  src="hero.jpg"
   alt="Hero"
   ratio="16:9"
-  art='[
-    {"media":"(max-width: 600px)", "src":"hero-portrait.jpg", "ratio":1, "focal":"50% 30%"},
-    {"media":"(max-width: 1024px)", "src":"hero-tablet.jpg", "ratio":"4/3"}
-  ]'
+  art='
+    {"media":"(max-width: 600px)", "ratio":1, "focal":"50% 30%"},
+    {"media":"(max-width: 1024px)", "ratio":"4/3"}
+  '
 ]
 ```
 
-`RexPic::getOutput` parst die JSON-Liste, validiert die erlaubten Keys (`media`, `src`, `width`, `height`, `ratio`, `focal`, `fit`, `filters`) und emittiert `art: json_decode(<json>, true)` als PHP-Literal in den Article-Cache. `Image::picture` re-validiert jede Entry zur Render-Zeit via `ArtDirectionVariant::fromArray`.
+**`src` in einer Variante ist optional**: fehlt es (oder ist leer), erbt die Variante automatisch das `src` der übergeordneten `REX_PIC`. Das obige Beispiel nutzt das — beide Varianten croppen das gleiche `hero.jpg` unterschiedlich. Für den Fall "anderes Bild pro Breakpoint" einfach `"src":"hero-mobile.jpg"` o.ä. ergänzen.
+
+> **Warum nicht einfach ein JSON-Array?** REDAXOs `rex_var`-Tokenizer (`var.php::getMatches`) verbietet unescapte `[`/`]` innerhalb eines REX_VAR-Tags — `art='[…]'` würde dazu führen, dass das gesamte `REX_PIC[…]` nicht als Tag erkannt wird. Geschweifte `{…}` sind unproblematisch, daher die Komma-Separator-Shorthand. Beim direkten PHP-Aufruf (`Image::picture(art: [...])`) gilt die Einschränkung nicht; dort ist die normale Listenform die natürliche Wahl.
+
+`RexPic::buildArtArg` akzeptiert insgesamt vier äquivalente JSON-Shapes:
+
+1. **Komma-separierte Variants** (oben, slice-idiomatic): `{"media":…},{"media":…}`. Wird intern via `[…]`-Wrap als Liste geparst.
+2. **JSON-Objekt** mit free-form Keys: `{"sm":{"media":…},"md":{"media":…}}`. Praktisch wenn man stable IDs für die Varianten möchte (Reihenfolge wird via `json_decode` aus der Source erhalten).
+3. **Single Bare Variant**: `{"media":…,"src":…}` — eine einzelne Variante als Object ohne Wrapper.
+4. **JSON-Liste**: `[{"media":…},{"media":…}]` — nur für direkte PHP-Aufrufe, nicht in `REX_PIC[]` (siehe Tokenizer-Einschränkung oben).
+
+Allowlist-Keys pro Variante: `media`, `src`, `width`, `height`, `ratio`, `focal`, `fit`, `filters`. Unbekannte Keys werden silently gedroppt; fehlt `media` (oder ist `src` weder in der Variante noch in der Parent gesetzt), wird die Variante übersprungen. Emittiert wird `art: json_decode(<json>, true)` als PHP-Literal in den Article-Cache; `Image::picture` re-validiert jede Entry zur Render-Zeit via `ArtDirectionVariant::fromArray`.
 
 **Bei Parse-Fehler** (kaputtes JSON, fehlende Pflicht-Keys) loggt das Addon eine Warning via `rex_logger::factory()->log('warning', …)` und rendert das `<picture>` ohne Art Direction — eine kaputte JSON im Slice wirft die Seite nicht in einen 500.
 
@@ -743,16 +754,24 @@ REX_PIC[src="hero.jpg" width="800" flip="h" orient="90"]
 
 Wasserzeichen können über acht Attribute gesetzt werden.
 
-| Attribut    | Wert           | Beschreibung                                          |
-| ----------- | -------------- | ----------------------------------------------------- |
-| `mark`      | string         | Pfad im REDAXO-Mediapool, Pflicht für Watermark       |
-| `marks`     | 0.0..1.0       | Relative Grösse, z. B. `0.25` für 25 % der Bildbreite |
-| `markw`     | int            | Pixel-Breite, überschreibt `marks`                    |
-| `markh`     | int            | Pixel-Höhe, überschreibt `marks`                      |
-| `markpos`   | Glide-Position | Position des Wasserzeichens                           |
-| `markpad`   | int            | Abstand zum Rand in px                                |
-| `markalpha` | 0..100         | Deckkraft                                             |
-| `markfit`   | Glide-Fit      | Einpassung des Wasserzeichens in seine Box            |
+| Attribut    | Wert                | Beschreibung                                                                   |
+| ----------- | ------------------- | ------------------------------------------------------------------------------ |
+| `mark`      | string              | Mediapool-Filename, HTTPS-URL oder `/`-präfixierter Projekt-Pfad (siehe unten) |
+| `marks`     | 0.0..1.0            | Relative Grösse, z. B. `0.25` für 25 % der Bildbreite                          |
+| `markw`     | int oder `Nw`/`Nh`  | Pixel-Breite oder Prozent (`20w` = 20 % Bildbreite, `20h` = 20 % Bildhöhe)     |
+| `markh`     | int oder `Nw`/`Nh`  | Pixel-Höhe oder Prozent — analog zu `markw`                                    |
+| `markpos`   | Glide-Position      | Position des Wasserzeichens                                                    |
+| `markpad`   | int                 | Abstand zum Rand in px                                                         |
+| `markalpha` | 0..100              | Deckkraft                                                                      |
+| `markfit`   | Glide-Fit           | Einpassung des Wasserzeichens in seine Box                                     |
+
+**`mark`-Quellen** — drei akzeptierte Shapes:
+
+- **Mediapool-Filename** (`"logo.png"`, `"subdir/logo.png"`) — Standard-Fall.
+- **HTTPS-URL** (`"https://example.com/logo.png"`) — geht durch dieselbe External-Source-Pipeline wie externe Haupt-Bilder (SSRF-Guard, TTL, Conditional GET, einmal-pro-TTL-Fetch). Failures (Bad URL, SSRF-Block, Network-Error) werden geloggt; das Bild rendert dann ohne Watermark statt 500.
+- **Projekt-Pfad mit führendem `/`** (z. B. `/assets/addons/foo/img.webp`) — wird relativ zu `rex_path::base()` interpretiert, Query-String wird abgeschnitten. Hauptzweck: nested `REX_PIC[…, as='url']` als Watermark-Source. Caveat: die Datei muss **schon existieren** wenn die Watermark-Variante gerendert wird — Glide-Cache-URLs zeigen erst auf eine echte Datei, nachdem die Variante einmal generiert wurde. Für saubere Garantie lieber den Mediapool-Filename direkt benutzen.
+
+**Grössen-Tipp** — bei grossen Source-Bildern (z. B. 5712 × 3213 px) wirkt `markw="100"` (100 px absolut) winzig. Für proportionale Watermark-Grösse die Prozent-Syntax nutzen: `markw="20w"` ergibt 20 % der Bildbreite und skaliert mit der Variante.
 
 Unterstützte Positionen für `markpos`:
 
@@ -781,9 +800,7 @@ echo Image::for('hero.jpg')
     ->render();
 ```
 
-Wenn die Watermark-Datei nicht im Mediapool existiert, wird der betroffene Variant-Request mit 404 beantwortet. Der `<picture>` Tag kann dann broken-image-Glyphs für diese Variante enthalten.
-
-Watermark-Attribute sollten deshalb idealerweise nur in Templates oder Modulen verwendet werden, in denen der Pfad kontrolliert ist.
+Wenn die Watermark-Datei nicht aufgelöst werden kann (Mediapool-Tippfehler, SSRF-blockierte URL, externer Fetch-Fehler, fehlender nested-`REX_PIC`-Cache-File), rendert das Bild **ohne** Watermark — kein 404, kein 500, kein broken-image-Glyph. Der Failure wird via `rex_logger` als Warning protokolliert, sodass Editor-Tippfehler im System-Log auffindbar bleiben statt das Frontend zu zerschiessen.
 
 ---
 
