@@ -275,7 +275,7 @@ Important examples:
 
 - `as="url"` must use `getArg('as')`, not `getParsedArg('as')`.
 - `preload` mode flags must use `getArg()`.
-- `REX_PIC art='[...]'` JSON must use `getArg('art')`, then `json_decode(..., JSON_THROW_ON_ERROR)`.
+- `REX_PIC art='{...}'` JSON must use `getArg('art')`, then `json_decode(..., JSON_THROW_ON_ERROR)`. The slice-content shape is a JSON **object** (`{"sm": {...}, "md": {...}}`), not a list — REDAXO's `rex_var` tokenizer regex (`var.php::getMatches`) bars unescaped `[`/`]` inside the tag, so a list-shape `art='[...]'` would prevent the entire `REX_PIC[...]` from being recognised. `buildArtArg` accepts both shapes (it `array_values()`s the decoded value before per-entry validation), so direct PHP callers of `Image::picture(art: [...])` keep the natural list form.
 - Bad art JSON should log a warning and render without art direction, not 500.
 - Nested poster recipe:
 
@@ -467,7 +467,7 @@ Integration tests are not CI-gated; run them locally before tagging when touchin
 ## Out of scope / v2 candidates
 
 - symmetric mediapool resolution for existing bare-filename video posters
-- async external URL fetching / queue-backed prewarming
-- true letterboxed `contain` output via image manipulation
 - IPv6 support in `SsrfGuard`
 - shared default filters for all art-direction variants
+- subtitle support for videos
+- support for vidstack or similar custom video players (requires being able to emit attributes such as `id`, `data-poster` instead of native `poster`, and possibly emitting a non-standard wrapper instead of `<video>`)
