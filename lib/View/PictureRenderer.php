@@ -70,7 +70,7 @@ final class PictureRenderer
         array $artVariants = [],
     ): string {
         $sizes ??= Config::defaultSizes();
-        $formats = $this->normalizeFormats($formats ?? Config::formats());
+        $formats = $this->normalizeFormats($formats ?? Config::renderableFormats());
 
         $ctx = RenderContext::build(
             image: $image,

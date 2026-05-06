@@ -62,7 +62,7 @@ final class Preloader
         }
 
         $sizes = Config::defaultSizes();
-        $formats = Config::formats();
+        $formats = Config::renderableFormats();
 
         $links = [];
         $srcsetBuilder = new SrcsetBuilder();

@@ -81,12 +81,63 @@ final class Config
         return (string) self::get(self::KEY_SIGN_KEY, '');
     }
 
-    /** @return list<string> */
+    /**
+     * User-configured raster formats, raw and unfiltered. Use {@see renderableFormats()}
+     * for output paths — the configured list may include formats the server can't
+     * actually encode (e.g. AVIF without libheif), and emitting `<source type="image/avif">`
+     * for an URL the cache-miss handler can't fulfil produces broken images on AVIF-capable
+     * browsers (`<picture>` does not auto-fallback when a chosen `<source>` URL fails).
+     *
+     * @return list<string>
+     */
     public static function formats(): array
     {
         $list = self::splitList((string) self::get(self::KEY_FORMATS));
         return array_values(array_filter(array_map('strtolower', $list)));
     }
+
+    /**
+     * Configured formats filtered to those the server can actually encode. This is
+     * the list to emit into `<picture>`, `<link rel="preload">`, and default-format
+     * URL generation — any format here is guaranteed to fulfil at the cache-miss
+     * endpoint. JPEG/PNG/GIF are always available (PHP's built-in raster support);
+     * AVIF and WebP go through Imagick's encoder list.
+     *
+     * @return list<string>
+     */
+    public static function renderableFormats(): array
+    {
+        return array_values(array_filter(self::formats(), self::canServerEncode(...)));
+    }
+
+    /**
+     * Whether the running PHP/Imagick combo can encode the given format. Probes
+     * `Imagick::queryFormats()` once per request and caches; baseline raster
+     * formats (jpg/jpeg/png/gif) are always reported as supported because PHP's
+     * GD fallback covers them even on Imagick-less hosts.
+     */
+    public static function canServerEncode(string $format): bool
+    {
+        if (self::$serverFormatCapability === null) {
+            $caps = ['jpg' => true, 'jpeg' => true, 'png' => true, 'gif' => true];
+
+            if (extension_loaded('imagick')) {
+                foreach (\Imagick::queryFormats() as $fmt) {
+                    $caps[strtolower($fmt)] = true;
+                }
+                if (!empty($caps['jpeg'])) {
+                    $caps['jpg'] = true;
+                }
+            }
+
+            self::$serverFormatCapability = $caps;
+        }
+
+        return !empty(self::$serverFormatCapability[strtolower($format)]);
+    }
+
+    /** @var array<string,bool>|null */
+    private static ?array $serverFormatCapability = null;
 
     public static function quality(string $format): int
     {

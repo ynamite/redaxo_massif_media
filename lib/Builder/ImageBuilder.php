@@ -448,7 +448,7 @@ final class ImageBuilder
     {
         $configured = $this->formatsOverride !== null && $this->formatsOverride !== []
             ? $this->formatsOverride
-            : Config::formats();
+            : Config::renderableFormats();
         if ($configured === []) {
             return 'webp';
         }
