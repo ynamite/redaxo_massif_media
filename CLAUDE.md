@@ -264,19 +264,13 @@ In namespaced files:
 
 ### Composer autoloader
 
-We ship `vendor/` so Connect-installs work without `composer install`. Two consequences:
+We ship `vendor/` so Connect-installs work without `composer install`. The crucial gotcha:
 
-- `boot.php` must register our Composer `ClassLoader` as **appended**, not prepended (Composer's default). Re-register pattern:
-
-  ```php
-  $loader = require __DIR__ . '/vendor/autoload.php';
-  $loader->unregister();
-  $loader->register(false);
-  ```
-
-  Reason: prepending puts our `Psr\Log\*` (v3) ahead of REDAXO core's bundled `psr/log` on the SPL chain. On REDAXO < 5.18 (psr/log v1 in core), `rex_logger::log()` is declared without `: void` and without `string|\Stringable $message` typing — extending our v3 `AbstractLogger` then fatals with `Declaration must be compatible`. Appending lets REDAXO core resolve `Psr\Log\*` first; our loader still owns `Symfony\…`, `League\…`, `Intervention\…`, `Ynamite\Media\…`.
-
-- Don't add new Composer requirements that overlap with REDAXO core's `composer.json` (currently: `psr/log`, `symfony/console`, `symfony/yaml`, `symfony/var-dumper`, `symfony/http-foundation`, `voku/portable-utf8`, `enshrined/svg-sanitize`, `erusev/parsedown`, `composer/ca-bundle`). If you have to, the appended-loader rule above must hold so REDAXO core wins on collisions.
+- **REDAXO scans every addon's `vendor/` recursively and indexes every class it finds.** `rex_addon::enlist()` calls `rex_autoload::addDirectory($addon . 'vendor')` (REDAXO core `lib/packages/package.php:392`), which walks the tree and populates `rex_autoload::$classes` with `class-name => file-path` entries. First write wins (`if (!isset(self::$classes[$class]))`).
+- `rex_autoload::autoload()` consults that index **before** falling back to REDAXO core's bundled Composer loader. SPL chain priority on our own `ClassLoader` therefore does **not** decide which file resolves a class shared with REDAXO core — REDAXO's class index does, and it was populated as soon as our `vendor/` was enlisted.
+- Practical consequence: **any package version we ship that overlaps with REDAXO core's `composer.json` must match the signature REDAXO core was authored against**, or PHP fatals when REDAXO's class index points at our file. The canonical failure is `psr/log`: `rex_logger extends AbstractLogger`, so the indexed `Psr\Log\AbstractLogger` must agree with what `rex_logger::log()` declares. REDAXO 5.18+ ships `psr/log: ^3.0.2` (verified on tags `5.18.0` through `5.21.0` of `redaxo/redaxo` `redaxo/src/core/composer.json`), so we pin `psr/log: ^3.0` in our `composer.json` to ship the matching v3 signature (`string|\Stringable $message`, `: void`). When REDAXO core's pin moves, bump ours in lockstep — this is also why the addon's minimum REDAXO version is `^5.18.0` and not lower, since REDAXO 5.13–5.17 ships v1 and the two signatures are LSP-incompatible.
+- Overlap list with REDAXO core (currently: `psr/log`, `symfony/console`, `symfony/yaml`, `symfony/var-dumper`, `symfony/http-foundation`, `voku/portable-utf8`, `enshrined/svg-sanitize`, `erusev/parsedown`, `composer/ca-bundle`). Avoid adding new requirements from this list. If you must, pin to the version REDAXO core declares — there's no SPL-priority workaround that makes a mismatched signature safe under `rex_autoload`.
+- `boot.php` can therefore use a plain `require __DIR__ . '/vendor/autoload.php';` — Composer's default prepended SPL registration is fine because the conflict was never resolved at the SPL layer.
 
 ### Install / activate cache invalidation
 
