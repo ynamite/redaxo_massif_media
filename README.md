@@ -1395,6 +1395,28 @@ Wenn der Sign-Key neu generiert wird:
 
 # Troubleshooting
 
+## `REX_PIC[…]` / `REX_VIDEO[…]` erscheinen als Literal-Text
+
+Wenn nach dem Aktivieren des Addons `REX_PIC[src="…"]` oder `REX_VIDEO[src="…"]` als Plain-Text in der gerenderten Seite stehen statt durch `<picture>` / `<video>` ersetzt zu werden, ist der Article-Cache veraltet — der Slice wurde gecacht **bevor** die `REX_PIC` / `REX_VIDEO`-Vars registriert waren.
+
+Lösung:
+
+**Backend → System → Cache leeren**
+
+Frische Installationen ab dem Fix-Release machen das automatisch (`install.php` ruft `rex_delete_cache()`). Beim Update von einer älteren Version, in der noch kein Auto-Cache-Clear lief, reicht das einmalige manuelle Cache-Leeren.
+
+---
+
+## Fatal-Error nach Install: `rex_logger::log() must be compatible with Psr\Log\AbstractLogger::log()`
+
+Auf REDAXO < 5.18 (Core bringt psr/log v1) konnte unser geshipptes psr/log v3 mit `rex_logger`s alter Signatur (ohne `: void`-Return) kollidieren — direkt nach Install fatalt jede Backend-Anfrage.
+
+Im Fix-Release behoben: `boot.php` registriert den Composer-Loader als appended, sodass REDAXO Cores eigenes psr/log zuerst geladen wird.
+
+Wenn der Fehler weiterhin auftritt, shippt vermutlich eine andere aktive Addon eine konfliktierende psr/log-Version. Die anderen Addons-`vendor/`-Verzeichnisse prüfen und ggf. updaten.
+
+---
+
 ## Bild oder Video taucht nicht auf
 
 Wenn ein Bild oder Video nicht erscheint, obwohl der Slice gepflegt ist, ist meistens die Quelldatei nicht vorhanden.

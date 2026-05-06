@@ -2,7 +2,22 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/vendor/autoload.php';
+// Composer registers its ClassLoader with prepend=true by default, which would
+// place our `Psr\Log\*` (v3) ahead of REDAXO core's bundled psr/log on the SPL
+// chain. On REDAXO < 5.18 (psr/log v1 in core), `rex_logger::log()` is declared
+// without the `: void` return type and without `string|\Stringable $message`
+// typing, so it can't extend our v3 `Psr\Log\AbstractLogger` — PHP throws a
+// fatal "Declaration must be compatible" the moment `rex_logger` is loaded.
+// Re-registering as appended lets REDAXO's loader resolve `Psr\Log\*` first
+// (matching whatever version its `rex_logger` was authored against), while our
+// loader still owns every namespace REDAXO doesn't ship (`Symfony\…`, `League\…`,
+// `Ynamite\Media\…`, etc.).
+$massifMediaLoader = require __DIR__ . '/vendor/autoload.php';
+if ($massifMediaLoader instanceof \Composer\Autoload\ClassLoader) {
+    $massifMediaLoader->unregister();
+    $massifMediaLoader->register(false);
+}
+unset($massifMediaLoader);
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Glide\RequestHandler;

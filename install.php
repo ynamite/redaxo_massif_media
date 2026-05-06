@@ -24,3 +24,11 @@ $gitignorePath = rex_path::addonAssets(Config::ADDON, '.gitignore');
 if (!is_file($gitignorePath)) {
     rex_file::put($gitignorePath, "cache/\n");
 }
+
+// Article/template caches generated before this addon was active still contain
+// `REX_PIC[...]` / `REX_VIDEO[...]` as literal text — at parse time the var
+// wasn't registered, so `rex_var::parse` left them untouched. REDAXO doesn't
+// auto-clear caches on install/activate, so flush them here to force a clean
+// regen on next render. Also runs on update/reinstall, which is what we want
+// when `getOutput()` semantics change between releases.
+rex_delete_cache();

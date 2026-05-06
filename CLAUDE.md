@@ -262,6 +262,30 @@ In namespaced files:
 - `installAssets()` silently drops files starting with `.git`.
 - Runtime `.gitignore` files under addon assets must be written from `install.php` via `rex_file::put()`.
 
+### Composer autoloader
+
+We ship `vendor/` so Connect-installs work without `composer install`. Two consequences:
+
+- `boot.php` must register our Composer `ClassLoader` as **appended**, not prepended (Composer's default). Re-register pattern:
+
+  ```php
+  $loader = require __DIR__ . '/vendor/autoload.php';
+  $loader->unregister();
+  $loader->register(false);
+  ```
+
+  Reason: prepending puts our `Psr\Log\*` (v3) ahead of REDAXO core's bundled `psr/log` on the SPL chain. On REDAXO < 5.18 (psr/log v1 in core), `rex_logger::log()` is declared without `: void` and without `string|\Stringable $message` typing — extending our v3 `AbstractLogger` then fatals with `Declaration must be compatible`. Appending lets REDAXO core resolve `Psr\Log\*` first; our loader still owns `Symfony\…`, `League\…`, `Intervention\…`, `Ynamite\Media\…`.
+
+- Don't add new Composer requirements that overlap with REDAXO core's `composer.json` (currently: `psr/log`, `symfony/console`, `symfony/yaml`, `symfony/var-dumper`, `symfony/http-foundation`, `voku/portable-utf8`, `enshrined/svg-sanitize`, `erusev/parsedown`, `composer/ca-bundle`). If you have to, the appended-loader rule above must hold so REDAXO core wins on collisions.
+
+### Install / activate cache invalidation
+
+REDAXO's `package_manager::install()` and `activate()` do **not** call `rex_delete_cache()` — only `uninstall()`, `deactivate()`, and `delete()` do.
+
+- Slices and templates cached **before** the addon was active still contain `REX_PIC[…]` / `REX_VIDEO[…]` as literal text (the var wasn't registered when `rex_var::parse` ran).
+- `install.php` must call `rex_delete_cache()` at the end so the article cache regenerates with our vars active on next render.
+- This also fires on reinstall / update, which is the right behaviour when `getOutput()` semantics drift between releases (existing baked-in PHP would otherwise call into the new `Image::picture()` signature with stale arg shape).
+
 ### `rex_var`
 
 Native `REX_PIC` / `REX_VIDEO` substitution is article-cache-bound.
@@ -442,7 +466,7 @@ Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)
 7. create GitHub release:
 
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "<release notes>"
+gh release create X.Y.Z --title "X.Y.Z" --notes "<release notes>"
 ```
 
 Release publishing is handled by `.github/workflows/publish-to-redaxo.yml` on `release: published`.

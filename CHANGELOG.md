@@ -5,6 +5,14 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.2-beta] — 2026-05-06
+
+### Fixed
+
+- **`Declaration of rex_logger::log() must be compatible with Psr\Log\AbstractLogger::log()`-Fatal auf REDAXO < 5.18 behoben.** Symptom: direkt nach Install der Addon fatalt jede Backend-Anfrage mit `PHP Fatal error: Declaration of rex_logger::log($level, $message, array $context = [], $file = null, $line = null) must be compatible with Psr\Log\AbstractLogger::log($level, Stringable|string $message, array $context = []): void`. Ursache: Composer registriert seinen `ClassLoader` per Default mit `prepend=true`, sodass unser geshipptes `psr/log` 3.x **vor** REDAXO Cores Loader auf der SPL-Autoload-Chain liegt. Auf REDAXO 5.13–5.17 (psr/log v1 in Core) ist `rex_logger::log()` ohne `: void`-Return und ohne `string|\Stringable $message`-Typing deklariert — kompatibel mit v1, aber LSP-incompatibel mit v3. Sobald irgendein Code-Pfad `rex_logger` autoloaded, erzwingt PHP den Signatur-Check gegen unsere v3-`AbstractLogger`, mismatch, fatal. Fix: `boot.php` re-registriert den Composer-Loader nach `vendor/autoload.php` als **appended** (`$loader->unregister(); $loader->register(false);`) — REDAXO Cores Loader resolvt `Psr\Log\*` jetzt zuerst (matched die Version, gegen die sein eigenes `rex_logger` geschrieben ist), unser Loader bedient nur noch Namespaces, die REDAXO nicht ownt (`Symfony\…`, `League\…`, `Intervention\…`, `Ynamite\Media\…`). Auf REDAXO ≥ 5.18 (psr/log v3 in Core) ist das funktional ein No-op — beide Versionen sind identisch, der Effekt ist nur, dass REDAXOs Bundle-Pfad geladen wird statt unserem.
+
+- **`REX_PIC[…]` / `REX_VIDEO[…]` blieben nach Install als Literal-Text in der gerenderten Seite stehen.** Ursache: REDAXOs `package_manager::install()` und `activate()` rufen **nicht** `rex_delete_cache()` auf — nur Uninstall, Deactivate und Delete tun das. Slices und Templates, die schon vor der Addon-Aktivierung in den Article-Cache geschrieben wurden, enthalten `REX_PIC[…]` als Plain-Text, weil `rex_var::parse()` zur Cache-Generation-Zeit den (damals noch nicht registrierten) Var nicht ersetzt hat. Ohne manuelles "Cache leeren" oder Re-Save jeder einzelnen Slice rendert das Frontend weiter Literal-Text. Fix: `install.php` ruft am Ende `rex_delete_cache()` auf, sodass beim nächsten Frontend-Render Article-Cache neu generiert wird — diesmal mit aktiver `REX_PIC` / `REX_VIDEO`-Var-Registration. Greift auch bei Reinstall / Update, was wir ohnehin wollen, wenn `getOutput()`-Semantik zwischen Releases driftet (siehe gleichnamige CLAUDE.md-Gotcha).
+
 ## [1.0.1-beta] — 2026-05-06
 
 ### Added
