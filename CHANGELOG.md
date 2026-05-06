@@ -5,6 +5,24 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.4-beta] — 2026-05-06
+
+### Changed
+
+- **BREAKING: Mindest-REDAXO-Version von 5.13.0 auf 5.18.0 angehoben** (`package.yml` `requires.redaxo: "^5.18.0"`). Zwei voneinander abhängige Probleme machten REDAXO 5.13–5.17 unsauber zu unterstützen, beide verschwinden mit dem Floor-Bump:
+  1. `boot.php` registriert die `REX_PIC` / `REX_VIDEO` Native-Vars über `rex_var::register()`, eine API, die REDAXO erst in 5.18 (`redaxo/src/core/lib/var/var.php:public static function register(string $name, string $class): void`) hinzugefügt hat — auf 5.13–5.17 fatalt das mit `Call to undefined method rex_var::register()`. Die pre-5.18-Alternative (Auto-Discovery via global benannter `rex_var_pic` / `rex_var_video`-Klassen, vgl. `rex_var::getVar()` `var.php:133-145` mit `'rex_var_' . strtolower(substr($var, 4))`) hätte Drop-of-`final` auf unseren namespaced Var-Klassen plus zwei globale Thunk-Files in `lib/` nötig gemacht.
+  2. Die psr/log-Signatur-Kollision aus 1.0.2-beta (`Declaration of rex_logger::log() must be compatible with Psr\Log\AbstractLogger::log()`) war von 1.0.2 nur scheinbar gelöst: der dortige appended-Composer-Loader-Hack adressierte die SPL-Autoload-Chain-Reihenfolge, das eigentliche Problem ist aber `rex_addon::enlist()`, das via `rex_autoload::addDirectory($addon . 'vendor')` (`redaxo/src/core/lib/packages/package.php:392`) jedes Addon-`vendor/` rekursiv scannt und **jede gefundene Klasse** in seinen eigenen `$classes`-Index schreibt — first-write-wins. `rex_autoload::autoload()` konsultiert diesen Index **bevor** es auf REDAXO Cores gebundelten Composer-Loader fällt; SPL-Priority unseres eigenen `ClassLoader` ist für indizierte Klassen irrelevant. Damit fatalt die Kollision auf REDAXO 5.13–5.17 (Core bringt psr/log v1, wir geshippt v3) trotz appended Loader, sobald `rex_logger` autoloaded — die einzige saubere Lösung ist **Versions-Match** zwischen unserer `vendor/psr/log` und REDAXO Cores `vendor/psr/log`.
+
+- **`psr/log: ^3.0` jetzt explizit in `composer.json` gepinnt.** REDAXO Core ab `5.18.0` (verifiziert auf Tags `5.18.0` bis aktuell `5.21.0` von `redaxo/redaxo` `redaxo/src/core/composer.json`) requires `psr/log: ^3.0.2`. Mit unserem Floor auf `^5.18.0` stimmt unsere v3.0.2-Vendor-Kopie damit byte-genau überein — egal ob REDAXOs `rex_autoload`-Vendor-Scan unseren Pfad oder seinen eigenen indiziert, geladen wird in beiden Fällen die v3-`AbstractLogger`-Signatur (`string|\Stringable $message`, `: void`), gegen die `rex_logger::log()` ab 5.18 geschrieben ist. Beim REDAXO-Core-Bump auf eine andere psr/log-Hauptversion muss unser Pin synchron mitziehen — die "pin in lockstep with REDAXO core"-Regel ist in CLAUDE.md `Composer autoloader` mit konkreter Versions-Zahl dokumentiert.
+
+- **`boot.php` SPL-Autoloader-Reorder-Hack aus 1.0.2-beta wieder entfernt** — die Begründung war falsch (siehe 1.0.4-beta `### Changed`-Punkt oben), und mit korrekter Versions-Pinning ist die Manipulation der Loader-Chain unnötig. `boot.php` benutzt jetzt wieder ein einfaches `require __DIR__ . '/vendor/autoload.php'`.
+
+### Fixed
+
+- **`Call to undefined method rex_var::register()`-Fatal beim Backend-Boot behoben** (s. `### Changed`). Symptom: `Call to undefined method rex_var::register() in redaxo/src/addons/massif_media/boot.php on line 18`, jeder Backend-Request fataled, Addon nicht aktivierbar.
+
+- **`Declaration of rex_logger::log() must be compatible with Psr\Log\AbstractLogger::log()`-Fatal nun wirklich behoben** (s. `### Changed`). Der 1.0.2-beta-Fix (appended Composer-Loader) war eine Fehldiagnose und löste das Problem nur per Zufall in einer Subset-Konfiguration; mit Floor-Bump auf REDAXO 5.18 und identischer psr/log-v3-Version gibt es keine Signatur-Drift mehr, ungeachtet welche `vendor/psr/log` REDAXOs Vendor-Scanner zuerst indiziert.
+
 ## [1.0.2-beta] — 2026-05-06
 
 ### Fixed

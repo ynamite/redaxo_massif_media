@@ -165,7 +165,7 @@ Zusätzlich wird diese README direkt im REDAXO-Backend gerendert:
 
 ## Anforderungen
 
-- REDAXO 5.13+
+- REDAXO 5.18+
 - PHP 8.2+
 - **Imagick** empfohlen
 - Für AVIF-Output zusätzlich **libheif/libavif** in der Imagick-Build
@@ -1409,11 +1409,11 @@ Frische Installationen ab dem Fix-Release machen das automatisch (`install.php` 
 
 ## Fatal-Error nach Install: `rex_logger::log() must be compatible with Psr\Log\AbstractLogger::log()`
 
-Auf REDAXO < 5.18 (Core bringt psr/log v1) konnte unser geshipptes psr/log v3 mit `rex_logger`s alter Signatur (ohne `: void`-Return) kollidieren — direkt nach Install fatalt jede Backend-Anfrage.
+Tritt auf, wenn das Addon auf REDAXO < 5.18 installiert wird. Die Mindest-REDAXO-Version ist `^5.18.0` (siehe *Anforderungen* oben) — REDAXO 5.13–5.17 bringt psr/log v1 mit, unsere ab 1.0.4-beta geshippte psr/log v3 ist mit dieser v1-Signatur LSP-inkompatibel, sobald REDAXOs Vendor-Scanner unsere `Psr\Log\AbstractLogger` indiziert (`rex_addon::enlist()` ruft `rex_autoload::addDirectory($addon . 'vendor')`).
 
-Im Fix-Release behoben: `boot.php` registriert den Composer-Loader als appended, sodass REDAXO Cores eigenes psr/log zuerst geladen wird.
+Lösung: REDAXO Core auf ≥ 5.18.0 anheben, dann Addon neu installieren.
 
-Wenn der Fehler weiterhin auftritt, shippt vermutlich eine andere aktive Addon eine konfliktierende psr/log-Version. Die anderen Addons-`vendor/`-Verzeichnisse prüfen und ggf. updaten.
+Wenn der Fehler auf REDAXO ≥ 5.18 trotzdem auftritt, shippt vermutlich eine andere aktive Addon eine konfliktierende psr/log-Version (z. B. v1 in einem Legacy-Addon). Die anderen Addons-`vendor/`-Verzeichnisse prüfen und ggf. updaten.
 
 ---
 
