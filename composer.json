@@ -12,6 +12,7 @@
   "require": {
     "php": ">=8.2",
     "league/glide": "^3.0",
+    "psr/log": "^3.0",
     "symfony/http-client": "^7.0"
   },
   "require-dev": {
