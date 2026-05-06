@@ -2,19 +2,18 @@
 
 declare(strict_types=1);
 
-// REDAXO core's boot.php lives at a path that depends on the active path
-// provider — `<htdocs>/redaxo/src/core/boot.php` on standard installs, but
-// `<project>/src/core/boot.php` on layouts that put htdocs in a subdirectory
-// (Viterex, custom `app_path_provider`, etc.). We can't ask `rex_path::core()`
-// at this point because REDAXO isn't loaded yet, so install.php resolves the
-// path via the live path provider and writes it to the sibling `.config.php`.
-$config = @include __DIR__ . '/.config.php';
-if (!is_array($config) || !isset($config['boot']) || !is_file($config['boot'])) {
+// REDAXO core's boot.php requires three globals (`$REX['HTDOCS_PATH']`,
+// `$REX['BACKEND_FOLDER']`, `$REX['REDAXO']`), and on installs with a custom
+// path provider (Viterex `app_path_provider`, etc.) also `$REX['PATH_PROVIDER']`.
+// Since none of `rex_path::*` is available before boot.php runs, install.php
+// resolves all of that via the live path provider and writes a self-contained
+// bootstrap script to `_img/.bootstrap.php`.
+if (!is_file(__DIR__ . '/.bootstrap.php')) {
     http_response_code(500);
-    exit('massif_media: _img/.config.php missing or invalid — reinstall the addon');
+    exit('massif_media: _img/.bootstrap.php missing — reinstall the addon');
 }
 
-require $config['boot'];
+require __DIR__ . '/.bootstrap.php';
 
 if (!class_exists('rex_addon')) {
     http_response_code(500);
