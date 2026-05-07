@@ -352,6 +352,20 @@ Three things have to align for cache files to be readable by Apache on shared ho
 
 Symptom of breakage: `[core:crit] (13)Permission denied: AH00529: ... pcfg_openfile: unable to check htaccess file, ensure it is readable and that ... is executable` in the Apache error log, plus 403s on cache hits. Apache walks up the directory tree on every request looking for .htaccess at every level; if any directory along the way is mode 0700, it 403s preemptively even though no `.htaccess` exists there.
 
+### AVIF encoding override
+
+`Glide\SafeAvifEncoder` extends `League\Glide\Api\Encoder` and is wired in via `$api->setEncoder(...)` in both `Server::create()` and `Server::createForExternal()`. Its job is to bypass `intervention/image` v3's specialized Imagick `AvifEncoder` for the AVIF format. The intervention encoder calls `setCompression(Imagick::COMPRESSION_ZIP)` + `setImageCompression(...)` + `setFormat`/`setImageFormat` + the doubled quality setters + `getImagesBlob()` (multi-image stack blob). On at least one Imagick build seen in the wild (Plesk-shipped Imagick with libheif), this combination produces an empty blob — the AVIF cache file ends up 0 bytes, the browser sees a broken image. ZIP compression is nonsensical for AVIF (it's AV1-compressed internally) but the libheif build misinterprets the flag and aborts the encode silently.
+
+`SafeAvifEncoder::run()` only intercepts when the format is AVIF AND the active Imagick driver is in play; everything else (WebP works fine through Glide's default path on the affected hosts; GD driver delegates to PHP's `imageavif()` without any property dance) falls through to `parent::run()`. The minimal call pattern matches what `media_negotiator/lib/Helper.php::imagickConvert()` uses successfully on the same problematic builds:
+
+```php
+$imagick->setImageFormat('avif');
+$imagick->setImageCompressionQuality($this->getQuality());
+return new EncodedImage($imagick->getImageBlob(), 'image/avif');  // singular
+```
+
+If you ever update `intervention/image` and they fix their AvifEncoder, this override can come out — but verify against the Plesk reference build before removing. Symptom of regression: AVIF cache files at exactly 0 bytes, served as 200 OK with empty body, broken images on AVIF-capable browsers only.
+
 ### Encoder capability detection
 
 `Config::canServerEncode()` decides whether AVIF / WebP `<source>` elements are emitted. It mirrors **Glide's own driver selection** — Imagick when the extension is loaded, GD otherwise (`Glide\Server::create` line 94 / 155, matching `intervention/image` v3's two-driver universe). Detection per driver:
