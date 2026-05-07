@@ -83,6 +83,17 @@ Request-handler pattern:
 5. handle response
 6. `exit`
 
+#### `_img/.bootstrap.php` is generated, not shipped
+
+`assets/_img/index.php` is the cache-miss entry point when `.htaccess` rewrites missing files into PHP. It `require`s `_img/.bootstrap.php`, which `install.php` regenerates on every install/reinstall via the live path provider. The generated bootstrap MUST set:
+
+- `$REX['REDAXO']` (false for frontend)
+- `$REX['HTDOCS_PATH']`, `$REX['BACKEND_FOLDER']`
+- `$REX['PATH_PROVIDER']` if a custom provider is in use (Viterex `app_path_provider`, etc.) — REQUIRED, not optional, on those layouts
+- `$REX['LOAD_PAGE'] = true` — without this, `core/boot.php` finishes framework setup at line 134 and returns; the `frontend.php` → `packages.php` chain that registers and boots addons never runs, and `rex_addon::get('massif_media')` returns the null-stub. Calling `->boot()` on the null-stub fatals (`Call to undefined method rex_null_addon::boot()`).
+
+`RequestHandler` registered on `PACKAGES_INCLUDED` with `EARLY` priority intercepts the request during the dispatch inside `packages.php` and `exit`s before `frontend.php` continues to its sendPage path. The defensive checks in `_img/index.php` (after the bootstrap require) are unreachable in the success path but stay as a diagnostic safety net.
+
 ### Cache path shapes
 
 Endpoint parsing must keep supporting all four shapes:
@@ -300,6 +311,34 @@ Important examples:
 ```text
 REX_VIDEO[poster="REX_PIC[src='hero.jpg' width='1280' as='url']"]
 ```
+
+#### Two parse paths, not one
+
+`REX_PIC[…]` / `REX_VIDEO[…]` reach output through two different mechanisms — they look identical to the editor but behave differently in edge cases:
+
+1. **Cache-build path** (`Var/RexPic`, `Var/RexVideo`): runs when REDAXO calls `rex_var::parse()` on a module/article template. `getOutput()` returns PHP code baked into the article cache; the rendering happens at request time but the parsing happened at slice-save / cache-build. Supports nested REX_VARs (`REX_VIDEO[poster="REX_PIC[…]"]`) because REDAXO's tokenizer recurses.
+
+2. **Post-render scan** (`View/EditorContentScanner`): runs in the `OUTPUT_FILTER` extension point in `boot.php`. Scans the final rendered HTML, regex-matches each `REX_PIC[…]` / `REX_VIDEO[…]` substring, and replaces with `<picture>` / `<video>` markup. Necessary because `rex_var::parse()` is never called on slice values, MetaInfo text, or YForm rich-text fields — only on module/article templates (`article_content_base.php:523`, `cache_template.php:29`). Without this pass, a tag typed into a rich-text editor stays literal in the rendered page.
+
+The post-render scan does NOT support:
+- Nested REX_VARs inside attribute values (template-level vars have already resolved by output-filter time, so any nested REX_VAR in editor input never went through the cache-build pass either).
+- `[` or `]` inside attribute values (same constraint as REDAXO's tokenizer).
+
+Behavior on edge cases (post-render scan):
+- Missing `src` → log warning, leave literal in place.
+- `Image::picture` / `Video::render` throws → log via `rex_logger::logException`, leave literal in place.
+- Empty render result (resolver couldn't load source, no usable widths) → leave literal in place. Different from the cache-build path, where empty silently emits empty — editor-input context favours visible failure so the editor can spot the typo.
+
+The scanner cheap-skips with two `stripos` calls when neither marker substring is present, so pages without editor REX_VARs cost effectively zero. Pre-built `<picture>` markup from the cache-build path no longer matches the regex, so the two paths don't conflict.
+
+#### `OUTPUT_FILTER` ordering
+
+`boot.php` registers a single `OUTPUT_FILTER` closure that does two things in sequence:
+
+1. `EditorContentScanner::scan($subject)` — replaces editor REX_PIC/REX_VIDEO literals.
+2. `Preloader::drain()` + `</head>` injection.
+
+Order matters: a `REX_PIC[..., preload="true"]` in editor content invokes `Image::picture(..., preload: true)` during the scan, which queues a preload `<link>` via `Preloader::queue()`. That queue MUST drain before the `</head>` injection runs — keep step 1 before step 2.
 
 ## Glide and media gotchas
 
