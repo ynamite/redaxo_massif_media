@@ -3,7 +3,7 @@
         'name' => 'ynamite/massif_media',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '0f4704717bb4aa1eb1763a357fb94575d0fe3973',
+        'reference' => 'e792480772f29982e2a3ca218331b6b411ed61f1',
         'type' => 'redaxo-addon',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -163,7 +163,7 @@
         'ynamite/massif_media' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '0f4704717bb4aa1eb1763a357fb94575d0fe3973',
+            'reference' => 'e792480772f29982e2a3ca218331b6b411ed61f1',
             'type' => 'redaxo-addon',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
