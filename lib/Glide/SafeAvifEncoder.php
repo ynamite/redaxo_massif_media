@@ -11,42 +11,42 @@ use Intervention\Image\Interfaces\ImageInterface;
 use League\Glide\Api\Encoder as GlideEncoder;
 
 /**
- * Glide encoder override that routes AVIF through a minimal Imagick call
- * pattern. Everything else falls through to Glide's default behaviour.
+ * Glide encoder override that routes AVIF through GD's `imageavif()` when
+ * available, sidestepping Imagick's libheif AVIF encoder. Everything else
+ * falls through to Glide's default behaviour.
  *
- * Why we need this: intervention/image v3's specialised AvifEncoder
- * (`vendor/intervention/image/src/Drivers/Imagick/Encoders/AvifEncoder.php`)
- * uses a multi-property setup before requesting the blob —
+ * Why we need this: 1.0.5 tried calling Imagick's AVIF encoder directly
+ * with the minimal property pattern that `media_negotiator/lib/Helper.php`
+ * uses (`setImageFormat → setImageCompressionQuality → getImageBlob`). That
+ * pattern still produced 0-byte output on the Plesk-shipped Imagick build
+ * we're targeting (vincafilm.ch). Reading
+ * `media_negotiator/lib/rex_effect_negotiator.php` more carefully showed
+ * that the actually-working AVIF path on those servers ends in
+ * `imagecreatefromstring($blob)` — i.e. the Imagick-encoded AVIF gets
+ * decoded back into a GD image and the FINAL serve goes through GD's
+ * `imageavif()` via REDAXO's media pipeline. So while their `imagickConvert`
+ * helper looks like it encodes AVIF via Imagick, the resulting blob is
+ * just a transport — GD does the actual encode that ships to the browser.
  *
- *   $imagick->setFormat('AVIF');
- *   $imagick->setImageFormat('AVIF');
- *   $imagick->setCompression(Imagick::COMPRESSION_ZIP);     // suspect
- *   $imagick->setImageCompression(Imagick::COMPRESSION_ZIP);
- *   $imagick->setCompressionQuality($q);
- *   $imagick->setImageCompressionQuality($q);
- *   return $imagick->getImagesBlob();                        // suspect
+ * Replicate that flow more directly: take the manipulated Imagick state
+ * (after Glide's resize / crop / watermark / our ColorProfile + StripMetadata),
+ * render it to a lossless PNG, decode the PNG via GD, then encode AVIF via
+ * `imageavif()`. On hosts with both Imagick and GD AVIF (the failing
+ * vincafilm shape) this produces working AVIF; on Imagick-with-working-AVIF
+ * hosts the GD detour is a wash visually (PNG intermediate is lossless)
+ * with one extra round-trip we can live with for the safety it buys.
  *
- * On at least one Imagick build seen in the wild (Plesk-shipped Imagick
- * with libheif on shared hosting) this combination produces an EMPTY blob
- * — the AVIF cache file ends up 0 bytes, the request 200s with no body,
- * the browser shows a broken image. The same Imagick build encodes AVIF
- * correctly via the minimal pattern in `media_negotiator/lib/Helper.php`
- * `imagickConvert()` —
- *
- *   $imagick->setImageFormat('avif');
- *   $imagick->setImageCompressionQuality($q);
- *   return $imagick->getImageBlob();
- *
- * Suspected cause: `setCompression(COMPRESSION_ZIP)` is meaningless for
- * AVIF (the format is AV1-compressed internally; ZIP doesn't apply) but
- * still gets interpreted by some libheif builds and trips the encoder.
- * `getImagesBlob` returns the multi-image stack, which on these builds
- * also doesn't survive the AVIF encode round-trip cleanly.
- *
- * Scope: AVIF + Imagick driver only. WebP works through Glide's default
- * path on the affected servers, and the GD driver delegates to PHP's
- * `imageavif()` without the property dance — only AVIF + Imagick needs
- * this override.
+ * Scope guards:
+ *   - non-AVIF format: `parent::run()` — no change to WebP/JPG/PNG paths.
+ *   - GD driver in use (no Imagick loaded): `parent::run()` — Glide already
+ *     ends up calling `imageavif()` via intervention/image's GD encoder.
+ *   - `imageavif()` not available: `parent::run()` — falls back to
+ *     intervention's specialised Imagick encoder. May still produce 0 bytes
+ *     on the broken-libheif hosts, but those hosts are *also* missing GD
+ *     AVIF support so there's no path that works there short of disabling
+ *     AVIF entirely (`Config::canServerEncode` already gates that case).
+ *   - PNG intermediate or GD decode failure: `parent::run()` — fail-soft,
+ *     don't crash the request.
  */
 final class SafeAvifEncoder extends GlideEncoder
 {
@@ -56,14 +56,50 @@ final class SafeAvifEncoder extends GlideEncoder
             return parent::run($image);
         }
 
-        $native = $image->core()->native();
-        if (!($native instanceof Imagick)) {
+        // GD's imageavif is the only path consistently producing valid AVIF
+        // on the Plesk-shipped Imagick + libheif builds we're targeting. If
+        // GD doesn't have it, there's no override to apply.
+        if (!function_exists('imageavif')) {
             return parent::run($image);
         }
 
-        $native->setImageFormat('avif');
-        $native->setImageCompressionQuality($this->getQuality());
+        $native = $image->core()->native();
+        if (!($native instanceof Imagick)) {
+            // GD driver path — intervention/image's GD AvifEncoder already
+            // uses imageavif. No reason to interpose.
+            return parent::run($image);
+        }
 
-        return new EncodedImage($native->getImageBlob(), 'image/avif');
+        try {
+            // Clone before mutating format — `$native` is the live Imagick
+            // instance the rest of intervention/image is holding onto, and
+            // setImageFormat persists across calls.
+            $clone = clone $native;
+            $clone->setImageFormat('png');
+            $pngBlob = $clone->getImageBlob();
+            $clone->clear();
+            $clone->destroy();
+        } catch (\Throwable) {
+            return parent::run($image);
+        }
+
+        $gd = @imagecreatefromstring($pngBlob);
+        if ($gd === false) {
+            return parent::run($image);
+        }
+
+        ob_start();
+        imageavif($gd, null, $this->getQuality());
+        $avif = (string) ob_get_clean();
+        imagedestroy($gd);
+
+        if ($avif === '') {
+            // GD also produced nothing — give up cleanly so the parent
+            // encoder gets a chance (probably also empty, but at least the
+            // shape matches what 1.0.4 produced before this override).
+            return parent::run($image);
+        }
+
+        return new EncodedImage($avif, 'image/avif');
     }
 }
