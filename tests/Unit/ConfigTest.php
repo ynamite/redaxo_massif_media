@@ -138,4 +138,56 @@ final class ConfigTest extends TestCase
         self::assertFalse(Config::canServerEncode('jxl'));
         self::assertFalse(Config::canServerEncode(''));
     }
+
+    public function testCacheGenerationReturnsConfiguredValue(): void
+    {
+        $this->resetCacheGenerationStatic();
+        rex_config::set(Config::ADDON, Config::KEY_CACHE_GENERATION, 1_700_000_000);
+
+        self::assertSame(1_700_000_000, Config::cacheGeneration());
+    }
+
+    public function testCacheGenerationFallsBackToTimeWhenUnset(): void
+    {
+        // Pre-install upgrade path: the install.php seed hasn't run yet but
+        // URLs are already being emitted. The accessor must NOT return 0
+        // (which would suppress the `&g=` segment entirely) — fall back to
+        // a per-process value so URLs at least change cohort-wise across
+        // PHP-FPM workers / restarts.
+        $this->resetCacheGenerationStatic();
+
+        $before = time();
+        $value = Config::cacheGeneration();
+        $after = time();
+
+        self::assertGreaterThanOrEqual($before, $value);
+        self::assertLessThanOrEqual($after, $value);
+    }
+
+    public function testBumpCacheGenerationUpdatesValue(): void
+    {
+        $this->resetCacheGenerationStatic();
+        rex_config::set(Config::ADDON, Config::KEY_CACHE_GENERATION, 1_700_000_000);
+        // Prime the static cache.
+        self::assertSame(1_700_000_000, Config::cacheGeneration());
+
+        $before = time();
+        Config::bumpCacheGeneration();
+        $after = time();
+
+        // bumpCacheGeneration writes time() to rex_config AND updates the
+        // static cache so the same-request reads pick up the new value
+        // immediately — the URL emissions later in the request need the
+        // bumped token, can't wait for the next request to pick it up.
+        $value = Config::cacheGeneration();
+        self::assertGreaterThanOrEqual($before, $value);
+        self::assertLessThanOrEqual($after, $value);
+        self::assertNotSame(1_700_000_000, $value);
+    }
+
+    private function resetCacheGenerationStatic(): void
+    {
+        $prop = new \ReflectionProperty(Config::class, 'cacheGenerationCache');
+        $prop->setValue(null, null);
+    }
 }

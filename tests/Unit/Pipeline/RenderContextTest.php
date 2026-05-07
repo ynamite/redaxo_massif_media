@@ -371,4 +371,153 @@ final class RenderContextTest extends TestCase
         self::assertStringNotContainsString('cover-', $srcset);
         self::assertStringContainsString('webp-400', $srcset);
     }
+
+    // --- AVIF minimum-dimension filter --------------------------------------
+
+    public function testAvifSrcsetDropsWidthsWhereCroppedHeightFallsBelowSixteen(): void
+    {
+        // 16:9 ratio + crop. With image_sizes 16,32,48,64,…:
+        //   w=16  → h=9   (drop, h<16)
+        //   w=32  → h=18  (keep)
+        //   w=48  → h=27  (keep)
+        // libavif's AV1 floor is 16×16; below that the encoder produces an
+        // empty blob. Filtering at srcset-emission time keeps the AVIF
+        // <source> from advertising URLs the cache-miss endpoint can't fulfil.
+        $ctx = RenderContext::build(
+            image: $this->image(1600, 900),
+            width: null,
+            height: null,
+            ratio: 16.0 / 9.0,
+            fit: Fit::COVER,
+            widthsOverride: [16, 32, 48],
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        $srcset = $ctx->buildSrcset(
+            urlBuilder: new UrlBuilder(),
+            image: $this->image(1600, 900),
+            format: 'avif',
+            quality: null,
+            filterParams: [],
+        );
+
+        self::assertStringNotContainsString('avif-16-', $srcset, '16w AVIF must be filtered out (h=9 < 16).');
+        self::assertStringContainsString('avif-32-', $srcset, '32w AVIF must remain (h=18).');
+        self::assertStringContainsString('avif-48-', $srcset, '48w AVIF must remain (h=27).');
+    }
+
+    public function testWebpSrcsetKeepsAllWidthsAtSixteenByNineRatio(): void
+    {
+        // The min-dimension filter is AVIF-specific; libwebp/libjpeg accept
+        // arbitrarily small inputs. WebP and JPG retain the full width pool
+        // so the browser still has 16w fallbacks for tiny image slots.
+        $ctx = RenderContext::build(
+            image: $this->image(1600, 900),
+            width: null,
+            height: null,
+            ratio: 16.0 / 9.0,
+            fit: Fit::COVER,
+            widthsOverride: [16, 32],
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        $srcset = $ctx->buildSrcset(
+            urlBuilder: new UrlBuilder(),
+            image: $this->image(1600, 900),
+            format: 'webp',
+            quality: null,
+            filterParams: [],
+        );
+
+        self::assertStringContainsString('webp-16-', $srcset);
+        self::assertStringContainsString('webp-32-', $srcset);
+    }
+
+    public function testAvifSrcsetKeepsSixteenWidthOnSquareSource(): void
+    {
+        // Square source, square crop: w=16 → h=16, exactly at the AV1 floor
+        // (16×16 is allowed). Keep.
+        $ctx = RenderContext::build(
+            image: $this->image(800, 800),
+            width: null,
+            height: null,
+            ratio: 1.0,
+            fit: Fit::COVER,
+            widthsOverride: [16, 32],
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        $srcset = $ctx->buildSrcset(
+            urlBuilder: new UrlBuilder(),
+            image: $this->image(800, 800),
+            format: 'avif',
+            quality: null,
+            filterParams: [],
+        );
+
+        self::assertStringContainsString('avif-16-', $srcset);
+        self::assertStringContainsString('avif-32-', $srcset);
+    }
+
+    public function testAvifSrcsetUsesSourceIntrinsicRatioWhenNoCrop(): void
+    {
+        // No explicit ratio + Fit::NONE → the variant scales width with
+        // source's intrinsic 1600/900 ≈ 1.778. At w=16, intrinsic-scaled
+        // h = round(16 / 1.778) = 9. Drop AVIF for that variant even though
+        // there's no `fitToken` and the cache path won't carry an explicit
+        // height — Glide's serve-time scale produces exactly 16×9, hits
+        // libavif's floor, returns empty.
+        $ctx = RenderContext::build(
+            image: $this->image(1600, 900),
+            width: null,
+            height: null,
+            ratio: null,
+            fit: Fit::NONE,
+            widthsOverride: [16, 64],
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        $srcset = $ctx->buildSrcset(
+            urlBuilder: new UrlBuilder(),
+            image: $this->image(1600, 900),
+            format: 'avif',
+            quality: null,
+            filterParams: [],
+        );
+
+        self::assertStringNotContainsString('avif-16-', $srcset);
+        self::assertStringContainsString('avif-64-', $srcset);
+    }
+
+    // --- Cache-generation token in URLs -------------------------------------
+
+    public function testBuildSrcsetEmitsCacheGenerationToken(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_CACHE_GENERATION, 1_700_000_000);
+        // Reset Config's request-cached static so the new value is picked up.
+        $cacheGenProp = new \ReflectionProperty(Config::class, 'cacheGenerationCache');
+        $cacheGenProp->setValue(null, null);
+
+        $ctx = RenderContext::build(
+            image: $this->image(1600, 900),
+            width: null,
+            height: null,
+            ratio: null,
+            fit: Fit::NONE,
+            widthsOverride: [400],
+            srcsetBuilder: new SrcsetBuilder(),
+        );
+
+        $srcset = $ctx->buildSrcset(
+            urlBuilder: new UrlBuilder(),
+            image: $this->image(1600, 900),
+            format: 'webp',
+            quality: null,
+            filterParams: [],
+        );
+
+        // Browser-cache-busting token from Config::cacheGeneration() shows
+        // up as `&g=<int>` after the existing `?s=…&v=…` query segments.
+        self::assertStringContainsString('&g=1700000000', $srcset);
+    }
 }

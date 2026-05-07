@@ -57,6 +57,11 @@ final class UrlBuilder
         if ($bust !== '' && $bust !== '0') {
             $url .= '&v=' . $bust;
         }
+        // Browser-cache-busting token. Outside the HMAC payload because
+        // the on-disk cache path is `<src>/<spec>.<ext>` (independent of g);
+        // changing g doesn't move the file, only invalidates the browser
+        // cache after a server-side clear. See Config::cacheGeneration.
+        $url .= '&g=' . Config::cacheGeneration();
         if ($filterBlob !== '') {
             $url .= '&f=' . $filterBlob;
         }
@@ -89,6 +94,7 @@ final class UrlBuilder
         if ($bust !== '' && $bust !== '0') {
             $url .= '&v=' . $bust;
         }
+        $url .= '&g=' . Config::cacheGeneration();
         return $url;
     }
 
@@ -127,6 +133,7 @@ final class UrlBuilder
             '{h}' => $height !== null ? (string) $height : '',
             '{fit}' => $fitToken ?? '',
             '{f}' => $filterBlob,
+            '{g}' => (string) Config::cacheGeneration(),
         ]);
 
         $base = Config::cdnBase();

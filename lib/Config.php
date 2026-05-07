@@ -32,6 +32,25 @@ final class Config
     public const KEY_EXTERNAL_TIMEOUT_SECONDS = 'external_timeout_seconds';
     public const KEY_EXTERNAL_MAX_BYTES = 'external_max_bytes';
     public const KEY_EXTERNAL_HOST_ALLOWLIST = 'external_host_allowlist';
+    public const KEY_CACHE_GENERATION = 'cache_generation';
+
+    /**
+     * Setting keys whose change invalidates already-cached variant content.
+     * Used by the auto-clear-on-save flow in `boot.php`. Quality, format list,
+     * and width pools all change what bytes a given URL should resolve to;
+     * everything else (HTML markup, runtime TTLs, CDN routing) leaves cached
+     * files semantically valid.
+     *
+     * @var list<string>
+     */
+    public const CACHE_INVALIDATING_KEYS = [
+        self::KEY_FORMATS,
+        self::KEY_QUALITY_AVIF,
+        self::KEY_QUALITY_WEBP,
+        self::KEY_QUALITY_JPG,
+        self::KEY_DEVICE_SIZES,
+        self::KEY_IMAGE_SIZES,
+    ];
 
     /**
      * Defaults shipped with the addon. List-shaped values are stored as
@@ -80,6 +99,46 @@ final class Config
     {
         return (string) self::get(self::KEY_SIGN_KEY, '');
     }
+
+    /**
+     * Browser-cache-busting token, appended to every emitted variant URL as
+     * `&g=<int>`. Bumped on any cache-clearing event ({@see bumpCacheGeneration}).
+     * Outside the HMAC payload — purely a query-string differentiator so the
+     * browser sees URLs as new after a server-side clear, despite the cache
+     * path itself being deterministic in (source, transform). Glide's
+     * cache-hit fastpath is unaffected because the on-disk cache path
+     * doesn't include `g`.
+     *
+     * Returns the install timestamp on first call after a fresh install
+     * (`install.php` initialises the value); never returns 0 once initialised.
+     * Request-cached static so we don't hit `rex_config` once per emitted URL.
+     */
+    public static function cacheGeneration(): int
+    {
+        if (self::$cacheGenerationCache === null) {
+            $value = (int) self::get(self::KEY_CACHE_GENERATION, 0);
+            // Defensive: if the key is missing (pre-install upgrade path) fall
+            // back to a stable per-process value rather than returning 0,
+            // which would suppress the `&g=` segment in URLs entirely.
+            self::$cacheGenerationCache = $value > 0 ? $value : time();
+        }
+        return self::$cacheGenerationCache;
+    }
+
+    /**
+     * Bump the cache-generation token to the current unix timestamp and
+     * propagate to the in-memory cache so URL emissions in the same request
+     * pick up the new value immediately. Called from `CACHE_DELETED`,
+     * the addon's clear-cache button, and the auto-clear-on-save flow.
+     */
+    public static function bumpCacheGeneration(): void
+    {
+        $now = time();
+        self::set(self::KEY_CACHE_GENERATION, $now);
+        self::$cacheGenerationCache = $now;
+    }
+
+    private static ?int $cacheGenerationCache = null;
 
     /**
      * User-configured raster formats, raw and unfiltered. Use {@see renderableFormats()}

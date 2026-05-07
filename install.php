@@ -8,6 +8,16 @@ if (!Config::signKey()) {
     Config::set(Config::KEY_SIGN_KEY, bin2hex(random_bytes(32)));
 }
 
+// Cache-generation token, appended as `&g=<int>` to every emitted variant URL.
+// Initialised on first install / first reinstall after upgrade — preserved
+// across subsequent reinstalls so existing browser-cached variants stay valid.
+// Bumped explicitly on cache clears (CACHE_DELETED, addon button, content-
+// affecting settings save) so URLs change after a wipe and browsers refetch
+// instead of serving stale immutable-cached variants.
+if (!Config::cacheGeneration()) {
+    Config::set(Config::KEY_CACHE_GENERATION, time());
+}
+
 $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
 if (!is_dir($cacheDir)) {
     rex_dir::create($cacheDir);

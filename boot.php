@@ -63,13 +63,26 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
 });
 
 // CACHE_DELETED → wipe our cache contents (preserve the directory itself so
-// future generations can write into it without re-creating it).
+// future generations can write into it without re-creating it). Also bump
+// the cache-generation token so the `&g=` segment in every emitted URL
+// changes — without that, browser-cached variant responses (Cache-Control
+// immutable, max-age 1y) keep being served from the local browser cache
+// despite the server-side files being gone, and the server never sees a
+// regen request. See lib/Pipeline/UrlBuilder.php and Config::cacheGeneration.
 rex_extension::register('CACHE_DELETED', static function (): void {
     $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
     if (is_dir($cacheDir)) {
         rex_dir::delete($cacheDir, false);
     }
+    Config::bumpCacheGeneration();
 });
+
+// Auto-clear-on-content-affecting-save lives in {@see \Ynamite\Media\Backend\ConfigForm}
+// — `rex_config_form::save()` does not fire REX_FORM_SAVED (only `rex_form` does),
+// so we subclass `rex_config_form` instead and the four settings pages
+// (`pages/settings.{general,placeholder,cdn,security}.php`) instantiate the
+// subclass directly. The HMAC sign key has its own dedicated regen button
+// and is never auto-bumped on a settings save.
 
 // MEDIA_UPDATED / MEDIA_DELETED → drop the per-asset cache so the next render
 // rebuilds with fresh metadata. Critical for focal-point edits, which only
