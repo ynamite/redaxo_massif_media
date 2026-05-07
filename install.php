@@ -13,6 +13,30 @@ if (!is_dir($cacheDir)) {
     rex_dir::create($cacheDir);
 }
 
+// Recursively normalise cache/ permissions to 0755 dirs / 0644 files. Why
+// this is in install (not just at runtime via Glide's filesystem visibility):
+// existing variant directories created BEFORE the visibility fix have mode
+// 0700 (Flysystem's PortableVisibilityConverter default, see
+// `Glide\Server::publicVisibility`). On shared hosting where PHP-FPM and
+// Apache run as different users (typical Plesk / cPanel setup), Apache
+// cannot traverse those directories — every cache-hit URL returns 403 with
+// `pcfg_openfile: ensure ... is executable` in the server log. Newly
+// created variant directories pick up 0755 from the visibility fix; this
+// migration resurrects the broken-perm legacy ones. `@chmod` is silenced
+// so a single permission-denied entry in a sub-tree doesn't abort the whole
+// reinstall — Apache still 403s on the unfixable subtree, but the rest of
+// the cache works.
+if (is_dir($cacheDir)) {
+    @chmod($cacheDir, 0755);
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+    foreach ($iterator as $entry) {
+        @chmod($entry->getPathname(), $entry->isDir() ? 0755 : 0644);
+    }
+}
+
 // REDAXO's installAssets() copies via rex_finder which has ignoreSystemStuff
 // on by default — that filter drops anything starting with `.git` (intended
 // for `.git/` directories, but also catches `.gitignore`). The shipped

@@ -7,6 +7,8 @@ namespace Ynamite\Media\Glide;
 use Closure;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
+use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
+use League\Flysystem\Visibility;
 use League\Glide\Server as GlideServer;
 use League\Glide\ServerFactory;
 use rex_path;
@@ -78,7 +80,7 @@ final class Server
         $cacheDir ??= rex_path::addonAssets(Config::ADDON, 'cache/');
 
         $sourceFs = new Filesystem(new LocalFilesystemAdapter($sourceDir));
-        $cacheFs = new Filesystem(new LocalFilesystemAdapter($cacheDir));
+        $cacheFs = new Filesystem(new LocalFilesystemAdapter($cacheDir, self::publicVisibility()));
         // Watermarks FS is rooted at `rex_path::frontend()` — the proper
         // REDAXO anchor for both `media/` and `assets/` subdirs (REDAXO
         // resolves both via `frontend()` internally). Using `rex_path::base()`
@@ -141,8 +143,8 @@ final class Server
     {
         $bucketDir = rex_path::addonAssets(Config::ADDON, 'cache/_external/' . $source->hash . '/');
 
-        $sourceFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
-        $cacheFs = new Filesystem(new LocalFilesystemAdapter($bucketDir));
+        $sourceFs = new Filesystem(new LocalFilesystemAdapter($bucketDir, self::publicVisibility()));
+        $cacheFs = new Filesystem(new LocalFilesystemAdapter($bucketDir, self::publicVisibility()));
         // Same watermarks-FS rationale as {@see Server::create()}: rooted at
         // `rex_path::frontend()` (the REDAXO public anchor that custom
         // installers like Viterex offset to `<base>/public/`) so
@@ -170,6 +172,23 @@ final class Server
         $api->setManipulators($manipulators);
 
         return $server;
+    }
+
+    /**
+     * Force PUBLIC default visibility on cache filesystems. Flysystem's
+     * `PortableVisibilityConverter` defaults to PRIVATE for new directories
+     * (mode 0700), which on shared hosting (Plesk, cPanel) breaks: PHP-FPM
+     * runs as one user, Apache as another, and Apache cannot traverse the
+     * 0700 directory the FPM user just created — every cache hit returns 403
+     * (`pcfg_openfile: unable to check htaccess file, ensure it is readable
+     * and that the directory is executable`). Forcing PUBLIC gives 0755 dirs
+     * and 0644 files, which is the right shape for files served by the web
+     * server. Source FS stays on the default — the source tree is REDAXO's
+     * mediapool, whose perms are not ours to set.
+     */
+    private static function publicVisibility(): PortableVisibilityConverter
+    {
+        return PortableVisibilityConverter::fromArray([], Visibility::PUBLIC);
     }
 
     public static function cachePathCallable(): Closure

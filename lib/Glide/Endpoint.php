@@ -17,6 +17,28 @@ final class Endpoint
 {
     public static function handle(): void
     {
+        // Force 0022 umask so new cache dirs come out 0755 and files 0644.
+        // Flysystem's `LocalFilesystemAdapter` calls `mkdir($path, 0755, true)`
+        // and `file_put_contents` without an explicit chmod; both apply the
+        // process umask, so a system-wide umask 027 (common on Plesk shared
+        // hosting) silently downgrades them to 0750 / 0640. On cross-user
+        // setups (PHP-FPM as one user, Apache as another) Apache then 403s
+        // every cache hit with `pcfg_openfile: ensure ... is executable`.
+        // Pair with `Server::publicVisibility()` — the visibility config sets
+        // the *intent* (0755 vs 0700), umask determines what `mkdir` actually
+        // applies; both need to align. Restore in `finally` because
+        // RequestHandler may be reused on misc requests where the original
+        // umask shouldn't leak.
+        $previousUmask = umask(0022);
+        try {
+            self::doHandle();
+        } finally {
+            umask($previousUmask);
+        }
+    }
+
+    private static function doHandle(): void
+    {
         $cachePath = (string) ($_GET['p'] ?? '');
         $signature = (string) ($_GET['s'] ?? '');
         $filterBlob = (string) ($_GET['f'] ?? '');
