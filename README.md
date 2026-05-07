@@ -602,7 +602,7 @@ Wird zu (gekürzt):
 
 Alle Crop- und Filter-Attribute funktionieren analog zum normalen Modus — `width`, `height`, `ratio`, `fit`, `focal`, `format`, `quality` und sämtliche Bildfilter (Brightness, Sharpen, Watermark etc.). Render-Attribute wie `alt`, `sizes`, `loading`, `decoding`, `fetchpriority`, `preload` und `class` werden im URL-Modus ignoriert (sie betreffen nur das `<img>`-Element).
 
-**Verschachtelung mit `REX_VIDEO`:** Der Platzhalter kann direkt als Wert eines anderen `REX_VAR`-Attributs verwendet werden — REDAXO löst verschachtelte `rex_var`-Aufrufe rekursiv auf. Damit lässt sich das HTML5-Limit "kein `srcset` für Video-Poster" elegant umgehen, indem aus der responsiven Pipeline eine sinnvolle Einzel-URL gewählt wird:
+**Verschachtelung mit `REX_VIDEO`:** Der Platzhalter kann direkt als Wert eines anderen `REX_VAR`-Attributs verwendet werden — REDAXO löst verschachtelte `rex_var`-Aufrufe rekursiv auf. Damit lässt sich das HTML5-Limit "kein `srcset` für Video-Poster" elegant umgehen, indem aus der responsiven Pipeline eine sinnvolle Einzel-URL gewählt wird. **Hinweis:** Verschachtelung funktioniert nur im Cache-Build-Pfad (Modul-Templates, Modul-Output, Templates), nicht im Scan-Pfad (Editor-Inhalte / WYSIWYG) — siehe *Scope und Performance von REX_PIC* weiter unten.
 
 ```text
 REX_VIDEO[
@@ -806,26 +806,25 @@ Wenn die Watermark-Datei nicht aufgelöst werden kann (Mediapool-Tippfehler, SSR
 
 # Scope und Performance von REX_PIC
 
-`REX_PIC` ist ein natives REDAXO-`rex_var`.
+`REX_PIC` wird über zwei verschiedene Pfade in `<picture>`-Markup übersetzt — beide funktionieren transparent für den Editor, unterscheiden sich aber in Edge Cases.
 
-Die Substitution greift in:
+**1. Cache-Build-Pfad** (Modul-Output, Modul-Input, Templates):
 
-- Slice-Content
-- Modul-Output
-- Modul-Input
-- Templates
+REDAXO ruft `rex_var::parse()` auf den Modul-/Template-PHP-Code auf. `REX_PIC[…]` wird in PHP-Code übersetzt und im Article-Cache abgelegt — pro Render entsteht kein Regex-Overhead, der Article-Cache ruft direkt `\Ynamite\Media\Image::picture(...)` auf. Verschachtelte `REX_VAR`-Aufrufe (z. B. `REX_VIDEO[poster="REX_PIC[…, as='url']"]`) werden hier rekursiv aufgelöst.
 
-Beim Erzeugen des Article-Caches wird `REX_PIC[…]` in PHP-Code übersetzt. Pro Render entsteht deshalb kein Regex-Overhead.
+**2. Post-Render-Scan** (Slice-Content / WYSIWYG, Rich-Text-Felder):
 
-Der Article-Cache ruft direkt auf:
+REDAXOs `rex_var::parse()` läuft nicht auf gespeicherten Slice-Werten — nur auf Modul-/Template-PHP-Code. Damit `REX_PIC[…]` auch in Editor-Inhalten funktioniert, scannt der Addon im `OUTPUT_FILTER` das gerenderte HTML nach `REX_PIC[…]` / `REX_VIDEO[…]` und ersetzt die Treffer. Der Scan überspringt Seiten ohne entsprechende Marker per `stripos`-Prüfung (Kosten ≈ 0); auf Seiten mit Markern wird pro Tag ein `Image::picture()` / `Video::render()` aufgerufen.
 
-```php
-\Ynamite\Media\Image::picture(...)
-```
+Limitierungen des Scan-Pfads gegenüber dem Cache-Build-Pfad:
 
-`REX_PIC` greift nicht automatisch in beliebigen Custom-Feldern, Metainfo-Texten oder rohem `tt_news`-Output, sofern diese nicht durch `replaceObjectVars()` laufen.
+- **Keine verschachtelten `REX_VAR`s in Attributwerten.** Beim Output-Filter sind alle Template-Level-`rex_var`s bereits aufgelöst — eine Verschachtelung im Editor-Input wäre nie durch den Cache-Build gelaufen. Wer Verschachtelung braucht, setzt `REX_PIC[…]` ins Modul-Template, nicht in den WYSIWYG.
+- **Keine `[`/`]` in Attributwerten.** Gleiche Einschränkung wie REDAXOs Tokenizer.
+- **`<pre>` / `<code>`-Blöcke werden ebenfalls ersetzt.** Wer literale `REX_PIC[…]`-Code-Beispiele anzeigen will (z. B. in Doku-Slices), muss `&#91;` / `&#93;` für die eckigen Klammern verwenden.
 
-In solchen Kontexten direkt die PHP-API nutzen:
+Bei Render-Fehlern im Scan-Pfad (fehlendes `src`, Mediapool-Datei nicht auflösbar, leere Renderausgabe) bleibt der literale `REX_PIC[…]`-String stehen — so sieht der Editor das Problem direkt im Frontend, statt einen leeren Platz an der Stelle des Bilds. Fehler werden zusätzlich via `rex_logger` als Warning protokolliert.
+
+Für Custom-Felder, Metainfo-Texte oder rohen `tt_news`-Output, die weder durch `replaceObjectVars()` noch durch `OUTPUT_FILTER` laufen, direkt die PHP-API nutzen:
 
 ```php
 Image::picture(...)
@@ -841,7 +840,7 @@ Wenn nach einem Addon-Update ein Slice mit `REX_PIC[…]` nicht mehr rendert:
 
 REDAXO-Cache leeren.
 
-Die `rex_var`-Substitution ist an den Article-Cache gebunden. Geändertes `getOutput()` greift erst nach einem Cache-Rebuild.
+Die `rex_var`-Substitution im Cache-Build-Pfad ist an den Article-Cache gebunden. Geändertes `getOutput()` greift erst nach einem Cache-Rebuild. Der Scan-Pfad arbeitet pro Request und ist davon nicht betroffen.
 
 ---
 
