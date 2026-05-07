@@ -352,11 +352,17 @@ Three things have to align for cache files to be readable by Apache on shared ho
 
 Symptom of breakage: `[core:crit] (13)Permission denied: AH00529: ... pcfg_openfile: unable to check htaccess file, ensure it is readable and that ... is executable` in the Apache error log, plus 403s on cache hits. Apache walks up the directory tree on every request looking for .htaccess at every level; if any directory along the way is mode 0700, it 403s preemptively even though no `.htaccess` exists there.
 
-### Imagick capability probe
+### Encoder capability detection
 
-`Imagick::queryFormats()` reports MODULES ImageMagick has registered, not whether the underlying codec library (libheif for AVIF, libwebp for WebP) actually produces a working encoder. A partially-installed library shows up in `queryFormats()` but throws `ImagickException` on `getImageBlob()`. `Config::canServerEncode()` probes AVIF / WebP via a 1×1 pixel encode — only marks the format supported if the probe produces a non-empty blob. JPEG/PNG/GIF skip the probe (PHP's GD fallback covers them universally). Result is request-cached in `$serverFormatCapability`.
+`Config::canServerEncode()` decides whether AVIF / WebP `<source>` elements are emitted. It mirrors **Glide's own driver selection** — Imagick when the extension is loaded, GD otherwise (`Glide\Server::create` line 94 / 155, matching `intervention/image` v3's two-driver universe). Detection per driver:
 
-If you ever add another encoder format (HEIC, JPEG-XL, etc.), pipe it through the same probe path — never trust `queryFormats()` alone.
+- **Imagick path**: `Imagick::queryFormats()`, cached request-scope via `imagickQueryFormatsCached()` (single instance per request, mirrors `media_negotiator/lib/Helper.php:216-228`).
+- **GD path**: `function_exists('imageavif' / 'imagewebp')` plus `gd_info()['AVIF Support']` / `['WebP Support']`.
+- **Baseline (jpg/jpeg/png/gif)**: unconditionally true — short-circuits before either driver branch. Any sane host ships these via GD; an Imagick build that somehow lacks them would also break half of REDAXO.
+
+`renderableFormats()` filters `Config::formats()` through `canServerEncode()`. Three consumers read it: `View\PictureRenderer`, `Pipeline\Preloader`, `Builder\ImageBuilder::resolveDefaultFormat`.
+
+**Why we don't probe-encode anymore.** 1.0.4 added a 1×1 pixel encode probe on top of `queryFormats()` to defend against the *theoretical* case of a registered-but-broken codec library. In practice that case never materialised — the AVIF failures originally blamed on it traced to directory permissions and umask handling (see "Cache filesystem permissions" above), not `queryFormats()` over-reporting. The probe itself produces real false negatives on libheif builds that reject sub-minimum dimensions: an Imagick-loaded server with working AVIF would have its `<picture>` output silently downgraded to WebP. Trust the metadata APIs; if a future encoder turns out to genuinely over-report, add a `try { (new Imagick())->setImageFormat($fmt)->getImageBlob(...) }` guard with a *real-sized* fixture image (e.g. 64×64), not 1×1.
 
 ### Glide closures
 
