@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-05-07
+
+### Fixed
+
+- **AVIF-Cache-Files mit 0 Bytes auf manchen Imagick-Builds — neuer `Glide\SafeAvifEncoder` ersetzt den fehlerhaften AVIF-Encoding-Pfad.** Symptom auf vincafilm.ch (Plesk-shared mit funktionsfähigem libheif): nach dem AVIF-Capability-Detection-Fix in 1.0.4 wurden korrekt `<source type="image/avif">` Elemente emittiert, der Cache-Miss-Endpoint generierte aber 0-Byte-AVIF-Files. Browser zeigten broken images. Auf demselben Server liefert das `media_negotiator`-Addon einwandfreies AVIF — beweist dass Imagick AVIF kann; das Problem liegt im Encoding-Pfad. Ursache: `intervention/image` v3's spezialisierter `Imagick\Encoders\AvifEncoder` setzt vor dem Encode mehrere Compression-Properties — `setCompression(Imagick::COMPRESSION_ZIP)` plus `setImageCompression(COMPRESSION_ZIP)`, plus `setFormat`/`setImageFormat`, plus quality-Doubles — und ruft dann `getImagesBlob()` (mit dem 's', also Multi-Image-Stack-Blob). Auf manchen libheif-Builds (verifiziert mit dem Plesk-Imagick) produziert diese Kombination eine leere Ausgabe — ZIP-Compression hat keine Bedeutung für AVIF (das intern AV1-komprimiert ist), wird aber von libheif fälschlich als Encoder-Hint interpretiert und bricht den Encode ab. `media_negotiator` benutzt das **minimale** Pattern, das auch dort funktioniert: `setImageFormat('avif')` → `setImageCompressionQuality($q)` → `getImageBlob()` (Singular). Fix: neuer `Glide\SafeAvifEncoder` extends `League\Glide\Api\Encoder` und überschreibt `run()` — wenn das Format AVIF ist UND die Imagick-Driver aktiv ist, geht der Code direkt über das Minimal-Pattern statt Glide's Standard-Encoder via `intervention/image` aufzurufen. Für Non-AVIF-Formate (WebP funktioniert auf den betroffenen Servern via Glide's Standard-Encoder einwandfrei) und für GD-Driver-Hosts (delegiert eh an PHP's `imageavif()` ohne den Property-Tanz) fällt der Encoder durch zu `parent::run()`. `Glide\Server::create()` und `createForExternal()` setzen den neuen Encoder via `$api->setEncoder(new SafeAvifEncoder())` nach dem Manipulator-Setup. Tests: `tests/Integration/SafeAvifEncoderTest.php` verifiziert non-empty Output gegen ein Fixture-Bild plus den `ftypavif` ISO/IEC 23008-12 Container-Fingerprint, plus dass Non-AVIF-Formate sauber an die Parent-Klasse durchfallen.
+
 ## [1.0.4] — 2026-05-07
 
 ### Changed
