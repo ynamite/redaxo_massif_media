@@ -354,17 +354,20 @@ Symptom of breakage: `[core:crit] (13)Permission denied: AH00529: ... pcfg_openf
 
 ### AVIF encoding override
 
-`Glide\SafeAvifEncoder` extends `League\Glide\Api\Encoder` and is wired in via `$api->setEncoder(...)` in both `Server::create()` and `Server::createForExternal()`. Its job is to bypass `intervention/image` v3's specialized Imagick `AvifEncoder` for the AVIF format. The intervention encoder calls `setCompression(Imagick::COMPRESSION_ZIP)` + `setImageCompression(...)` + `setFormat`/`setImageFormat` + the doubled quality setters + `getImagesBlob()` (multi-image stack blob). On at least one Imagick build seen in the wild (Plesk-shipped Imagick with libheif), this combination produces an empty blob — the AVIF cache file ends up 0 bytes, the browser sees a broken image. ZIP compression is nonsensical for AVIF (it's AV1-compressed internally) but the libheif build misinterprets the flag and aborts the encode silently.
+`Glide\SafeAvifEncoder` extends `League\Glide\Api\Encoder` and is wired in via `$api->setEncoder(...)` in both `Server::create()` and `Server::createForExternal()`. Its job is to route the AVIF encode through GD's `imageavif()` instead of Imagick's libheif-backed AVIF encoder, on the hosts where both are present.
 
-`SafeAvifEncoder::run()` only intercepts when the format is AVIF AND the active Imagick driver is in play; everything else (WebP works fine through Glide's default path on the affected hosts; GD driver delegates to PHP's `imageavif()` without any property dance) falls through to `parent::run()`. The minimal call pattern matches what `media_negotiator/lib/Helper.php::imagickConvert()` uses successfully on the same problematic builds:
+Why: at least one Imagick build seen in the wild (Plesk-shipped Imagick with libheif on shared hosting) produces 0-byte output via *every* Imagick AVIF code path — intervention/image v3's specialised `AvifEncoder` (`setCompression(COMPRESSION_ZIP)` + doubled property setters + `getImagesBlob`) AND the minimal pattern `media_negotiator/lib/Helper.php::imagickConvert()` documents (`setImageFormat → setImageCompressionQuality → getImageBlob`). 1.0.5's first attempt at this override used the minimal pattern directly and still produced 0 bytes on those servers. Reading `media_negotiator/lib/rex_effect_negotiator.php` more carefully showed that *its* working AVIF path on the same servers ends in `imagecreatefromstring($blob)` — i.e. the Imagick-encoded AVIF blob is just transport, the FINAL serve goes through GD's `imageavif()` via REDAXO's media pipeline. So the actually-working encoder is GD, not Imagick.
 
-```php
-$imagick->setImageFormat('avif');
-$imagick->setImageCompressionQuality($this->getQuality());
-return new EncodedImage($imagick->getImageBlob(), 'image/avif');  // singular
-```
+`SafeAvifEncoder::run()` mirrors that:
 
-If you ever update `intervention/image` and they fix their AvifEncoder, this override can come out — but verify against the Plesk reference build before removing. Symptom of regression: AVIF cache files at exactly 0 bytes, served as 200 OK with empty body, broken images on AVIF-capable browsers only.
+1. Format is non-AVIF → `parent::run()`.
+2. `imageavif()` not available → `parent::run()` (GD AVIF support is required for the override; if missing, fall back to whatever intervention/image produces).
+3. Active driver is GD already → `parent::run()` (intervention/image's GD `AvifEncoder` already uses `imageavif`).
+4. Imagick driver + GD has `imageavif`: clone the live Imagick instance, render to PNG (lossless intermediate), decode the PNG via `imagecreatefromstring()`, encode AVIF via `imageavif($gd, null, $q)`.
+
+The PNG round-trip is lossless and adds one extra encode/decode pair. Worth the cost: GD's `imageavif()` is the only path consistently producing valid AVIF on the broken-libheif Imagick builds, and on healthy-Imagick hosts the visual quality of GD's AVIF encoder is comparable.
+
+If you ever update `intervention/image` and confirm against the Plesk reference build that their Imagick AvifEncoder produces non-empty output there, this override can come out. Symptom of regression: AVIF cache files at exactly 0 bytes, served as 200 OK with empty body, broken images on AVIF-capable browsers only.
 
 ### Encoder capability detection
 
