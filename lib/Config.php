@@ -111,10 +111,18 @@ final class Config
     }
 
     /**
-     * Whether the running PHP/Imagick combo can encode the given format. Probes
-     * `Imagick::queryFormats()` once per request and caches; baseline raster
-     * formats (jpg/jpeg/png/gif) are always reported as supported because PHP's
-     * GD fallback covers them even on Imagick-less hosts.
+     * Whether the running PHP/Imagick combo can encode the given format.
+     *
+     * Baseline raster formats (jpg/jpeg/png/gif) are always reported as
+     * supported because PHP's GD fallback covers them even on Imagick-less
+     * hosts. AVIF and WebP go through a probe-encode of a 1×1 pixel because
+     * `Imagick::queryFormats()` only reports MODULES ImageMagick has
+     * registered, not whether the underlying codec library (libheif for
+     * AVIF, libwebp for WebP) actually works at runtime — a registered-but-
+     * broken module throws `ImagickException` on `getImageBlob()`. The probe
+     * catches the over-reporting case, so a `<picture>` we emit for an
+     * AVIF-capable browser never points at a URL the cache-miss endpoint
+     * can't fulfil. Result is request-cached.
      */
     public static function canServerEncode(string $format): bool
     {
@@ -122,11 +130,8 @@ final class Config
             $caps = ['jpg' => true, 'jpeg' => true, 'png' => true, 'gif' => true];
 
             if (extension_loaded('imagick')) {
-                foreach (\Imagick::queryFormats() as $fmt) {
-                    $caps[strtolower($fmt)] = true;
-                }
-                if (!empty($caps['jpeg'])) {
-                    $caps['jpg'] = true;
+                foreach (['avif', 'webp'] as $fmt) {
+                    $caps[$fmt] = self::probeImagickEncode($fmt);
                 }
             }
 
@@ -134,6 +139,28 @@ final class Config
         }
 
         return !empty(self::$serverFormatCapability[strtolower($format)]);
+    }
+
+    /**
+     * Probe whether Imagick can produce a non-empty encoded blob for the
+     * given format. Returns false on any throwable so a partially-installed
+     * codec library (e.g. libheif registered for read-only) doesn't lead
+     * to broken `<source>` URLs. Intentionally separate from the
+     * request-scope `$serverFormatCapability` cache so tests can call it
+     * directly.
+     */
+    private static function probeImagickEncode(string $format): bool
+    {
+        try {
+            $im = new \Imagick();
+            $im->newImage(1, 1, 'red');
+            $im->setImageFormat($format);
+            $blob = $im->getImageBlob();
+            $im->clear();
+            return $blob !== '';
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** @var array<string,bool>|null */
