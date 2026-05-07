@@ -342,6 +342,22 @@ Order matters: a `REX_PIC[..., preload="true"]` in editor content invokes `Image
 
 ## Glide and media gotchas
 
+### Cache filesystem permissions
+
+Three things have to align for cache files to be readable by Apache on shared hosting (Plesk, cPanel — PHP-FPM and Apache run as different users):
+
+1. **Flysystem visibility = PUBLIC.** `LocalFilesystemAdapter`'s default `PortableVisibilityConverter` uses `Visibility::PRIVATE` for new directories (mode 0700) and 0644 for files but only if explicitly set in the write config. We pass `PortableVisibilityConverter::fromArray([], Visibility::PUBLIC)` via `Server::publicVisibility()` to set the *intent* to 0755 dirs / 0644 files. Source filesystems stay on the default — REDAXO's mediapool perms aren't ours to set.
+2. **`umask(0022)` for the request body.** `LocalFilesystemAdapter::ensureDirectoryExists` calls `mkdir($path, 0755, true)` and `LocalFilesystemAdapter::writeToFile` calls `file_put_contents` without an explicit chmod after — so the process umask masks both. With umask 027 (Plesk default), the `mkdir(0755)` actually creates 0750 and Apache (different user) cannot traverse. `Endpoint::handle` wraps its body with `umask(0022)` / restore-in-finally so visibility intent and actual mkdir mode align.
+3. **`install.php` migration.** The two above only affect *new* writes. Existing variant directories created before the fix shipped (currently 0700 on vincafilm.ch) need a one-shot recursive `chmod` to 0755 dirs / 0644 files. Migration runs on every install/reinstall, silently skips unfixable subtrees (`@chmod`).
+
+Symptom of breakage: `[core:crit] (13)Permission denied: AH00529: ... pcfg_openfile: unable to check htaccess file, ensure it is readable and that ... is executable` in the Apache error log, plus 403s on cache hits. Apache walks up the directory tree on every request looking for .htaccess at every level; if any directory along the way is mode 0700, it 403s preemptively even though no `.htaccess` exists there.
+
+### Imagick capability probe
+
+`Imagick::queryFormats()` reports MODULES ImageMagick has registered, not whether the underlying codec library (libheif for AVIF, libwebp for WebP) actually produces a working encoder. A partially-installed library shows up in `queryFormats()` but throws `ImagickException` on `getImageBlob()`. `Config::canServerEncode()` probes AVIF / WebP via a 1×1 pixel encode — only marks the format supported if the probe produces a non-empty blob. JPEG/PNG/GIF skip the probe (PHP's GD fallback covers them universally). Result is request-cached in `$serverFormatCapability`.
+
+If you ever add another encoder format (HEIC, JPEG-XL, etc.), pipe it through the same probe path — never trust `queryFormats()` alone.
+
 ### Glide closures
 
 `setCachePathCallable()` requires a non-static closure and must not reference `self::` or `static::` inside the closure body.
