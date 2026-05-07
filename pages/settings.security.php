@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Ynamite\Media\Backend\ConfigForm;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\CacheStats;
 
@@ -21,6 +22,12 @@ if (rex_request_method() === 'post' && (string) rex_post('massif_media_action', 
             if (is_dir($cacheDir)) {
                 rex_dir::delete($cacheDir, false);
             }
+            // Bump the cache-generation token alongside the wipe so already-
+            // emitted browser cache entries (immutable Cache-Control) get a
+            // new `&g=` segment on the next render and refetch fresh.
+            // Without this, browsers happily serve the deleted variant from
+            // their local cache and the server never sees a regen request.
+            Config::bumpCacheGeneration();
             echo rex_view::success('Addon Cache geleert.');
         } elseif ($action === 'refresh_stats') {
             (new CacheStats())->compute(forceRefresh: true);
@@ -56,8 +63,12 @@ $fragment->setVar('title', 'Sicherheit', false);
 $fragment->setVar('body', $body, false);
 echo $fragment->parse('core/page/section.php');
 
-// Cache panel — stats + clear button
-$stats = (new CacheStats())->compute();
+// Cache panel — stats + clear button. Always-fresh walk on page load: the
+// 5-minute memo in CacheStats was over-cautious for a backend-only page,
+// and the user observation was that the lag was actively misleading after
+// cache clears or new variant generation. Sub-second walk on a multi-thousand-
+// file cache is fine for this surface.
+$stats = (new CacheStats())->compute(forceRefresh: true);
 
 $formatBytes = static function (int $bytes): string {
     if ($bytes < 1024) {
@@ -114,7 +125,7 @@ $body = '<p>Generierte Bildvarianten werden unter <code>assets/addons/' . htmlsp
       . '<p class="text-muted" style="font-size:12px;margin-top:10px">'
       . 'Älteste Datei: ' . htmlspecialchars($oldestStr, ENT_QUOTES) . ' · '
       . 'Neueste Datei: ' . htmlspecialchars($newestStr, ENT_QUOTES) . ' · '
-      . 'Berechnet: ' . htmlspecialchars($computedStr, ENT_QUOTES) . ' (Cache 5 Min)'
+      . 'Berechnet: ' . htmlspecialchars($computedStr, ENT_QUOTES)
       . '</p>'
       . '<form action="' . htmlspecialchars($action, ENT_QUOTES) . '" method="post" class="form-inline" style="margin-top:10px">'
       . $hidden
@@ -138,8 +149,8 @@ $fragment->setVar('title', 'Cache', false);
 $fragment->setVar('body', $body, false);
 echo $fragment->parse('core/page/section.php');
 
-// TTLs panel (rex_config_form)
-$form = rex_config_form::factory(Config::ADDON);
+// TTLs panel (rex_config_form via our subclass — picks up auto-clear-on-content-affecting-save)
+$form = ConfigForm::factory(Config::ADDON);
 $form->addFieldset('Cache TTLs (Sekunden)');
 
 $f = $form->addInputField('number', Config::KEY_METADATA_TTL_SECONDS);

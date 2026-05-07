@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
+use Ynamite\Media\Backend\ConfigForm;
 use Ynamite\Media\Config;
 
-$form = rex_config_form::factory(Config::ADDON);
+$form = ConfigForm::factory(Config::ADDON);
 
 $form->addFieldset('CDN');
 
