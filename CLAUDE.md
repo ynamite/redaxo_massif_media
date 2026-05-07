@@ -94,6 +94,22 @@ Request-handler pattern:
 
 `RequestHandler` registered on `PACKAGES_INCLUDED` with `EARLY` priority intercepts the request during the dispatch inside `packages.php` and `exit`s before `frontend.php` continues to its sendPage path. The defensive checks in `_img/index.php` (after the bootstrap require) are unreachable in the success path but stay as a diagnostic safety net.
 
+#### `&g=<cache_gen>` browser-cache-busting token
+
+`Endpoint::handle` serves variants with `Cache-Control: public, max-age=31536000, immutable`. That's correct for content-addressable URLs, but our URLs aren't fully content-addressable: they encode source identity (`&v=<source_mtime>`) and transform (cache path), but not "which generation of the server cache this came from". Without an extra signal, a server-side cache wipe is invisible at the URL layer — the browser keeps serving its locally-cached variant on every subsequent visit, the request never reaches the server, and the server can't regenerate.
+
+Solution: a `&g=<cache_gen>` query segment, sourced from `Config::cacheGeneration()` (a unix timestamp stored in `rex_config` under `KEY_CACHE_GENERATION`). Bumped on every cache-clearing event:
+
+- `CACHE_DELETED` extension (REDAXO "Cache leeren") — `boot.php`
+- The addon's "Addon Cache jetzt leeren" button — `pages/settings.security.php`
+- A content-affecting setting save — `\Ynamite\Media\Backend\ConfigForm::save()` via `Config::CACHE_INVALIDATING_KEYS`
+
+`&g` is **outside** the HMAC payload — `Signature::sign()` covers `path` (and optional filter blob), not `g`. Two consequences:
+- The on-disk cache path is independent of `g`, so Glide's `cacheFileExists` fastpath still hits the same file regardless of `&g=` value. Bumping `g` doesn't trigger spurious re-encoding, only browser-cache invalidation.
+- An attacker can't "force regen" via `&g=` manipulation — the existing signature still has to verify, and a verified signature with any `&g` value resolves to the same file on disk.
+
+Symptom of regression: clear cache, refresh frontend, no new cache files appear. Cause: `&g` is being stripped, frozen, or mismatched between sign-side (UrlBuilder) and the rendered HTML.
+
 ### Cache path shapes
 
 Endpoint parsing must keep supporting all four shapes:
@@ -251,7 +267,8 @@ Manually check:
 ### Requests and config forms
 
 - `rex_request::isPost()` does not exist. Use `rex_request_method() === 'post'`.
-- Use `rex_config_form::factory($addon)` for settings. Do not hand-roll forms.
+- Use `\Ynamite\Media\Backend\ConfigForm::factory($addon)` for our settings (NOT `rex_config_form::factory`). The subclass overrides `save()` to snapshot `Config::CACHE_INVALIDATING_KEYS` before/after, and on any change clears the addon cache + bumps `Config::cacheGeneration()`. `rex_config_form::save()` itself does not fire `REX_FORM_SAVED` (`rex_form` does, but `rex_config_form` extends `rex_form_base` and writes through `rex_config::set` directly), so a pure extension-point hook isn't possible — the subclass is the only clean intercept point.
+- The HMAC sign key (`KEY_SIGN_KEY`) is intentionally NOT in `CACHE_INVALIDATING_KEYS`. Its dedicated regen button on the security tab stays user-triggered; auto-bumping it on a settings save would invalidate every browser-cached URL plus any third-party hotlink for content that's still semantically valid.
 - Store complex config as scalars and parse through typed accessors in `Config.php`.
 - `addTextField()` adds `form-control`; `addInputField('number', ...)` does not.
 - For number inputs, add:
@@ -351,6 +368,14 @@ Three things have to align for cache files to be readable by Apache on shared ho
 3. **`install.php` migration.** The two above only affect *new* writes. Existing variant directories created before the fix shipped (currently 0700 on vincafilm.ch) need a one-shot recursive `chmod` to 0755 dirs / 0644 files. Migration runs on every install/reinstall, silently skips unfixable subtrees (`@chmod`).
 
 Symptom of breakage: `[core:crit] (13)Permission denied: AH00529: ... pcfg_openfile: unable to check htaccess file, ensure it is readable and that ... is executable` in the Apache error log, plus 403s on cache hits. Apache walks up the directory tree on every request looking for .htaccess at every level; if any directory along the way is mode 0700, it 403s preemptively even though no `.htaccess` exists there.
+
+### AVIF minimum dimension
+
+libavif's encoder (the AV1 codec backing both Imagick's libheif binding and GD's `imageavif()`) rejects inputs below 16×16 with empty output, no exception. Default `image_sizes` `16,32,…` combined with `ratio="16:9"` produces h=9 at w=16 — the encoder returns nothing, Glide writes a 0-byte cache file, the browser sees a broken image when its `<picture>` source-picking logic lands on the 16w slot.
+
+`RenderContext::buildSrcset()` filters AVIF variants where computed `h < 16` or `w < 16`. WebP / JPG / PNG / GIF have no such floor (libwebp / libjpeg-turbo / libpng accept arbitrarily small inputs) so their srcset keeps the full width pool. Browser falls through to WebP for slots where AVIF is filtered out.
+
+The 16×16 floor is in the AV1 spec, not specific to a codec build. Don't unwind the filter as an "over-cautious heuristic" — it's a hard codec floor.
 
 ### AVIF encoding override
 
