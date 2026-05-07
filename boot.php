@@ -10,6 +10,7 @@ use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Var\RexPic;
 use Ynamite\Media\Var\RexVideo;
+use Ynamite\Media\View\EditorContentScanner;
 
 // REX_PIC[...] / REX_VIDEO[...] in slice content → <picture> / <video> markup.
 // Native rex_vars, scoped to article rendering — do not fire on backend pages
@@ -24,13 +25,27 @@ rex_var::register('REX_VIDEO', RexVideo::class);
 // to REDAXO's frontend index.php — this handler short-circuits there.
 rex_extension::register('PACKAGES_INCLUDED', [RequestHandler::class, 'handle'], rex_extension::EARLY);
 
-// Preload <link> injection into <head>. Drained once per request from the
-// static Preloader queue populated by Image::preload() / ->preload().
+// OUTPUT_FILTER pass — two side-by-side concerns share the closure so we walk
+// the full output once.
+//   1. Replace literal `REX_PIC[…]` / `REX_VIDEO[…]` substrings the editor
+//      pasted into rich-text fields. REDAXO core's `rex_var::parse` only runs
+//      on module/article templates, so editor-input markers stay literal at
+//      cache-build time; the post-render scan rewrites them to `<picture>` /
+//      `<video>` markup. Cheap-skips when neither marker is present.
+//   2. Drain the static Preloader queue (populated by Image::preload() /
+//      ->preload()) and inject `<link rel="preload">` tags before `</head>`.
+//
+// Order matters: the scan pass may invoke `Image::picture(..., preload: true)`
+// for editor-input REX_PIC tags carrying `preload="true"`, which queues
+// preload links that must drain before the `</head>` injection runs.
 rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $ep): void {
     $subject = $ep->getSubject();
     if (!is_string($subject)) {
         return;
     }
+
+    $original = $subject;
+    $subject = EditorContentScanner::scan($subject);
 
     $preloadLinks = Preloader::drain();
     if ($preloadLinks !== '' && stripos($subject, '</head>') !== false) {
@@ -40,6 +55,9 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
             $subject,
             1,
         ) ?? $subject;
+    }
+
+    if ($subject !== $original) {
         $ep->setSubject($subject);
     }
 });
