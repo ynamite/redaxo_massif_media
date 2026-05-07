@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-05-07
+
+### Fixed
+
+- **AVIF-Encoding auf Servern, wo Imagicks libheif-AVIF-Encoder defekt ist, geht jetzt über GDs `imageavif()` statt Imagick.** Symptom unverändert ggü. 1.0.5: AVIF-Cache-Files ergaben 0 Bytes auf vincafilm.ch (Plesk-shared mit libheif). 1.0.5's `Glide\SafeAvifEncoder` benutzte den minimalen Imagick-Aufruf-Pattern (`setImageFormat → setImageCompressionQuality → getImageBlob`), den `media_negotiator/lib/Helper.php::imagickConvert()` dokumentiert — auf diesen Servern produziert AUCH dieser Pattern leeren Output. Beim genaueren Lesen von `media_negotiator/lib/rex_effect_negotiator.php` zeigt sich: dessen funktionierende AVIF-Pipeline auf denselben Servern endet in `imagecreatefromstring($blob)`, also wird der Imagick-erzeugte AVIF-Blob nur als Transport benutzt — die TATSÄCHLICHE Auslieferung geht über REDAXOs Media-Pipeline mit GDs `imageavif()`. Das defekte Glied auf vincafilm ist also Imagick selbst, nicht der Aufruf-Pattern; die einzige funktionierende AVIF-Encode-Route geht über GD. `SafeAvifEncoder::run()` arbeitet jetzt entsprechend: bei AVIF + Imagick-Driver klont es die manipulierte Imagick-Instanz, rendert zu PNG (verlustfrei als Zwischenformat), decodiert das PNG via `imagecreatefromstring()` zu einem GD-Image, und encodiert AVIF via `imageavif($gd, null, $quality)`. Wenn `imageavif()` nicht existiert, oder der Driver schon GD ist, oder das Format nicht AVIF ist, fällt der Encoder durch zu `parent::run()` — keine Änderung gegenüber Glide's Standard-Verhalten in diesen Fällen. Der PNG-Round-Trip kostet einen zusätzlichen Decode/Encode-Schritt, ist aber verlustfrei und ist der einzige Weg, der auf den betroffenen Servern überhaupt valides AVIF produziert; auf gesunden Imagick-Hosts ist die visuelle Qualität von GDs AVIF-Encoder vergleichbar mit Imagicks. Tests: `tests/Integration/SafeAvifEncoderTest.php` aus 1.0.5 bleibt grün — auf Hosts ohne `imageavif()` (z. B. macOS-Standard-PHP) fällt der Encoder durch zu intervention/image's Encoder, der dort sauber funktioniert; nur auf den Plesk-Imagick-Servern dreht sich der Pfad zu GD-AVIF um. WebP und alle Non-AVIF-Formate sind unbetroffen.
+
 ## [1.0.5] — 2026-05-07
 
 ### Fixed
