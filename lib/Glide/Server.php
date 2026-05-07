@@ -112,6 +112,7 @@ final class Server
         $manipulators[] = new ColorProfile();
         $manipulators[] = new StripMetadata();
         $api->setManipulators($manipulators);
+        $api->setEncoder(new SafeAvifEncoder());
 
         return $server;
     }
@@ -170,6 +171,7 @@ final class Server
         $manipulators[] = new ColorProfile();
         $manipulators[] = new StripMetadata();
         $api->setManipulators($manipulators);
+        $api->setEncoder(new SafeAvifEncoder());
 
         return $server;
     }
