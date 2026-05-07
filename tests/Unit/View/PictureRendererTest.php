@@ -33,6 +33,17 @@ final class PictureRendererTest extends TestCase
         // touching Glide / FS. Individual tests opt in with seedLqipCache().
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, 0);
         rex_config::set(Config::ADDON, Config::KEY_SIGN_KEY, 'unit-test-key');
+
+        // Force AVIF + WebP capability so the rendered <picture> contains all
+        // three sources regardless of the host Imagick build. CI runs PHP 8.2
+        // with an Imagick that does NOT ship libheif/libavif — the real
+        // canServerEncode() correctly reports no AVIF there, which used to
+        // collapse the source count and break "smoke" assertions about
+        // expected output shape. Seeding the capability cache decouples
+        // assertions about RENDERER behaviour from the CI runner's codecs.
+        // testRendererOmitsAvifSourceWhenCapabilityFalse covers the
+        // no-codec regression separately.
+        self::forceFormatCapability(['avif' => true, 'webp' => true]);
     }
 
     protected function tearDown(): void
@@ -41,6 +52,20 @@ final class PictureRendererTest extends TestCase
         if (is_dir($this->tmpBase)) {
             rex_dir::delete($this->tmpBase, true);
         }
+        // Reset to null so the next test class re-derives capability from
+        // the real Imagick / GD — keeps ConfigTest's queryFormats-consistency
+        // assertions honest if it runs after this class in a single PHPUnit
+        // process.
+        self::forceFormatCapability(null);
+    }
+
+    /**
+     * @param array<string,bool>|null $caps
+     */
+    private static function forceFormatCapability(?array $caps): void
+    {
+        $prop = new \ReflectionProperty(Config::class, 'serverFormatCapability');
+        $prop->setValue(null, $caps);
     }
 
     private function renderer(): PictureRenderer
@@ -129,6 +154,40 @@ final class PictureRendererTest extends TestCase
         self::assertStringContainsString('type="image/jpeg"', $html);
         self::assertStringNotContainsString('type="image/avif"', $html);
         self::assertMatchesRegularExpression('/<img[^>]+src="[^"]+\.avif/', $html);
+    }
+
+    public function testRendererOmitsAvifSourceWhenCapabilityFalse(): void
+    {
+        // Regression: simulate an Imagick build without libheif/libavif — the
+        // exact CI-runner shape that exposed pre-1.0.5 test fragility. The
+        // renderer must filter AVIF out of the default format pool via
+        // Config::renderableFormats() and emit only WebP + JPG fallback.
+        // Asserts that the rendering side gracefully degrades when the
+        // capability layer reports no AVIF, separately from the capability
+        // detection itself (covered in ConfigTest).
+        self::forceFormatCapability(['avif' => false, 'webp' => true]);
+
+        $html = $this->renderer()->render($this->image(), alt: 'Hero');
+
+        self::assertStringNotContainsString('type="image/avif"', $html);
+        self::assertStringContainsString('type="image/webp"', $html);
+        self::assertSame(1, substr_count($html, '<source '));
+        self::assertStringContainsString('<img', $html);
+    }
+
+    public function testRendererOmitsBothModernSourcesWhenNoCodecs(): void
+    {
+        // No AVIF and no WebP — extremely unusual but possible (very old
+        // Imagick, or GD-only host without imagewebp). Renderer must still
+        // produce a valid <picture> with no `<source>` tags and a JPG fallback.
+        self::forceFormatCapability(['avif' => false, 'webp' => false]);
+
+        $html = $this->renderer()->render($this->image(), alt: 'Hero');
+
+        self::assertStringNotContainsString('<source ', $html);
+        self::assertStringStartsWith('<picture>', $html);
+        self::assertStringEndsWith('</picture>', $html);
+        self::assertStringContainsString('<img', $html);
     }
 
     // --- Intrinsic width / height attributes ---------------------------------
