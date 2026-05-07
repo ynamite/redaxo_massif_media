@@ -144,6 +144,14 @@ final class RenderContext
     /**
      * Build the comma-separated `srcset` string for a given format.
      *
+     * AVIF widths are filtered to those whose computed height is also ≥ 16:
+     * libavif (the AV1 codec used by both Imagick's libheif binding and GD's
+     * `imageavif()`) rejects sub-16×16 inputs with empty output, no exception.
+     * Default `image_sizes` `16,32,…` combined with `ratio="16:9"` produces
+     * h=9 at w=16 — empty cache file, broken `<picture>` source. WebP / JPG
+     * have no such floor and keep their full pool. Browser `<picture>` source
+     * picking falls through to WebP for slots where AVIF is dropped.
+     *
      * @param array<string,scalar> $filterParams
      */
     public function buildSrcset(
@@ -153,14 +161,45 @@ final class RenderContext
         ?int $quality,
         array $filterParams,
     ): string {
+        $isAvif = strtolower($format) === 'avif';
+        $intrinsicRatio = $image->aspectRatio();
+
         $entries = [];
         foreach ($this->widths as $w) {
             $h = ($this->effectiveRatio !== null && $this->fitToken !== null)
                 ? (int) round($w / $this->effectiveRatio)
                 : null;
+
+            if ($isAvif && !self::satisfiesAvifMinDimension($w, $h, $intrinsicRatio)) {
+                continue;
+            }
+
             $url = $urlBuilder->build($image, $w, $format, $quality, $h, $this->fitToken, $filterParams);
             $entries[] = $url . ' ' . $w . 'w';
         }
         return implode(', ', $entries);
+    }
+
+    /**
+     * Whether a (w, h) pair satisfies libavif's 16×16 minimum-dimension
+     * floor. When `$h` is null (no explicit crop), the served image will
+     * scale to width with the source's intrinsic aspect ratio; derive
+     * `h = w / intrinsicRatio` to match what the encoder will actually
+     * see at request time.
+     */
+    private static function satisfiesAvifMinDimension(int $w, ?int $h, float $intrinsicRatio): bool
+    {
+        if ($w < 16) {
+            return false;
+        }
+        if ($h !== null) {
+            return $h >= 16;
+        }
+        if ($intrinsicRatio > 0) {
+            return (int) round($w / $intrinsicRatio) >= 16;
+        }
+        // No crop, no intrinsic ratio (zero-dim source) — accept; the encoder
+        // will fail loudly, which is the right signal.
+        return true;
     }
 }
