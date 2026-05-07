@@ -81,4 +81,61 @@ final class ConfigTest extends TestCase
         rex_config::set(Config::ADDON, Config::KEY_LQIP_ENABLED, null);
         self::assertFalse(Config::lqipEnabled(), 'After untick: LQIP turns off.');
     }
+
+    public function testCanServerEncodeBaselineFormatsAlwaysTrue(): void
+    {
+        // jpg/jpeg/png/gif short-circuit BEFORE the driver-specific check.
+        // Any sane host has at least GD with these codecs, and even an
+        // exotic Imagick build that somehow lacks them would also break
+        // half of REDAXO — so the unconditional true is the safer default.
+        self::assertTrue(Config::canServerEncode('jpg'));
+        self::assertTrue(Config::canServerEncode('jpeg'));
+        self::assertTrue(Config::canServerEncode('png'));
+        self::assertTrue(Config::canServerEncode('gif'));
+    }
+
+    public function testCanServerEncodeIsCaseInsensitive(): void
+    {
+        self::assertTrue(Config::canServerEncode('JPG'));
+        self::assertTrue(Config::canServerEncode('Jpeg'));
+        self::assertTrue(Config::canServerEncode('PNG'));
+    }
+
+    public function testCanServerEncodeAvifMatchesImagickQueryFormats(): void
+    {
+        // Verifies our detection AGREES with Imagick::queryFormats() rather
+        // than asserting AVIF is/isn't available — the test environment
+        // varies. Mirrors media_negotiator/lib/Helper.php:244-260's logic.
+        if (!extension_loaded('imagick')) {
+            self::markTestSkipped('Imagick required to verify queryFormats consistency');
+        }
+
+        $im = new \Imagick();
+        $expected = in_array('AVIF', $im->queryFormats(), true);
+        $im->destroy();
+
+        self::assertSame($expected, Config::canServerEncode('avif'));
+    }
+
+    public function testCanServerEncodeWebpMatchesImagickQueryFormats(): void
+    {
+        if (!extension_loaded('imagick')) {
+            self::markTestSkipped('Imagick required to verify queryFormats consistency');
+        }
+
+        $im = new \Imagick();
+        $expected = in_array('WEBP', $im->queryFormats(), true);
+        $im->destroy();
+
+        self::assertSame($expected, Config::canServerEncode('webp'));
+    }
+
+    public function testCanServerEncodeUnknownFormatReturnsFalse(): void
+    {
+        // Format outside the supported set falls through both branches —
+        // baseline list doesn't match, capability map doesn't carry the key.
+        self::assertFalse(Config::canServerEncode('heic'));
+        self::assertFalse(Config::canServerEncode('jxl'));
+        self::assertFalse(Config::canServerEncode(''));
+    }
 }

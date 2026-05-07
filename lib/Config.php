@@ -111,60 +111,89 @@ final class Config
     }
 
     /**
-     * Whether the running PHP/Imagick combo can encode the given format.
+     * Whether the active Glide driver can encode the given format.
      *
-     * Baseline raster formats (jpg/jpeg/png/gif) are always reported as
-     * supported because PHP's GD fallback covers them even on Imagick-less
-     * hosts. AVIF and WebP go through a probe-encode of a 1×1 pixel because
-     * `Imagick::queryFormats()` only reports MODULES ImageMagick has
-     * registered, not whether the underlying codec library (libheif for
-     * AVIF, libwebp for WebP) actually works at runtime — a registered-but-
-     * broken module throws `ImagickException` on `getImageBlob()`. The probe
-     * catches the over-reporting case, so a `<picture>` we emit for an
-     * AVIF-capable browser never points at a URL the cache-miss endpoint
-     * can't fulfil. Result is request-cached.
+     * Mirrors Glide's own driver selection (see {@see \Ynamite\Media\Glide\Server::create}):
+     * Imagick when the extension is loaded, GD otherwise — `league/glide`
+     * supports those two and only those two via `intervention/image` v3.
+     * Gating on the *driver Glide will actually use* avoids false positives
+     * where some other backend would support the format but Glide can't
+     * reach it (e.g. Imagick lacks AVIF, GD has it: the OR-check would say
+     * yes, Glide picks Imagick, encoding fails).
+     *
+     * Capability is read from each driver's metadata API:
+     *   - Imagick → `Imagick::queryFormats()` (cached request-scope, single
+     *     instance) — same approach `media_negotiator/lib/Helper.php` uses
+     *     successfully across thousands of REDAXO installs.
+     *   - GD     → `function_exists('image…')` plus `gd_info()['… Support']`.
+     *
+     * 1.0.4 added a 1×1 encode probe on top of `queryFormats()` to guard
+     * against the theoretical case of a registered-but-broken codec library.
+     * That guard never caught a real-world false positive (the AVIF failures
+     * blamed on it traced to directory permissions and umask handling, not
+     * `queryFormats()` over-reporting), and the 1×1 probe itself produces
+     * false negatives on libheif builds that reject sub-minimum dimensions —
+     * making Imagick-loaded servers with working AVIF unable to emit it.
+     * Drop the probe; trust the metadata APIs.
      */
     public static function canServerEncode(string $format): bool
     {
-        if (self::$serverFormatCapability === null) {
-            $caps = ['jpg' => true, 'jpeg' => true, 'png' => true, 'gif' => true];
+        $fmt = strtolower($format);
 
-            if (extension_loaded('imagick')) {
-                foreach (['avif', 'webp'] as $fmt) {
-                    $caps[$fmt] = self::probeImagickEncode($fmt);
-                }
-            }
-
-            self::$serverFormatCapability = $caps;
+        // PHP/GD baseline: every sane host ships at least GD with these
+        // codecs. Skipping the driver-specific check here means an exotic
+        // Imagick build that somehow lacks JPEG (which would also break
+        // half of REDAXO) doesn't accidentally gate fallback emission.
+        if (in_array($fmt, ['jpg', 'jpeg', 'png', 'gif'], true)) {
+            return true;
         }
 
-        return !empty(self::$serverFormatCapability[strtolower($format)]);
+        if (self::$serverFormatCapability === null) {
+            if (extension_loaded('imagick')) {
+                $imagickFormats = self::imagickQueryFormatsCached();
+                self::$serverFormatCapability = [
+                    'avif' => in_array('AVIF', $imagickFormats, true),
+                    'webp' => in_array('WEBP', $imagickFormats, true),
+                ];
+            } else {
+                $gdInfo = function_exists('gd_info') ? gd_info() : [];
+                self::$serverFormatCapability = [
+                    'avif' => function_exists('imageavif') && !empty($gdInfo['AVIF Support']),
+                    'webp' => function_exists('imagewebp') && !empty($gdInfo['WebP Support']),
+                ];
+            }
+        }
+
+        return !empty(self::$serverFormatCapability[$fmt]);
     }
 
     /**
-     * Probe whether Imagick can produce a non-empty encoded blob for the
-     * given format. Returns false on any throwable so a partially-installed
-     * codec library (e.g. libheif registered for read-only) doesn't lead
-     * to broken `<source>` URLs. Intentionally separate from the
-     * request-scope `$serverFormatCapability` cache so tests can call it
-     * directly.
+     * Cache `Imagick::queryFormats()` request-scope. Single instance per
+     * request — `queryFormats()` is a static-style query against the
+     * registered modules, instantiating once is enough.
+     *
+     * @return list<string>
      */
-    private static function probeImagickEncode(string $format): bool
+    private static function imagickQueryFormatsCached(): array
     {
-        try {
-            $im = new \Imagick();
-            $im->newImage(1, 1, 'red');
-            $im->setImageFormat($format);
-            $blob = $im->getImageBlob();
-            $im->clear();
-            return $blob !== '';
-        } catch (\Throwable) {
-            return false;
+        if (self::$imagickFormatsCache !== null) {
+            return self::$imagickFormatsCache;
         }
+        $im = new \Imagick();
+        try {
+            self::$imagickFormatsCache = $im->queryFormats();
+        } finally {
+            $im->clear();
+            $im->destroy();
+        }
+        return self::$imagickFormatsCache;
     }
 
     /** @var array<string,bool>|null */
     private static ?array $serverFormatCapability = null;
+
+    /** @var list<string>|null */
+    private static ?array $imagickFormatsCache = null;
 
     public static function quality(string $format): int
     {
