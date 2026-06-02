@@ -538,8 +538,11 @@ final class PictureRendererTest extends TestCase
     {
         $html = $this->renderer()->render($this->image(), alt: 'x', sizes: '100vw');
 
-        // sizes appears on every <source> and on the <img>
-        self::assertGreaterThanOrEqual(3, substr_count($html, 'sizes="100vw"'));
+        // The custom sizes is emitted with the `auto,` prefix on every
+        // <source> and on the <img> — browsers compute the rendered size for
+        // lazy images (and fall back to `100vw` when they can't / aren't lazy).
+        self::assertGreaterThanOrEqual(3, substr_count($html, 'sizes="auto, 100vw"'));
+        self::assertStringNotContainsString('sizes="100vw"', $html);
     }
 
     public function testCustomQualityOverrideAppearsInUrl(): void

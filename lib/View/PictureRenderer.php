@@ -27,8 +27,7 @@ final class PictureRenderer
         private UrlBuilder $urlBuilder,
         private Placeholder $placeholder,
         private DominantColor $dominantColor,
-    ) {
-    }
+    ) {}
 
     /**
      * Render a full <picture><source><img></picture> for a raster source.
@@ -123,7 +122,7 @@ final class PictureRenderer
                     $variant->filterParams,
                 );
                 $sources[] = sprintf(
-                    '<source media="%s" type="image/%s" srcset="%s" sizes="%s">',
+                    '<source media="%s" type="image/%s" srcset="%s" sizes="auto, %s">',
                     self::escape($variant->media),
                     self::escape($this->mimeSubtype($fmt)),
                     self::escape($srcset),
@@ -139,7 +138,7 @@ final class PictureRenderer
             $quality = $qualityOverride[$fmt] ?? null;
             $srcset = $ctx->buildSrcset($this->urlBuilder, $image, $fmt, $quality, $filterParams);
             $sources[] = sprintf(
-                '<source type="image/%s" srcset="%s" sizes="%s">',
+                '<source type="image/%s" srcset="%s" sizes="auto, %s">',
                 self::escape($this->mimeSubtype($fmt)),
                 self::escape($srcset),
                 self::escape($sizes),
@@ -164,7 +163,7 @@ final class PictureRenderer
         $imgAttrs = [
             'src' => $fallbackSrc,
             'srcset' => $fallbackSrcset,
-            'sizes' => $sizes,
+            'sizes' => 'auto, ' . $sizes,
             'width' => (string) $attrW,
             'height' => (string) $attrH,
             'alt' => $alt ?? '',
