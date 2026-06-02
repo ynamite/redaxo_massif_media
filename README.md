@@ -763,7 +763,7 @@ Wasserzeichen können über acht Attribute gesetzt werden.
 | `markpos`   | Glide-Position      | Position des Wasserzeichens                                                    |
 | `markpad`   | int                 | Abstand zum Rand in px                                                         |
 | `markalpha` | 0..100              | Deckkraft                                                                      |
-| `markfit`   | Glide-Fit           | Einpassung des Wasserzeichens in seine Box                                     |
+| `markfit`   | `cover` / `contain` / `stretch` | Einpassung in die `markw`×`markh`-Box (nur relevant, wenn beide gesetzt sind) |
 
 **`mark`-Quellen** — drei akzeptierte Shapes:
 
@@ -771,7 +771,9 @@ Wasserzeichen können über acht Attribute gesetzt werden.
 - **HTTPS-URL** (`"https://example.com/logo.png"`) — geht durch dieselbe External-Source-Pipeline wie externe Haupt-Bilder (SSRF-Guard, TTL, Conditional GET, einmal-pro-TTL-Fetch). Failures (Bad URL, SSRF-Block, Network-Error) werden geloggt; das Bild rendert dann ohne Watermark statt 500.
 - **Projekt-Pfad mit führendem `/`** (z. B. `/assets/addons/foo/img.webp`) — wird relativ zu `rex_path::base()` interpretiert, Query-String wird abgeschnitten. Hauptzweck: nested `REX_PIC[…, as='url']` als Watermark-Source. Caveat: die Datei muss **schon existieren** wenn die Watermark-Variante gerendert wird — Glide-Cache-URLs zeigen erst auf eine echte Datei, nachdem die Variante einmal generiert wurde. Für saubere Garantie lieber den Mediapool-Filename direkt benutzen.
 
-**Grössen-Tipp** — bei grossen Source-Bildern (z. B. 5712 × 3213 px) wirkt `markw="100"` (100 px absolut) winzig. Für proportionale Watermark-Grösse die Prozent-Syntax nutzen: `markw="20w"` ergibt 20 % der Bildbreite und skaliert mit der Variante.
+**Grössen-Tipp** — bei grossen Source-Bildern (z. B. 5712 × 3213 px) wirkt `markw="100"` (100 px absolut) winzig. Für proportionale Watermark-Grösse entweder die Prozent-Syntax (`markw="20w"` = 20 % der Bildbreite) oder die relative `marks`-Angabe nutzen (`marks="0.2"` = 20 % der Bildbreite, Höhe seitenverhältnis-treu) — beide skalieren mit der Variante.
+
+**Schärfe** — der Mark wird mit Imagicks Lanczos-Resampling herunterskaliert und alpha-korrekt (`COMPOSITE_OVER`, sRGB-normalisiert) eingesetzt. Auch hochauflösende Logo-PNGs kommen dadurch scharf heraus statt matschig/treppig. (Imagick-only; auf reinen GD-Installs greift Glide's Standard-Resampling.)
 
 Unterstützte Positionen für `markpos`:
 
@@ -1510,6 +1512,8 @@ Das Default-`sizes`-Attribut lautet:
 ```text
 (min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw
 ```
+
+Im gerenderten `<picture>` wird dieser Wert mit vorangestelltem `auto` emittiert (`sizes="auto, …"`) — auf lazy-geladenen Bildern berechnet der Browser die tatsächliche Render-Breite selbst und wählt die srcset-Variante danach; der konfigurierte `sizes`-String bleibt der Fallback für `loading="eager"`-Bilder und Browser ohne `sizes=auto`-Support.
 
 ---
 
