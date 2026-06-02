@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Massif\Media\Unit\Glide;
 
-use League\Glide\Manipulators\Watermark;
+use League\Glide\Manipulators\Watermark as GlideWatermark;
 use PHPUnit\Framework\TestCase;
 use rex_path;
 use Ynamite\Media\Glide\Server;
+use Ynamite\Media\Glide\Watermark as MassifWatermark;
 use Ynamite\Media\Source\ExternalSource;
 
 final class ServerTest extends TestCase
@@ -129,6 +130,11 @@ final class ServerTest extends TestCase
 
         self::assertNotNull($watermark, 'Watermark manipulator missing from Glide pipeline');
         self::assertNotNull($watermark->getWatermarks(), 'watermarks filesystem not configured — mark params will be ignored');
+        // Regression guard: the manipulator must be our high-quality
+        // subclass, not Glide's stock one. If a future Server.php change
+        // accidentally drops the in-place swap in `configureManipulators()`,
+        // marks would silently regress to `Imagick::scaleImage()` quality.
+        self::assertInstanceOf(MassifWatermark::class, $watermark, 'expected our high-quality Watermark to replace Glide stock');
     }
 
     public function testExternalServerConfiguresWatermarksFilesystem(): void
@@ -154,12 +160,13 @@ final class ServerTest extends TestCase
 
         self::assertNotNull($watermark);
         self::assertNotNull($watermark->getWatermarks());
+        self::assertInstanceOf(MassifWatermark::class, $watermark, 'external server must also use our high-quality Watermark');
     }
 
-    private static function findWatermarkManipulator(\League\Glide\Server $server): ?Watermark
+    private static function findWatermarkManipulator(\League\Glide\Server $server): ?GlideWatermark
     {
         foreach ($server->getApi()->getManipulators() as $manipulator) {
-            if ($manipulator instanceof Watermark) {
+            if ($manipulator instanceof GlideWatermark) {
                 return $manipulator;
             }
         }

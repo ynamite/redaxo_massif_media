@@ -9,6 +9,7 @@ use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
 use League\Flysystem\Visibility;
+use League\Glide\Manipulators\Watermark as GlideWatermark;
 use League\Glide\Server as GlideServer;
 use League\Glide\ServerFactory;
 use rex_path;
@@ -104,15 +105,7 @@ final class Server
 
         $server->setCachePathCallable(self::cachePathCallable());
 
-        // Append custom manipulators after Glide's defaults so they run on
-        // the final pixels before encoding. ColorProfile normalizes to sRGB;
-        // StripMetadata is request-gated (only fires for the LQIP path).
-        $api = $server->getApi();
-        $manipulators = $api->getManipulators();
-        $manipulators[] = new ColorProfile();
-        $manipulators[] = new StripMetadata();
-        $api->setManipulators($manipulators);
-        $api->setEncoder(new SafeAvifEncoder());
+        self::configureManipulators($server);
 
         return $server;
     }
@@ -166,14 +159,71 @@ final class Server
 
         $server->setCachePathCallable(self::externalCachePathCallable());
 
+        self::configureManipulators($server);
+
+        return $server;
+    }
+
+    /**
+     * Apply our addon's manipulator + encoder customizations to a freshly
+     * built Glide server.
+     *
+     * Three things happen, in order:
+     *
+     *   1. Glide's stock {@see GlideWatermark} is replaced **in-place** with
+     *      our {@see Watermark} subclass. Same constructor args (the
+     *      watermarks filesystem and path prefix Glide already configured),
+     *      same position in the chain — only the pixel work is ours. Reason:
+     *      Glide's stock manipulator delegates the watermark resize to
+     *      Intervention/Image v3's Imagick driver, which calls
+     *      `Imagick::scaleImage()` (a fast pixel-area scaler with no filter
+     *      argument). Sharp-edged marks come out blurry/ringy; our subclass
+     *      uses `Imagick::resizeImage(..., FILTER_LANCZOS, 1)` instead. As
+     *      a side-effect, the `marks` (relative size) param finally works —
+     *      Glide's stock manipulator silently ignores it.
+     *   2. {@see ColorProfile} is appended so output is normalized to sRGB
+     *      regardless of the source's embedded colour profile (Display P3
+     *      iPhone JPEGs etc).
+     *   3. {@see StripMetadata} is appended so EXIF / XMP / ICC profile
+     *      data doesn't leak into public variants.
+     *
+     * Encoder is finally swapped to {@see SafeAvifEncoder} for the
+     * Imagick-AVIF-broken-builds workaround.
+     */
+    private static function configureManipulators(GlideServer $server): void
+    {
         $api = $server->getApi();
         $manipulators = $api->getManipulators();
+
+        foreach ($manipulators as $i => $manipulator) {
+            // `instanceof` would also match a previously-installed Ynamite
+            // subclass — `::class` comparison ensures we only swap in the
+            // *first* configuration of the server, not on a re-configure.
+            if ($manipulator::class === GlideWatermark::class) {
+                $manipulators[$i] = new Watermark(
+                    $manipulator->getWatermarks(),
+                    $manipulator->getWatermarksPathPrefix(),
+                );
+                break;
+            }
+        }
+
         $manipulators[] = new ColorProfile();
         $manipulators[] = new StripMetadata();
         $api->setManipulators($manipulators);
-        $api->setEncoder(new SafeAvifEncoder());
 
-        return $server;
+        // Recompute the aggregated API-param surface. Api::setApiParams()
+        // runs ONCE in the Api constructor (before this swap) and caches the
+        // union of every manipulator's getApiParams(); setManipulators()
+        // does NOT refresh it. Server::getAllParams() filters incoming
+        // makeImage params by that cached union, so without this call our
+        // Watermark's extra `marks` param is stripped before it ever reaches
+        // run() — relative sizing would stay a silent no-op despite the
+        // override. Re-running setApiParams() rebuilds the union from the
+        // now-swapped manipulator list so `marks` survives into the pipeline.
+        $api->setApiParams();
+
+        $api->setEncoder(new SafeAvifEncoder());
     }
 
     /**
