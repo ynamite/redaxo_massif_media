@@ -153,6 +153,7 @@ For `<picture>` output:
 - art-direction `<source media="...">` entries must come **before** default format sources
 - the fallback `<img>` always uses the default variant
 - builder-level filters do **not** cascade into art-direction variants; each art variant owns its own `filterParams`
+- every `<source>` and the `<img>` emit `sizes="auto, <configured-sizes>"`. `auto` (WHATWG) lets browsers size lazy images by their rendered width; per spec it must be the first entry and is only valid on lazy-loaded images, so the configured `sizes` string stays as the fallback for `loading="eager"` images. The `<link rel="preload">` path (`Preloader`) deliberately omits `auto` — preloaded images are eager.
 
 ## Directory map
 
@@ -434,6 +435,20 @@ Reason: Glide binds the closure to `League\Glide\Server`, which breaks static cl
 - `Endpoint::handle()` sets it before `makeImage()`.
 - `clearActiveFilters()` must run in `finally`.
 - Tests that touch filtered Glide paths should reset it in `tearDown()`.
+
+### Watermark manipulator (`Glide\Watermark`)
+
+`Glide\Watermark` extends Glide's stock `League\Glide\Manipulators\Watermark` and replaces it **in-place** in the manipulator array in both `Server::create()` and `Server::createForExternal()`, via `Server::configureManipulators()`. The swap uses a `::class ===` match (not `instanceof`) so only Glide's stock instance is swapped, never an already-installed subclass on a re-configure. The watermarks-filesystem routing layer (`Endpoint::translateMark`, `Pipeline\WatermarkResolver`) is untouched — this is purely a pixel-quality swap, the URL contract is unchanged.
+
+- **Why custom:** Glide's stock manipulator delegates the mark resize to `intervention/image` v3, whose Imagick `ResizeModifier::apply()` calls `Imagick::scaleImage()` — a box-style scaler with **no filter argument**, which produces blurry/aliased edges on sharp marks (logos, text). Our `run()` does the resize itself with `Imagick::resizeImage(..., Imagick::FILTER_LANCZOS, 1, false)`, normalizes the mark to sRGB before any pixel math, applies opacity via `evaluateImage(EVALUATE_MULTIPLY, alpha/100, CHANNEL_ALPHA)`, and composites with `COMPOSITE_OVER`. Imagick-only; on GD installs it falls back to `parent::run()`. Fail-open: a broken/missing mark logs via `rex_logger` and renders the image without the watermark, never 500s.
+
+- **`getApiParams()` override is load-bearing, AND you MUST re-run `Api::setApiParams()` after the swap — both, or `marks` silently vanishes.** There are *two* param filters between `makeImage` and `run()`, both keyed on `getApiParams()`:
+  1. `BaseManipulator::setParams()` filters the param array to keys in the *manipulator's own* `getApiParams()`. Stock omits `marks`, so we override `getApiParams()` to add it.
+  2. `Server::makeImage()` → `Server::getAllParams()` filters incoming params to keys in the *Api's aggregated* `getApiParams()` — the union of every manipulator's params, which `Api` computes **once in its constructor** (`setApiParams()`) and caches. `setManipulators()` does **not** refresh that cache, and our in-place swap happens *after* construction. So `configureManipulators()` calls `$api->setApiParams()` after `setManipulators()` to rebuild the union from the swapped list. Without this call, `getAllParams()` strips `marks` before `makeImage` ever runs — relative sizing stays a silent no-op despite the override being correct. **Symptom of regression:** `marks="0.25"` has zero effect while `markw="25w"` still works. The unit test (which calls `setParams` directly) cannot catch this; the integration test (`WatermarkPipelineTest::testRelativeMarksControlsWatermarkSize`) can — it goes through the real `makeImage` path.
+
+- **`markfit` reads the raw param, not the inherited `getFit()`.** `getFit()`'s whitelist is Glide's crop vocabulary (`contain`/`max`/`stretch`/`crop*`) and returns `null` for `cover`, which would degrade cover to contain. `computeMarkSize()` reads `getParam('markfit')` directly and treats `cover` **and** any `crop*` token as fill (max-scale), `stretch` as exact w×h, everything else (incl. default `contain`) as fit-inside. Only matters when both `markw` and `markh` are set.
+
+- **`marks` is also in `FilterParams::FRIENDLY_TO_GLIDE` + `RANGES`** so it reaches `activeFilters` and the cache-key hash. This matters now that `marks` is functional: two different `marks` values must hash to different cache paths, or they'd collide on disk (they didn't before, because `marks` did nothing).
 
 ### Animated images
 
