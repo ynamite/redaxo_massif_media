@@ -327,6 +327,27 @@ final class Config
         return max(0, (int) self::get(self::KEY_EXTERNAL_TTL_SECONDS));
     }
 
+    /**
+     * How long a *good* asset-metadata sidecar (intrinsic dimensions, mime,
+     * focal point) stays trusted before {@see \Ynamite\Media\Pipeline\MetadataReader}
+     * recomputes it. 0 disables the check (cache until explicitly invalidated).
+     */
+    public static function metadataTtlSeconds(): int
+    {
+        return max(0, (int) self::get(self::KEY_METADATA_TTL_SECONDS));
+    }
+
+    /**
+     * Short TTL for *failed* metadata reads (unreadable / broken assets). Caps how
+     * long a failure sentinel is reused before the asset is re-probed — long enough
+     * to avoid hammering a broken asset on every request, short enough that a
+     * transiently-broken asset recovers quickly. 0 disables the check.
+     */
+    public static function sentinelTtlSeconds(): int
+    {
+        return max(0, (int) self::get(self::KEY_SENTINEL_TTL_SECONDS));
+    }
+
     public static function externalTimeoutSeconds(): int
     {
         return max(1, (int) self::get(self::KEY_EXTERNAL_TIMEOUT_SECONDS));

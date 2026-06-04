@@ -47,7 +47,22 @@ final class MetadataReader
             return null;
         }
         $json = json_decode((string) file_get_contents($path), true);
-        return is_array($json) ? $json : null;
+        if (!is_array($json)) {
+            return null;
+        }
+
+        // Expire by age. Failed reads (the `failed` sentinel set in computeMeta())
+        // use the short sentinel TTL so a broken asset is re-probed soon instead of
+        // staying stuck at 0×0 forever; good entries use the long metadata TTL.
+        // A TTL of 0 disables the check (cache until explicitly invalidated).
+        $ttl = !empty($json['failed'])
+            ? Config::sentinelTtlSeconds()
+            : Config::metadataTtlSeconds();
+        if ($ttl > 0 && (time() - (int) @filemtime($path)) > $ttl) {
+            return null;
+        }
+
+        return $json;
     }
 
     private function saveCachedMeta(SourceInterface $source, array $meta): void
@@ -61,6 +76,12 @@ final class MetadataReader
         $absolutePath = $source->absolutePath();
         [$width, $height, $mime] = $this->probeDimensionsAndMime($absolutePath);
         $sourceFormat = $this->formatFromMime($mime);
+
+        // A genuinely unreadable asset reads as 0×0 with no identifiable format.
+        // SVG also reads as 0×0 (no raster dimensions) but resolves to format 'svg'
+        // via mime_content_type — it is NOT a failure and must keep the long
+        // metadata TTL, so the discriminator hinges on the unknown format.
+        $failed = $width === 0 && $height === 0 && $sourceFormat === 'unknown';
 
         $focal = null;
         if ($source instanceof MediapoolSource && $source->media !== null) {
@@ -77,6 +98,7 @@ final class MetadataReader
             'source_format' => $sourceFormat,
             'focal' => $focal,
             'is_animated' => $this->probeAnimated($absolutePath, $sourceFormat),
+            'failed' => $failed,
         ];
     }
 

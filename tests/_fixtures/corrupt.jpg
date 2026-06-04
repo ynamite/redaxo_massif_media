@@ -1,0 +1,1 @@
+This is not a valid image. It exists on disk but cannot be decoded — a "kaputtes Asset" that getimagesize() rejects, used to exercise the failed-read sentinel.

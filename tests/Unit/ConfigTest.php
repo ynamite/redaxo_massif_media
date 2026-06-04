@@ -185,6 +185,36 @@ final class ConfigTest extends TestCase
         self::assertNotSame(1_700_000_000, $value);
     }
 
+    public function testMetadataTtlSecondsReturnsDefaultWhenUnset(): void
+    {
+        self::assertSame(7_776_000, Config::metadataTtlSeconds());
+    }
+
+    public function testSentinelTtlSecondsReturnsDefaultWhenUnset(): void
+    {
+        self::assertSame(60, Config::sentinelTtlSeconds());
+    }
+
+    public function testMetadataTtlSecondsReadsConfiguredValue(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_METADATA_TTL_SECONDS, '120');
+        self::assertSame(120, Config::metadataTtlSeconds());
+    }
+
+    public function testSentinelTtlSecondsReadsConfiguredValue(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_SENTINEL_TTL_SECONDS, '5');
+        self::assertSame(5, Config::sentinelTtlSeconds());
+    }
+
+    public function testTtlAccessorsClampNegativeToZero(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_METADATA_TTL_SECONDS, '-1');
+        rex_config::set(Config::ADDON, Config::KEY_SENTINEL_TTL_SECONDS, '-1');
+        self::assertSame(0, Config::metadataTtlSeconds());
+        self::assertSame(0, Config::sentinelTtlSeconds());
+    }
+
     private function resetCacheGenerationStatic(): void
     {
         $prop = new \ReflectionProperty(Config::class, 'cacheGenerationCache');
