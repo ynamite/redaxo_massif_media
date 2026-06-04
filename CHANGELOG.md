@@ -5,6 +5,14 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Die Einstellungen „Metadata TTL" und „Sentinel TTL" (Tab Sicherheit & Cache) sind jetzt tatsächlich wirksam — vorher waren es Karteileichen: editierbare Felder mit Hilfetext, die nichts taten.** Beide Keys (`metadata_ttl_seconds`, `sentinel_ttl_seconds`) existierten samt Default und Formularfeld, wurden aber von keiner Stelle im Code gelesen (kein Accessor, kein Consumer; ein „Sentinel"-Mechanismus existierte überhaupt nicht). Ein Admin konnte die Werte ändern, ohne dass etwas passierte. Fix: neue `Config::metadataTtlSeconds()` / `Config::sentinelTtlSeconds()`-Accessoren (Shape wie `externalTtlSeconds()`, `0` = TTL deaktiviert), und `MetadataReader::loadCachedMeta()` verfällt einen `_meta`-Sidecar jetzt nach Alter: **gute** Einträge nach `metadataTtlSeconds()` (Default 90 Tage — ein Backstop neben der sofortigen `MEDIA_UPDATED`-Invalidierung), **fehlgeschlagene** Reads nach der kurzen `sentinelTtlSeconds()` (Default 60 s). Ein fehlgeschlagener Read (unlesbares / kaputtes Asset → `getimagesize()` scheitert, kein erkennbares Format) wird in `computeMeta()` als `failed: true`-Sentinel im Sidecar markiert; innerhalb der Sentinel-TTL wird er ohne erneutes Probing wiederverwendet (kein Hammering eines kaputten Assets pro Request), nach Ablauf wird das Asset neu geprüft — statt wie bisher dauerhaft als `0×0` festzuhängen. Der Diskriminator hängt am unbekannten Format, nicht nur an `0×0`: ein **SVG** liest sich ebenfalls als `0×0`, löst aber zu Format `svg` auf und bleibt damit ein guter Eintrag mit langer Metadaten-TTL (keine Sentinel-Behandlung). Gilt für Mediapool- und externe Quellen gleichermassen. Tests: erweiterte `tests/Integration/MetadataReaderTest.php` (TTL-Verfall gut/fresh, Sentinel-Reuse/Retry, SVG-ist-kein-Failure) und `tests/Unit/ConfigTest.php` (Default/Override/Clamp der beiden Accessoren).
+
+### Removed
+
+- **Vier ungenutzte `use`-Imports entfernt** (reine Aufräumarbeit, keine Verhaltensänderung): `ExternalSource` in `Glide/Endpoint.php` (nur `ExternalSourceFactory` wird verwendet), `rex_file` in `Pipeline/AnimatedWebpEncoder.php`, sowie `rex_logger` und `Throwable` in `Source/ExternalSourceFactory.php`.
+
 ## [1.0.9] — 2026-06-04
 
 ### Fixed
