@@ -474,6 +474,28 @@ Therefore:
 - `MEDIA_UPDATED` and `MEDIA_DELETED` must call `CacheInvalidator::invalidate($filename)`
 - old tiny sidecar orphans after file replacement are accepted; global cache clear removes them
 
+#### `_meta` sidecar TTL + failed-read sentinel
+
+`MetadataReader::loadCachedMeta()` expires a `_meta` sidecar by age, on top of the
+event-driven invalidation above. Two TTLs, both via `Config` accessors (`0` =
+disabled), backing the two settings on the security tab:
+
+- **Good entries** expire after `Config::metadataTtlSeconds()` (default 90 days) — a
+  backstop, since `MEDIA_UPDATED`/`MEDIA_DELETED` already invalidate immediately.
+- **Failed reads** expire after `Config::sentinelTtlSeconds()` (default 60s).
+  `computeMeta()` marks a sidecar `failed: true` when `getimagesize()` fails and no
+  format can be identified. Within the sentinel TTL the failure is reused without
+  re-probing (no per-request hammering of a broken asset); after it, the asset is
+  retried instead of staying stuck at `0×0` forever.
+
+**The failure discriminator is `width===0 && height===0 && source_format==='unknown'`,
+NOT just `0×0`.** SVG also reads as `0×0` (no raster dimensions) but resolves to
+format `svg` via `mime_content_type`, so it stays a *good* entry on the long
+metadata TTL. Do not simplify the check to `0×0` — that would put valid SVGs on the
+60s sentinel TTL and re-probe them constantly. The `failed` flag rides in the
+existing JSON sidecar; pre-existing sidecars without it read as good (backward
+compatible). Regression guard: `MetadataReaderTest::testSvgIsNotTreatedAsFailed`.
+
 ### Video
 
 - Preload MIME map:
