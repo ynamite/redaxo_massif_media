@@ -62,6 +62,20 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
     }
 });
 
+// block_peek renders slice previews into an <iframe srcdoc="…"> by HTML-escaping
+// the slice markup, so the OUTPUT_FILTER pass above must NOT run inside that
+// escaped srcdoc. A literal REX_PIC[…] emitted by editor/fragment input would
+// otherwise survive into the srcdoc and get re-parsed — and quote-corrupted — by
+// the page-level OUTPUT_FILTER scanning the whole backend page. Resolve our tags
+// on block_peek's own post-render hook instead (fires BEFORE it escapes into
+// srcdoc), mirroring how viterex_addon handles its Vite placeholders.
+if (rex_addon::get('block_peek')->isAvailable()) {
+    rex_extension::register('BLOCK_PEEK_OUTPUT', static function (rex_extension_point $ep): ?string {
+        $subject = $ep->getSubject();
+        return is_string($subject) ? EditorContentScanner::scan($subject) : null;
+    });
+}
+
 // CACHE_DELETED → wipe our cache contents (preserve the directory itself so
 // future generations can write into it without re-creating it). Also bump
 // the cache-generation token so the `&g=` segment in every emitted URL

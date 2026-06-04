@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.9] — 2026-06-04
+
+### Fixed
+
+- **REX_PIC / REX_VIDEO werden in block_peek-Vorschauen wieder korrekt aufgelöst — keine doppelten Anführungszeichen / am ersten Leerzeichen abgeschnittenen Werte mehr.** Symptom (nur mit aktivem `block_peek`): `src` kam als `"datei.jpg"` (Anführungszeichen behalten), `alt` als `"Monday` (führendes Anführungszeichen behalten, am ersten Leerzeichen abgeschnitten). Ursache: block_peek rendert Slice-Vorschauen in ein `<iframe srcdoc="…">` und maskiert dabei das HTML (`"` → `&quot;`). Ein per Editor/Fragment zur Laufzeit ausgegebenes literales `REX_PIC[…]` überlebte als Text bis in das srcdoc; unser seitenweiter `OUTPUT_FILTER` (`EditorContentScanner::scan`) fand das Tag dort wieder und parste die `&quot;`-maskierten Werte über den unquotierten `(\S+)`-Zweig. Fix: `EditorContentScanner::scan()` läuft jetzt zusätzlich über block_peeks `BLOCK_PEEK_OUTPUT`-Extension-Point (nur wenn `block_peek` verfügbar ist), also BEVOR block_peek in das srcdoc maskiert — die Tags werden in der Vorschau zu `<picture>` / `<video>` aufgelöst, und im srcdoc bleibt nichts mehr, das der seitenweite Filter wieder anfassen könnte. Spiegelt das bestehende Muster in `viterex_addon` (BLOCK_PEEK_OUTPUT-Listener statt OUTPUT_FILTER).
+
 ## [1.0.8] — 2026-06-02
 
 ### Fixed
