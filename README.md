@@ -261,6 +261,14 @@ echo Video::for('clip.mp4')
     ->render();
 ```
 
+**Kurzalias `Pic`:** `Ynamite\Media\Pic` ist eine 1:1-Unterklasse von `Image` (inspiriert von Statamics `pic`-Tag) — `Pic::picture(...)`, `Pic::for(...)` und `Pic::url(...)` sind identisch zu ihren `Image::`-Pendants. Reine Tipparbeit-Ersparnis, sonst kein Unterschied:
+
+```php
+use Ynamite\Media\Pic;
+
+echo Pic::picture(src: 'hero.jpg', alt: 'Aussicht', width: 1440);
+```
+
 Für Redakteure und Textfelder gibt es zusätzlich die Platzhalter `REX_PIC[…]` und `REX_VIDEO[…]`.
 
 ---
