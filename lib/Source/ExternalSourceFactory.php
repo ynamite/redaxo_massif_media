@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Source;
 
-use rex_logger;
-use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Exception\ImageNotFoundException;
 

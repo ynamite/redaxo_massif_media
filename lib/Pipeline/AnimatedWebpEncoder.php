@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ynamite\Media\Pipeline;
 
 use Imagick;
-use rex_file;
 use rex_logger;
 use rex_path;
 use Throwable;

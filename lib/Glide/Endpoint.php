@@ -10,7 +10,6 @@ use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\WatermarkResolver;
-use Ynamite\Media\Source\ExternalSource;
 use Ynamite\Media\Source\ExternalSourceFactory;
 
 final class Endpoint
