@@ -529,6 +529,8 @@ Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)
 - `CacheInvalidator::invalidateUrl($url)` drops the full external URL bucket.
 - Variant directories are path-keyed and are the bulky part.
 - Tiny old sidecar orphans after file replacement are accepted.
+- The generic `CACHE_DELETED` hook (`boot.php`) wipes cache contents **except `_color/`** — dominant colours are a pure function of the image bytes (key: `source.key()+cacheBust()+CACHE_VERSION`), so no config/DB staleness exists for a generic clear to cure, and regenerating them costs a synchronous per-image decode at render time. `_meta/` (DB-stored focal point → clear is the backstop) and `_lqip/` (output depends on config values not in its cache key) stay in the wipe. The addon's own clear-cache button (`pages/settings.security.php`) still deletes everything including `_color/` — keep it that way as the escape hatch.
+- `DominantColor` sets `jpeg:size` before `readImage()` so libjpeg does a DCT-scaled decode near thumbnail size instead of full resolution. Don't remove it as "redundant with `scaleImage`" — the full-res decode is the expensive part, not the scale.
 
 ## External fetch rules
 

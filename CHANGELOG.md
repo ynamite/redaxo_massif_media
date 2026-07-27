@@ -5,6 +5,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Erster Seitenaufruf nach „Cache leeren" ist nicht mehr sekundenlang langsam.** Symptom: auf einer Seite mit vielen Bildern dauerte der erste Frontend-Request nach einem REDAXO-Cache-Clear mehrere Sekunden (gemessen: ~5.3 s bei 40 `<picture>`-Elementen, warm ~0.13 s). Ursache waren zwei zusammenwirkende Punkte in der Dominant-Color-Pipeline: (1) `DominantColor::generate()` dekodierte jedes Quellbild in **voller Auflösung** via `Imagick::readImage()` — bei Multi-Megapixel-Fotos 100 ms+ pro Bild, synchron während des HTML-Renderings (die Farbe landet als Inline-`background-color` im Markup, Lazy-Loading hilft dagegen nicht); (2) der `CACHE_DELETED`-Hook löschte `_color/` bei jedem generischen Cache-Clear mit, obwohl eine Dominant-Farbe eine reine Funktion der Bildbytes ist (Key: `source.key()+cacheBust()+CACHE_VERSION`) und es keine config- oder DB-abhängige Staleness gibt, die ein Clear beheben könnte. Fix: (1) `jpeg:size`-Decode-Hint (libjpeg DCT-scaled decode, ~5–10× schneller für JPEGs; für andere Formate wirkungslos, aber harmlos); (2) `_color/` überlebt den generischen `CACHE_DELETED`-Clear — invalidiert wird weiterhin über `MEDIA_UPDATED`/`MEDIA_DELETED`, `cacheBust` (mtime) und den `CACHE_VERSION`-Token; der addon-eigene „Addon Cache jetzt leeren"-Button (Tab Sicherheit & Cache) löscht als Escape-Hatch weiterhin alles inkl. `_color/`. `_meta/` und `_lqip/` bleiben bewusst im generischen Clear: `_meta` enthält den DB-gespeicherten Fokuspunkt (Clear = dokumentierter Backstop), `_lqip`-Output hängt von Config-Werten ab, die nicht im Cache-Key stecken.
+
 ## [1.0.9] — 2026-06-04
 
 ### Fixed

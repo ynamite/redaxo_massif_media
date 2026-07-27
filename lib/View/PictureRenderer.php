@@ -69,6 +69,9 @@ final class PictureRenderer
         array $artVariants = [],
     ): string {
         $sizes ??= Config::defaultSizes();
+        if ($loading === Loading::LAZY) {
+            $sizes = 'auto, ' . $sizes;
+        }
         $formats = $this->normalizeFormats($formats ?? Config::renderableFormats());
 
         $ctx = RenderContext::build(
@@ -122,7 +125,7 @@ final class PictureRenderer
                     $variant->filterParams,
                 );
                 $sources[] = sprintf(
-                    '<source media="%s" type="image/%s" srcset="%s" sizes="auto, %s">',
+                    '<source media="%s" type="image/%s" srcset="%s" sizes="%s">',
                     self::escape($variant->media),
                     self::escape($this->mimeSubtype($fmt)),
                     self::escape($srcset),
@@ -138,7 +141,7 @@ final class PictureRenderer
             $quality = $qualityOverride[$fmt] ?? null;
             $srcset = $ctx->buildSrcset($this->urlBuilder, $image, $fmt, $quality, $filterParams);
             $sources[] = sprintf(
-                '<source type="image/%s" srcset="%s" sizes="auto, %s">',
+                '<source type="image/%s" srcset="%s" sizes="%s">',
                 self::escape($this->mimeSubtype($fmt)),
                 self::escape($srcset),
                 self::escape($sizes),
@@ -163,7 +166,7 @@ final class PictureRenderer
         $imgAttrs = [
             'src' => $fallbackSrc,
             'srcset' => $fallbackSrcset,
-            'sizes' => 'auto, ' . $sizes,
+            'sizes' => $sizes,
             'width' => (string) $attrW,
             'height' => (string) $attrH,
             'alt' => $alt ?? '',

@@ -58,6 +58,10 @@ final class DominantColor
 
         try {
             $im = new Imagick();
+            // libjpeg DCT-scaled decode: decodes JPEGs at roughly the requested
+            // size instead of full resolution (~100ms+ for a multi-MP photo,
+            // which dwarfs the quantize below). Ignored by non-JPEG decoders.
+            $im->setOption('jpeg:size', '100x100');
             $im->readImage($absolutePath);
             // Tiny working copy so quantize is fast on 6000×4000 sources.
             $im->scaleImage(50, 0);
