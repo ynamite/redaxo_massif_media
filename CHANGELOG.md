@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.11] — 2026-07-28
+
+### Fixed
+
+- **`_img/.bootstrap.php` ist jetzt deploy-portabel — absolute Pfade der Build-Maschine landen nicht mehr im generierten Bootstrap.** Symptom: nach einem Deployment (z. B. Deployer mit `releases/N`-Struktur) schlugen Cache-Miss-Requests über `_img/index.php` fatal fehl — `require(/Users/…/src/core/boot.php)` zeigte auf die Entwicklungsmaschine und riss zusätzlich `open_basedir`-Warnungen. Ursache: `install.php` schrieb `HTDOCS_PATH`, den Path-Provider-`require` und den `boot.php`-`require` als `var_export`-te **absolute** Pfade der Maschine, auf der die Installation lief. Fix: neue `Install\PortablePath::export()` emittiert `__DIR__`-relative Ausdrücke (`__DIR__ . '/../../../../../src/core/boot.php'`) — das relative Layout ist auf jedem Zielsystem identisch, nur der absolute Prefix unterscheidet sich; Fallback auf absolut bleibt für Pfade ohne gemeinsame Wurzel (anderes Volume). Zusätzlich behoben: die `PATH_PROVIDER`-Erkennung las `rex::getProperty('path_provider')`, das der Core **nie setzt** (boot.php reicht den Provider direkt an `rex_path::init()` durch) — auf Custom-Layout-Installationen (Viterex `app_path_provider`) fehlte der Provider-Block im Bootstrap daher komplett und der Core hätte selbst mit korrektem Pfad mit falschen `rex_path`-Werten gebootet. Jetzt wird der live Provider per Reflection aus `rex_path::$pathprovider` gelesen. Addon einmal reinstallieren, damit das Bootstrap neu generiert wird. Tests: `tests/Unit/Install/PortablePathTest.php`.
+
 ## [1.0.10] — 2026-07-27
 
 ### Fixed
