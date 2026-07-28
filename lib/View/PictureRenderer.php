@@ -68,10 +68,11 @@ final class PictureRenderer
         array $filterParams = [],
         array $artVariants = [],
     ): string {
-        $sizes ??= Config::defaultSizes();
-        if ($loading === Loading::LAZY) {
-            $sizes = 'auto, ' . $sizes;
+        $defaultSizes = Config::defaultSizes();
+        if (!$sizes && $loading === Loading::LAZY) {
+            $sizes = 'auto, ' . $defaultSizes;
         }
+        $sizes ??= $defaultSizes;
         $formats = $this->normalizeFormats($formats ?? Config::renderableFormats());
 
         $ctx = RenderContext::build(

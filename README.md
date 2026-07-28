@@ -638,7 +638,7 @@ REX_VIDEO[
 | `width`         | int    | intrinsische Breite                             | Render-Breite in px für das HTML-`width`-Attribut                   |
 | `height`        | int    | aus `width` × `ratio`, sonst intrinsisch        | Render-Höhe in px                                                   |
 | `ratio`         | string | intrinsisches Seitenverhältnis                  | Aspect-Ratio wie `16:9`, `16/9` oder `1.7777`                       |
-| `sizes`         | string | aus Settings `default_sizes`                    | `sizes`-Attribut für responsive Bildauswahl                         |
+| `sizes`         | string | aus Settings `default_sizes` (mit `auto,`-Prefix auf Lazy-Bildern) | `sizes`-Attribut für responsive Bildauswahl; explizite Werte werden 1:1 übernommen |
 | `loading`       | string | `lazy`                                          | `lazy` oder `eager`                                                 |
 | `decoding`      | string | `async`                                         | `async`, `sync` oder `auto`                                         |
 | `fetchpriority` | string | `auto`                                          | `auto`, `high` oder `low`                                           |
@@ -1532,7 +1532,9 @@ Das Default-`sizes`-Attribut lautet:
 (min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw
 ```
 
-Im gerenderten `<picture>` wird dieser Wert mit vorangestelltem `auto` emittiert (`sizes="auto, …"`) — auf lazy-geladenen Bildern berechnet der Browser die tatsächliche Render-Breite selbst und wählt die srcset-Variante danach; der konfigurierte `sizes`-String bleibt der Fallback für `loading="eager"`-Bilder und Browser ohne `sizes=auto`-Support.
+Im gerenderten `<picture>` wird dieser Default-Wert mit vorangestelltem `auto` emittiert (`sizes="auto, …"`) — auf lazy-geladenen Bildern berechnet der Browser die tatsächliche Render-Breite selbst und wählt die srcset-Variante danach; der konfigurierte `sizes`-String bleibt der Fallback für `loading="eager"`-Bilder und Browser ohne `sizes=auto`-Support.
+
+Ein **explizit gesetztes** `sizes` (per `sizes="…"`-Attribut oder `->sizes(…)`) wird dagegen 1:1 übernommen — ohne `auto,`-Prefix. In Browsern mit `sizes=auto`-Support würde der `auto`-Eintrag den Rest der Liste überschreiben und den Autor-Wert damit still verwerfen. Wer die Kombination will, schreibt sie selbst: `sizes="auto, 100vw"`.
 
 ---
 

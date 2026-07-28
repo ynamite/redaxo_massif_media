@@ -538,11 +538,20 @@ final class PictureRendererTest extends TestCase
     {
         $html = $this->renderer()->render($this->image(), alt: 'x', sizes: '100vw');
 
-        // The custom sizes is emitted with the `auto,` prefix on every
-        // <source> and on the <img> — browsers compute the rendered size for
-        // lazy images (and fall back to `100vw` when they can't / aren't lazy).
-        self::assertGreaterThanOrEqual(3, substr_count($html, 'sizes="auto, 100vw"'));
-        self::assertStringNotContainsString('sizes="100vw"', $html);
+        // Explicit sizes is emitted verbatim on every <source> and the <img>
+        // — no `auto,` prefix. In `sizes=auto`-capable browsers the auto
+        // entry overrides the rest of the list, which would silently discard
+        // the author's value. Callers who want the hybrid pass
+        // `sizes="auto, 100vw"` themselves.
+        self::assertGreaterThanOrEqual(3, substr_count($html, 'sizes="100vw"'));
+        self::assertStringNotContainsString('auto, 100vw', $html);
+    }
+
+    public function testDefaultSizesGetsAutoPrefixWhenLazy(): void
+    {
+        $html = $this->renderer()->render($this->image(), alt: 'x');
+
+        self::assertStringContainsString('sizes="auto, ', $html);
     }
 
     public function testCustomQualityOverrideAppearsInUrl(): void

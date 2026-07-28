@@ -153,7 +153,7 @@ For `<picture>` output:
 - art-direction `<source media="...">` entries must come **before** default format sources
 - the fallback `<img>` always uses the default variant
 - builder-level filters do **not** cascade into art-direction variants; each art variant owns its own `filterParams`
-- every `<source>` and the `<img>` emit `sizes="auto, <configured-sizes>"`. `auto` (WHATWG) lets browsers size lazy images by their rendered width; per spec it must be the first entry and is only valid on lazy-loaded images, so the configured `sizes` string stays as the fallback for `loading="eager"` images. The `<link rel="preload">` path (`Preloader`) deliberately omits `auto` — preloaded images are eager.
+- when no explicit `sizes` is given, every `<source>` and the `<img>` emit `sizes="auto, <configured-sizes>"` on lazy images. `auto` (WHATWG) lets browsers size lazy images by their rendered width; per spec it must be the first entry and is only valid on lazy-loaded images, so the configured `sizes` string stays as the fallback for `loading="eager"` images. An **explicitly provided** `sizes` is emitted verbatim — no `auto,` prefix. In `sizes=auto`-capable browsers the auto entry overrides the rest of the list, which would silently discard the author's value; callers who want the hybrid write `sizes="auto, 100vw"` themselves. The `<link rel="preload">` path (`Preloader`) deliberately omits `auto` — preloaded images are eager.
 
 ## Directory map
 
