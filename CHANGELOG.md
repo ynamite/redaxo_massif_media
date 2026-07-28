@@ -5,6 +5,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Numerische Bildfilter (`blur`, `brightness`, `sharpen` …) funktionieren jetzt auch im Editor-Content-Scan-Pfad.** Symptom: ein in Editor-Inhalt (Rich-Text / WYSIWYG) getipptes `REX_PIC[src="hero.jpg" width="800" filter="sepia" blur="5"]` blieb als Literal auf der Seite stehen statt zu `<picture>` zu rendern. Ursache: der `EditorContentScanner` liefert regex-geparste Attributwerte als **Strings** (`'5'`), `FilterParams::clamp()` verlangt aber `int|float` — unter `strict_types` warf das einen `TypeError`, den der Scanner-Catch-All schluckte (Tag bleibt als Literal sichtbar, Fehler nur im Log). Betroffen war jeder Pfad, der String-Werte in `filters:` übergibt — auch direkte PHP-Aufrufe wie `Image::picture(filters: ['blur' => '5'])` und String-Werte in art-JSON. Fix in `FilterParams::normalize()`: numerische Strings werden nach int/float konvertiert und geclampt, nicht-numerische Werte für Range-Parameter gedroppt (bisheriges Contract „invalid entries werden verworfen"). Der Cache-Build-Pfad (Modul-Templates) war nicht betroffen — `rex_var::getParsedArg` emittiert bare Numerics.
+
 ### Changed
 
 - **Explizit gesetztes `sizes` wird 1:1 emittiert — der `auto,`-Prefix wird nur noch dem Default-`sizes` aus den Settings vorangestellt.** Bisher bekam auch ein per Attribut/API gesetztes `sizes="100vw"` den Prefix (`sizes="auto, 100vw"`). In Browsern mit `sizes=auto`-Support (WHATWG) überschreibt der `auto`-Eintrag aber den Rest der Liste — der explizit gesetzte Autor-Wert wurde dort also still verworfen. Jetzt gewinnt der Autor-Wert; wer die Kombination aus Browser-berechneter Render-Breite und explizitem Fallback will, schreibt sie selbst (`sizes="auto, 100vw"`, wird unverändert durchgereicht). Ohne explizites `sizes` bleibt das bisherige Verhalten: `sizes="auto, <default_sizes>"` auf lazy-geladenen Bildern, reines `<default_sizes>` auf `loading="eager"`.

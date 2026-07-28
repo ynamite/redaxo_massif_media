@@ -40,6 +40,21 @@ final class FilterParamsTest extends TestCase
         self::assertSame(['bg' => 'ffffff'], FilterParams::normalize(['bg' => 'FFFFFF']));
     }
 
+    public function testNormalizeAcceptsNumericStrings(): void
+    {
+        // The EditorContentScanner path delivers ALL attribute values as
+        // strings (regex-parsed HTML). Numeric strings must clamp like their
+        // int/float counterparts instead of fataling on clamp()'s int|float
+        // signature under strict_types.
+        $out = FilterParams::normalize(['blur' => '5', 'brightness' => '200', 'gamma' => '0.5']);
+        self::assertSame(['blur' => 5, 'bri' => 100, 'gam' => 0.5], $out);
+    }
+
+    public function testNormalizeDropsNonNumericValuesForRangedParams(): void
+    {
+        self::assertSame([], FilterParams::normalize(['blur' => 'lots']));
+    }
+
     public function testNormalizeDropsUnknownKeys(): void
     {
         self::assertSame(['bri' => 10], FilterParams::normalize(['brightness' => 10, 'bogus' => 'value']));

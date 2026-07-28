@@ -650,6 +650,13 @@ REX_VIDEO[
 | `format`        | string | erstes Format aus Settings → typischerweise AVIF | nur in Verbindung mit `as="url"`: `avif`, `webp` oder `jpg`        |
 | `quality`       | int    | aus Format-Settings                             | nur in Verbindung mit `as="url"`: `1..100`                          |
 
+Zusätzlich können sämtliche **Bildfilter**- und **Watermark**-Attribute direkt am Tag gesetzt werden (siehe die gleichnamigen Abschnitte weiter unten):
+
+```text
+REX_PIC[src="hero.jpg" width="800" filter="sepia" blur="5"]
+REX_PIC[src="hero.jpg" width="1280" ratio="16:9" mark="logo.png" markpos="bottom-right" marks="0.2" markalpha="60"]
+```
+
 Wichtig zu `width`:
 
 `width` begrenzt das `srcset` nicht. Der Browser kann weiterhin aus der vollen Breakpoint-Auswahl wählen, damit HiDPI-Screens mit 2x oder 3x eine schärfere Variante laden können.

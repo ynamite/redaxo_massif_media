@@ -82,7 +82,14 @@ final class FilterParams
             }
 
             if (isset(self::RANGES[$glideKey])) {
-                $out[$glideKey] = self::clamp($glideKey, $value);
+                // The scanner path (EditorContentScanner) delivers regex-parsed
+                // attribute values as strings — `+ 0` converts numeric strings
+                // to int/float for clamp()'s strict signature; non-numeric
+                // values are dropped per the "invalid entries" contract.
+                if (!is_numeric($value)) {
+                    continue;
+                }
+                $out[$glideKey] = self::clamp($glideKey, $value + 0);
                 continue;
             }
 
