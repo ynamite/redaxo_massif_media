@@ -5,6 +5,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.12] — 2026-07-28
+
 ### Fixed
 
 - **Numerische Bildfilter (`blur`, `brightness`, `sharpen` …) funktionieren jetzt auch im Editor-Content-Scan-Pfad.** Symptom: ein in Editor-Inhalt (Rich-Text / WYSIWYG) getipptes `REX_PIC[src="hero.jpg" width="800" filter="sepia" blur="5"]` blieb als Literal auf der Seite stehen statt zu `<picture>` zu rendern. Ursache: der `EditorContentScanner` liefert regex-geparste Attributwerte als **Strings** (`'5'`), `FilterParams::clamp()` verlangt aber `int|float` — unter `strict_types` warf das einen `TypeError`, den der Scanner-Catch-All schluckte (Tag bleibt als Literal sichtbar, Fehler nur im Log). Betroffen war jeder Pfad, der String-Werte in `filters:` übergibt — auch direkte PHP-Aufrufe wie `Image::picture(filters: ['blur' => '5'])` und String-Werte in art-JSON. Fix in `FilterParams::normalize()`: numerische Strings werden nach int/float konvertiert und geclampt, nicht-numerische Werte für Range-Parameter gedroppt (bisheriges Contract „invalid entries werden verworfen"). Der Cache-Build-Pfad (Modul-Templates) war nicht betroffen — `rex_var::getParsedArg` emittiert bare Numerics.
