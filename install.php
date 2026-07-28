@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Ynamite\Media\Config;
+use Ynamite\Media\Install\PortablePath;
 
 if (!Config::signKey()) {
     Config::set(Config::KEY_SIGN_KEY, bin2hex(random_bytes(32)));
@@ -76,9 +77,18 @@ if (!is_file($gitignorePath)) {
 // `rex_dir::copy` is non-destructive — iterates source files only — so the
 // hand-written bootstrap survives the asset copy. Re-runs on every
 // install/reinstall, so BACKEND_FOLDER renames or site-moves are picked up
-// automatically.
+// automatically. All paths are emitted as `__DIR__`-relative expressions
+// (PortablePath) — the generated file must survive deployment to hosts where
+// the absolute prefix differs (Deployer releases/N, differing vhost roots)
+// but the relative layout is identical. Absolute paths baked at generation
+// time break there (and trip open_basedir with the dev machine's paths).
 $bootstrapPath = rex_path::addonAssets(Config::ADDON, '_img/.bootstrap.php');
-$pathProvider = rex::getProperty('path_provider');
+$bootstrapDir = dirname($bootstrapPath);
+// The live provider only exists as `rex_path::$pathprovider` (protected, no
+// getter) — core never stores it as a rex property, so rex::getProperty()
+// would silently return null and the PATH_PROVIDER block below would never
+// be emitted on custom-layout installs.
+$pathProvider = (new ReflectionProperty(rex_path::class, 'pathprovider'))->getValue();
 $htdocsPath = rex_path::frontend();
 $bootPath = rex_path::core('boot.php');
 $backendFolder = trim(substr(rex_path::backend(), strlen($htdocsPath)), '/');
@@ -98,7 +108,7 @@ $bootstrapLines = [
     '',
     '$REX = [];',
     '$REX[\'REDAXO\'] = false;',
-    '$REX[\'HTDOCS_PATH\'] = ' . var_export($htdocsPath, true) . ';',
+    '$REX[\'HTDOCS_PATH\'] = ' . PortablePath::export($bootstrapDir, $htdocsPath) . ';',
     '$REX[\'BACKEND_FOLDER\'] = ' . var_export($backendFolder, true) . ';',
     '$REX[\'LOAD_PAGE\'] = true;',
 ];
@@ -114,13 +124,13 @@ if ($pathProvider instanceof rex_path_default_provider && get_class($pathProvide
     $providerFile = $reflection->getFileName();
     if ($providerFile && is_file($providerFile)) {
         $bootstrapLines[] = '';
-        $bootstrapLines[] = 'require ' . var_export($providerFile, true) . ';';
+        $bootstrapLines[] = 'require ' . PortablePath::export($bootstrapDir, $providerFile) . ';';
         $bootstrapLines[] = '$REX[\'PATH_PROVIDER\'] = new \\' . get_class($pathProvider) . '();';
     }
 }
 
 $bootstrapLines[] = '';
-$bootstrapLines[] = 'require ' . var_export($bootPath, true) . ';';
+$bootstrapLines[] = 'require ' . PortablePath::export($bootstrapDir, $bootPath) . ';';
 
 rex_file::put($bootstrapPath, implode("\n", $bootstrapLines) . "\n");
 

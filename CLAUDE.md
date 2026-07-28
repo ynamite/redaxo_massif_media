@@ -85,7 +85,7 @@ Request-handler pattern:
 
 #### `_img/.bootstrap.php` is generated, not shipped
 
-`assets/_img/index.php` is the cache-miss entry point when `.htaccess` rewrites missing files into PHP. It `require`s `_img/.bootstrap.php`, which `install.php` regenerates on every install/reinstall via the live path provider. The generated bootstrap MUST set:
+`assets/_img/index.php` is the cache-miss entry point when `.htaccess` rewrites missing files into PHP. It `require`s `_img/.bootstrap.php`, which `install.php` regenerates on every install/reinstall via the live path provider. All paths in the generated file MUST be emitted as `__DIR__`-relative expressions via `Install\PortablePath::export()` — the file gets deployed to hosts where the absolute prefix differs (Deployer `releases/N`, other vhost roots) but the relative layout is identical; `var_export`'d absolute paths break there and trip `open_basedir` with the build machine's paths. Also: the live path provider is only reachable via reflection on `rex_path::$pathprovider` — core never stores it as a rex property, so `rex::getProperty('path_provider')` silently returns null and the provider block would never be emitted. The generated bootstrap MUST set:
 
 - `$REX['REDAXO']` (false for frontend)
 - `$REX['HTDOCS_PATH']`, `$REX['BACKEND_FOLDER']`
