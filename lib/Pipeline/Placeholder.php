@@ -20,8 +20,13 @@ final class Placeholder
      * needing a manual cache clear.
      *   v1: jpg, metadata included
      *   v2: webp, EXIF/XMP/ICC stripped
+     *   v3: lqip config (width/quality/blur) folded into the cache key —
+     *       makes the sidecar a pure function of bytes + config, so
+     *       `_lqip/` can survive the generic CACHE_DELETED wipe like
+     *       `_color/` does (config changes move the key instead of
+     *       requiring a clear).
      */
-    private const CACHE_VERSION = 'v2';
+    private const CACHE_VERSION = 'v3';
 
     /**
      * Generate (or load cached) an inline base64 LQIP for an image.
@@ -63,7 +68,14 @@ final class Placeholder
 
     public static function cachePathFor(SourceInterface $source): string
     {
-        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':' . self::CACHE_VERSION);
+        $hash = hash('xxh64', implode(':', [
+            $source->key(),
+            $source->cacheBust(),
+            self::CACHE_VERSION,
+            Config::lqipWidth(),
+            Config::lqipQuality(),
+            Config::lqipBlur(),
+        ]));
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_lqip/' . substr($hash, 0, 2) . '/' . $hash . '.txt'

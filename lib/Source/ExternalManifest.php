@@ -46,7 +46,11 @@ final class ExternalManifest
     }
 
     /**
-     * @return array{url: string, etag: ?string, lastModified: ?int, fetchedAt: int, ttl: int}|null
+     * `failedAt` is the failure sentinel: unix timestamp of the last failed
+     * fetch, null when the last fetch succeeded. {@see ExternalSourceFactory}
+     * suppresses re-fetching within `Config::sentinelTtlSeconds()` of it.
+     *
+     * @return array{url: string, etag: ?string, lastModified: ?int, fetchedAt: int, ttl: int, failedAt: ?int}|null
      *         null when the manifest is missing or unreadable
      */
     public static function read(string $hash): ?array
@@ -65,11 +69,12 @@ final class ExternalManifest
             'lastModified' => isset($raw['lastModified']) ? (int) $raw['lastModified'] : null,
             'fetchedAt' => (int) $raw['fetchedAt'],
             'ttl' => isset($raw['ttl']) ? (int) $raw['ttl'] : 0,
+            'failedAt' => isset($raw['failedAt']) && (int) $raw['failedAt'] > 0 ? (int) $raw['failedAt'] : null,
         ];
     }
 
     /**
-     * @param array{url: string, etag: ?string, lastModified: ?int, fetchedAt: int, ttl: int} $data
+     * @param array{url: string, etag: ?string, lastModified: ?int, fetchedAt: int, ttl: int, failedAt?: ?int} $data
      */
     public static function write(string $hash, array $data): void
     {

@@ -84,17 +84,20 @@ if (rex_addon::get('block_peek')->isAvailable()) {
 // despite the server-side files being gone, and the server never sees a
 // regen request. See lib/Pipeline/UrlBuilder.php and Config::cacheGeneration.
 //
-// `_color/` survives the generic clear: a dominant colour is a pure function
-// of the image bytes, keyed on source.key()+cacheBust()+CACHE_VERSION, so no
-// config- or DB-derived staleness exists for a clear to cure — and wiping it
-// forces a full-decode of every image on the next render (seconds per page).
-// MEDIA_UPDATED/MEDIA_DELETED and the version token handle real invalidation;
-// the addon's own clear-cache button (settings.security.php) still nukes it.
+// `_color/` and `_lqip/` survive the generic clear: both are pure functions
+// of the image bytes plus (for LQIP) config values that are folded into the
+// cache key since Placeholder CACHE_VERSION v3 — no config- or DB-derived
+// staleness exists for a clear to cure, and wiping them forces a synchronous
+// full-decode (+ webp encode for LQIP) of every image during the next HTML
+// render (seconds per page, lazy loading doesn't help — the results are
+// inlined into the markup). MEDIA_UPDATED/MEDIA_DELETED, `cacheBust` and the
+// CACHE_VERSION tokens handle real invalidation; the addon's own clear-cache
+// button (settings.security.php) still nukes everything.
 rex_extension::register('CACHE_DELETED', static function (): void {
     $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
     if (is_dir($cacheDir)) {
         foreach (glob($cacheDir . '*') ?: [] as $entry) {
-            if (basename($entry) === '_color') {
+            if (in_array(basename($entry), ['_color', '_lqip'], true)) {
                 continue;
             }
             is_dir($entry) ? rex_dir::delete($entry) : rex_file::delete($entry);

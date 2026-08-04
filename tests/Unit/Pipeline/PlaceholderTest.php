@@ -47,4 +47,18 @@ final class PlaceholderTest extends TestCase
 
         self::assertSame('', (new Placeholder())->generate($svg));
     }
+
+    public function testCachePathIncludesLqipConfig(): void
+    {
+        // The key must move when LQIP config changes — that's what makes it
+        // safe for `_lqip/` to survive the generic CACHE_DELETED wipe.
+        $source = new MediapoolSource(filename: 'hero.jpg', absolutePath: '/tmp/hero.jpg', mtime: 123);
+
+        rex_config::set(Config::ADDON, Config::KEY_LQIP_WIDTH, 32);
+        $a = Placeholder::cachePathFor($source);
+        self::assertSame($a, Placeholder::cachePathFor($source), 'stable for unchanged config');
+
+        rex_config::set(Config::ADDON, Config::KEY_LQIP_WIDTH, 64);
+        self::assertNotSame($a, Placeholder::cachePathFor($source), 'config change must move the cache path');
+    }
 }

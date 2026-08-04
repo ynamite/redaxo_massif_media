@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ynamite\Media\Glide;
 
 use rex_logger;
+use rex_path;
 use Throwable;
+use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
@@ -49,11 +51,17 @@ final class Endpoint
             return;
         }
 
+        // On-disk location of the requested variant. The URL cache path IS the
+        // on-disk path relative to cache/ — for mediapool via cachePathCallable
+        // ({src}/{spec}.{ext}), for external via the per-bucket server whose
+        // cache root is cache/_external/<hash>/ and relative path {spec}.{ext}.
+        $abs = rex_path::addonAssets(Config::ADDON, 'cache/' . $cachePath);
+
         // Animated WebP variants live outside the Glide pipeline (Glide's
         // encoder is single-frame). Detect them first and dispatch to the
         // dedicated encoder; everything else falls through to Glide.
         if (str_ends_with($cachePath, '/animated.webp')) {
-            self::handleAnimated($cachePath);
+            self::handleAnimated($cachePath, $abs);
             return;
         }
 
@@ -80,6 +88,15 @@ final class Endpoint
                 self::respond(400, 'Bad request');
                 return;
             }
+        }
+
+        $mime = self::mimeFor($parsed['fmt']);
+
+        // Cache hit: stream straight from disk — no Glide/Flysystem
+        // instantiation, no full-file read into memory.
+        if (self::isServable($abs)) {
+            self::sendFile($abs, $mime);
+            return;
         }
 
         try {
@@ -111,17 +128,28 @@ final class Endpoint
             // Merge filter params last so they can't override w/q/fm/h/fit accidentally.
             $params = array_merge($processingFilterParams, $params);
 
-            Server::setActiveFilters($filterParams);
+            // Per-variant lock: N concurrent requests for the same uncached
+            // variant collapse into one encode; the waiters serve the freshly
+            // written file after the lock releases. Without this, a cache
+            // clear on a busy site produces an encode stampede — the same
+            // multi-second AVIF encode running N× in parallel, each occupying
+            // a PHP-FPM worker.
+            $lock = self::lockVariant($abs);
             try {
-                if (str_starts_with($parsed['source'], '_external/')) {
-                    $bytes = self::makeExternal($parsed['source'], $params);
-                } else {
-                    $server = Server::create();
-                    $relCachePath = $server->makeImage($parsed['source'], $params);
-                    $bytes = $server->getCache()->read($relCachePath);
+                if (!self::isServable($abs)) {
+                    Server::setActiveFilters($filterParams);
+                    try {
+                        if (str_starts_with($parsed['source'], '_external/')) {
+                            self::makeExternal($parsed['source'], $params);
+                        } else {
+                            Server::create()->makeImage($parsed['source'], $params);
+                        }
+                    } finally {
+                        Server::clearActiveFilters();
+                    }
                 }
             } finally {
-                Server::clearActiveFilters();
+                self::unlockVariant($lock);
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);
@@ -129,12 +157,85 @@ final class Endpoint
             return;
         }
 
-        $mime = self::mimeFor($parsed['fmt']);
-        header('Content-Type: ' . $mime);
-        header('Content-Length: ' . strlen($bytes));
+        if (!self::isServable($abs)) {
+            // Glide reported success but wrote somewhere else — cache-path
+            // drift between UrlBuilder and cachePathCallable. Fail loudly:
+            // a silent fallback would re-encode on every request forever.
+            rex_logger::factory()->log(
+                'error',
+                'massif_media: generated variant missing at expected cache path: ' . $cachePath,
+            );
+            self::respond(404, 'Not found');
+            return;
+        }
+        self::sendFile($abs, $mime);
+    }
+
+    private static function isServable(string $abs): bool
+    {
+        // filesize > 0 also refuses the known 0-byte-broken-AVIF shape
+        // instead of serving an empty 200.
+        return is_file($abs) && filesize($abs) > 0;
+    }
+
+    /**
+     * Stream a cache file to the client. `X-Massif-Media: php` marks responses
+     * served through the PHP handler — cache-hit URLs carrying this header
+     * mean the static-serve fastpath (Apache .htaccess / nginx snippet) is
+     * not active and every image request is paying a full REDAXO boot.
+     */
+    private static function sendFile(string $abs, string $mime): void
+    {
+        $mtime = (int) (filemtime($abs) ?: 0);
+        $size = (int) (filesize($abs) ?: 0);
+        $etag = '"' . dechex($mtime) . '-' . dechex($size) . '"';
+
+        header('X-Massif-Media: php');
         header('Cache-Control: public, max-age=31536000, immutable');
-        header('ETag: "' . md5($bytes) . '"');
-        echo $bytes;
+        header('ETag: ' . $etag);
+
+        if (trim((string) ($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+            http_response_code(304);
+            return;
+        }
+
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . $size);
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+        readfile($abs);
+    }
+
+    /**
+     * Blocking exclusive lock on `<variant>.lock` next to the target cache
+     * file. Returns the lock handle, or null when the lock file can't be
+     * created (fail-open: encode without dedup rather than 500).
+     *
+     * @return resource|null
+     */
+    private static function lockVariant(string $abs)
+    {
+        $lockPath = $abs . '.lock';
+        $dir = dirname($lockPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        $fh = @fopen($lockPath, 'c');
+        if ($fh === false) {
+            return null;
+        }
+        @flock($fh, LOCK_EX);
+        return $fh;
+    }
+
+    /**
+     * @param resource|null $fh
+     */
+    private static function unlockVariant($fh): void
+    {
+        if (is_resource($fh)) {
+            @flock($fh, LOCK_UN);
+            fclose($fh);
+        }
     }
 
     /**
@@ -146,7 +247,7 @@ final class Endpoint
      * The cache-bucket layout matches the URL emission's `_external/<hash>`
      * key (see {@see Server::createForExternal()} for the symmetry guarantee).
      */
-    private static function makeExternal(string $sourceKey, array $params): string
+    private static function makeExternal(string $sourceKey, array $params): void
     {
         $hash = substr($sourceKey, strlen('_external/'));
         $factory = new ExternalSourceFactory();
@@ -155,9 +256,7 @@ final class Endpoint
             throw new \RuntimeException('External source manifest not found for hash: ' . $hash);
         }
 
-        $server = Server::createForExternal($source);
-        $relCachePath = $server->makeImage(Server::glideSourcePath($source), $params);
-        return $server->getCache()->read($relCachePath);
+        Server::createForExternal($source)->makeImage(Server::glideSourcePath($source), $params);
     }
 
     /**
@@ -303,7 +402,7 @@ final class Endpoint
             || (bool) preg_match('/^cover-\d{1,3}-\d{1,3}$/', $token);
     }
 
-    private static function handleAnimated(string $cachePath): void
+    private static function handleAnimated(string $cachePath, string $abs): void
     {
         $src = substr($cachePath, 0, -strlen('/animated.webp'));
         // Defensive: animated WebP isn't emitted for external sources
@@ -315,25 +414,32 @@ final class Endpoint
             return;
         }
 
+        if (self::isServable($abs)) {
+            self::sendFile($abs, 'image/webp');
+            return;
+        }
+
         try {
-            $image = (new ImageResolver(new MetadataReader()))->resolve($src);
-            $absPath = (new AnimatedWebpEncoder())->encode($image);
-            if ($absPath === '' || !is_file($absPath)) {
-                self::respond(404, 'Not found');
-                return;
+            $lock = self::lockVariant($abs);
+            try {
+                if (!self::isServable($abs)) {
+                    $image = (new ImageResolver(new MetadataReader()))->resolve($src);
+                    (new AnimatedWebpEncoder())->encode($image);
+                }
+            } finally {
+                self::unlockVariant($lock);
             }
-            $bytes = (string) file_get_contents($absPath);
         } catch (Throwable $e) {
             rex_logger::logException($e);
             self::respond(404, 'Not found');
             return;
         }
 
-        header('Content-Type: image/webp');
-        header('Content-Length: ' . strlen($bytes));
-        header('Cache-Control: public, max-age=31536000, immutable');
-        header('ETag: "' . md5($bytes) . '"');
-        echo $bytes;
+        if (!self::isServable($abs)) {
+            self::respond(404, 'Not found');
+            return;
+        }
+        self::sendFile($abs, 'image/webp');
     }
 
     private static function respond(int $code, string $body): void

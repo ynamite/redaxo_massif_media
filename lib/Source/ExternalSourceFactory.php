@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Source;
 
+use rex_logger;
 use Ynamite\Media\Config;
 use Ynamite\Media\Exception\ImageNotFoundException;
 
@@ -50,14 +51,23 @@ final class ExternalSourceFactory
             && ($manifest['fetchedAt'] + ($manifest['ttl'] > 0 ? $manifest['ttl'] : $ttl)) > $now;
 
         if ($fresh) {
-            return new ExternalSource(
-                url: $manifest['url'],
-                hash: $hash,
-                absolutePath: $originPath,
-                fetchedAt: $manifest['fetchedAt'],
-                etag: $manifest['etag'],
-                remoteLastModified: $manifest['lastModified'],
-                ttlSeconds: $manifest['ttl'] > 0 ? $manifest['ttl'] : $ttl,
+            return $this->fromManifest($manifest, $hash, $originPath, $ttl);
+        }
+
+        // Failure sentinel: a recently failed fetch is NOT retried on every
+        // render (mirrors MetadataReader's failed-read sentinel, same TTL
+        // setting). Without this, one dead external URL blocks every page
+        // render for the full transport timeout (up to timeout+5s) until the
+        // upstream recovers. Stale body on disk → serve it (stale-on-error);
+        // no body → fail fast from the cached failure.
+        $sentinel = Config::sentinelTtlSeconds();
+        $failedAt = $manifest['failedAt'] ?? null;
+        if ($failedAt !== null && $sentinel > 0 && ($failedAt + $sentinel) > $now) {
+            if ($manifest !== null && $bodyExists) {
+                return $this->fromManifest($manifest, $hash, $originPath, $ttl);
+            }
+            throw new ImageNotFoundException(
+                'External fetch recently failed, retry suppressed for ' . $sentinel . 's: ' . $url,
             );
         }
 
@@ -65,15 +75,33 @@ final class ExternalSourceFactory
         $lastModified = $manifest['lastModified'] ?? null;
 
         $fetcher = $this->fetcher ?? new HttpFetcher();
-        $result = $fetcher->fetch(
-            url: $url,
-            resolvedIp: $ip,
-            destPath: $originPath,
-            etag: $bodyExists ? $etag : null,        // only use conditional GET when body exists
-            lastModified: $bodyExists ? $lastModified : null,
-            timeoutSeconds: Config::externalTimeoutSeconds(),
-            maxBytes: Config::externalMaxBytes(),
-        );
+        try {
+            $result = $fetcher->fetch(
+                url: $url,
+                resolvedIp: $ip,
+                destPath: $originPath,
+                etag: $bodyExists ? $etag : null,        // only use conditional GET when body exists
+                lastModified: $bodyExists ? $lastModified : null,
+                timeoutSeconds: Config::externalTimeoutSeconds(),
+                maxBytes: Config::externalMaxBytes(),
+            );
+        } catch (ImageNotFoundException $e) {
+            // Persist the failure sentinel so the next renders within the
+            // sentinel TTL don't re-pay the transport timeout.
+            ExternalManifest::write($hash, [
+                'url' => $url,
+                'etag' => $etag,
+                'lastModified' => $lastModified,
+                'fetchedAt' => $manifest['fetchedAt'] ?? 0,
+                'ttl' => $ttl,
+                'failedAt' => $now,
+            ]);
+            if ($manifest !== null && $bodyExists) {
+                rex_logger::logException($e);
+                return $this->fromManifest($manifest, $hash, $originPath, $ttl);
+            }
+            throw $e;
+        }
 
         // 304: keep body, just refresh fetchedAt so the &v= cache-buster moves
         //       and downstream readers see "still fresh" for another TTL window.
@@ -88,6 +116,7 @@ final class ExternalSourceFactory
             'lastModified' => $newLastModified,
             'fetchedAt' => $newFetchedAt,
             'ttl' => $ttl,
+            'failedAt' => null,
         ];
         ExternalManifest::write($hash, $data);
 
@@ -99,6 +128,25 @@ final class ExternalSourceFactory
             etag: $newEtag,
             remoteLastModified: $newLastModified,
             ttlSeconds: $ttl,
+        );
+    }
+
+    /**
+     * Build a source from a persisted manifest (fresh-cache return path and
+     * the stale-on-error path share this shape).
+     *
+     * @param array{url: string, etag: ?string, lastModified: ?int, fetchedAt: int, ttl: int, failedAt: ?int} $manifest
+     */
+    private function fromManifest(array $manifest, string $hash, string $originPath, int $defaultTtl): ExternalSource
+    {
+        return new ExternalSource(
+            url: $manifest['url'],
+            hash: $hash,
+            absolutePath: $originPath,
+            fetchedAt: $manifest['fetchedAt'],
+            etag: $manifest['etag'],
+            remoteLastModified: $manifest['lastModified'],
+            ttlSeconds: $manifest['ttl'] > 0 ? $manifest['ttl'] : $defaultTtl,
         );
     }
 
