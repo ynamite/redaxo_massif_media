@@ -651,6 +651,20 @@ Integration tests are not CI-gated; run them locally before tagging when touchin
 
 ## Out of scope / v2 candidates
 
+- boot-free cache-miss endpoint: a miss only truly needs the HMAC sign key
+  (rex_config → DB) plus the media/cache dir paths — the transform is encoded
+  in the signed path, filters in the `&f=` blob, the focal point in the fit
+  token, and Imagick/Glide ship in our `vendor/`. `install.php` could emit a
+  snapshot of those few values next to `_img/.bootstrap.php` (same
+  `PortablePath` technique) and `_img/index.php` could verify + encode + serve
+  without `core/boot.php`. Parked because the payoff is small (boot ~50–150ms
+  vs 100ms–seconds encode; hits already bypass boot via the static fastpath
+  and the endpoint's disk fastpath, and the per-variant lock bounds each
+  distinct variant to one boot+encode ever) while the drift risk is total —
+  a stale sign-key snapshot 403s every image on the site, and it must be
+  regenerated on install, key rotation, AND every relevant settings save.
+  Revisit only if profiling shows boot dominating (pages of many tiny
+  variants where encode is ~10ms).
 - symmetric mediapool resolution for existing bare-filename video posters
 - IPv6 support in `SsrfGuard`
 - shared default filters for all art-direction variants
