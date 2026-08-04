@@ -83,6 +83,30 @@ Request-handler pattern:
 5. handle response
 6. `exit`
 
+#### Endpoint serving: disk fastpath + per-variant lock
+
+`Endpoint` serves and generates around one invariant: **the URL cache path IS
+the on-disk path relative to `cache/`** (mediapool via `cachePathCallable` →
+`{src}/{spec}.{ext}`; external via the per-bucket server rooted at
+`cache/_external/<hash>/`). Three consequences, all load-bearing:
+
+- **Cache hits stream from disk** (`is_file` + `readfile`), no Glide/Flysystem
+  instantiation, ETag from mtime+size with `If-None-Match` → `304`. Files with
+  size 0 are not servable (refuses the broken-AVIF 0-byte shape).
+- **Cache misses take a blocking `flock` on `<variant>.lock`** before encoding,
+  and re-check servability after acquiring it — N concurrent requests for the
+  same uncached variant collapse into one encode. Without this, a cache clear
+  on a busy site produces an encode stampede that saturates the FPM pool.
+- After a successful `makeImage`, the file MUST exist at the expected path; if
+  not, the endpoint 404s loudly and logs — a silent byte-fallback would mask
+  URL-side/Glide-side cache-path drift as "re-encode on every request".
+
+Every PHP-served response carries `X-Massif-Media: php`. Diagnostic value:
+cache-hit URLs returning this header mean the static fastpath (`.htaccess` /
+nginx snippet) is not active and every image request pays a full REDAXO boot —
+check with `curl -sI <variant-url>` when a site reports slow responses on
+image-heavy pages.
+
 #### `_img/.bootstrap.php` is generated, not shipped
 
 `assets/_img/index.php` is the cache-miss entry point when `.htaccess` rewrites missing files into PHP. It `require`s `_img/.bootstrap.php`, which `install.php` regenerates on every install/reinstall via the live path provider. All paths in the generated file MUST be emitted as `__DIR__`-relative expressions via `Install\PortablePath::export()` — the file gets deployed to hosts where the absolute prefix differs (Deployer `releases/N`, other vhost roots) but the relative layout is identical; `var_export`'d absolute paths break there and trip `open_basedir` with the build machine's paths. Also: the live path provider is only reachable via reflection on `rex_path::$pathprovider` — core never stores it as a rex property, so `rex::getProperty('path_provider')` silently returns null and the provider block would never be emitted. The generated bootstrap MUST set:
@@ -145,6 +169,7 @@ cache/_external/<urlHash>/
 - `ExternalSourceFactory::resolveByHash()` is the endpoint read path and must not perform network IO.
 - Conditional GET `304` must still bump `fetchedAt`.
 - External fetch is synchronous on first render / expired TTL. Keep this trade-off unless a queue/placeholder system is introduced.
+- **Failed fetches are negative-cached.** A fetch failure writes `failedAt` into the manifest; within `Config::sentinelTtlSeconds()` (shared with the metadata failed-read sentinel, default 60s) no re-fetch happens — a stale `_origin.bin` on disk is served as-is (stale-on-error, logged), otherwise the resolve fails fast from the cached failure. A successful fetch clears `failedAt`. Without this, one dead external URL blocks every page render for the full transport timeout.
 
 ### Rendering order
 
@@ -529,7 +554,7 @@ Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)
 - `CacheInvalidator::invalidateUrl($url)` drops the full external URL bucket.
 - Variant directories are path-keyed and are the bulky part.
 - Tiny old sidecar orphans after file replacement are accepted.
-- The generic `CACHE_DELETED` hook (`boot.php`) wipes cache contents **except `_color/`** — dominant colours are a pure function of the image bytes (key: `source.key()+cacheBust()+CACHE_VERSION`), so no config/DB staleness exists for a generic clear to cure, and regenerating them costs a synchronous per-image decode at render time. `_meta/` (DB-stored focal point → clear is the backstop) and `_lqip/` (output depends on config values not in its cache key) stay in the wipe. The addon's own clear-cache button (`pages/settings.security.php`) still deletes everything including `_color/` — keep it that way as the escape hatch.
+- The generic `CACHE_DELETED` hook (`boot.php`) wipes cache contents **except `_color/` and `_lqip/`** — both are pure functions of the image bytes plus, for LQIP, config values that are part of its cache key since `Placeholder` CACHE_VERSION v3 (`lqip_width`/`lqip_quality`/`lqip_blur` in the hash). No config/DB staleness exists for a generic clear to cure, and regenerating either costs a synchronous per-image decode (LQIP additionally a webp encode) during the next HTML render. `_meta/` (DB-stored focal point → clear is the backstop) stays in the wipe. The addon's own clear-cache button (`pages/settings.security.php`) still deletes everything including `_color/` and `_lqip/` — keep it that way as the escape hatch.
 - `DominantColor` sets `jpeg:size` before `readImage()` so libjpeg does a DCT-scaled decode near thumbnail size instead of full resolution. Don't remove it as "redundant with `scaleImage`" — the full-res decode is the expensive part, not the scale.
 
 ## External fetch rules
