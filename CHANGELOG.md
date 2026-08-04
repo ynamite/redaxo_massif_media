@@ -5,6 +5,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.13] — 2026-08-04
+
 ### Fixed
 
 - **Cache-Endpoint: Cache-Hits streamen jetzt direkt von der Disk, Cache-Misses sind per Lock dedupliziert — keine Encode-Stampedes mehr nach „Cache leeren".** Zwei Probleme im PHP-Serving-Pfad (`Glide\Endpoint`): (1) Auch Cache-**Hits** instanzierten den kompletten Glide/Flysystem-Stack und lasen die Datei vollständig in den Speicher (`getCache()->read()` + `echo`, ETag per `md5` über die Bytes). Jetzt: `is_file`-Fastpath + `readfile()`-Streaming, ETag aus mtime+size, `If-None-Match` → `304`. (2) Bei Cache-**Misses** gab es keinerlei Concurrency-Kontrolle — N parallele Requests auf dieselbe ungecachte Variante encodierten N× parallel (AVIF: Sekunden CPU pro Encode, je ein PHP-FPM-Worker). Nach einem Cache-Clear auf einer besuchten Seite entstand so ein Encode-Sturm, der den Worker-Pool sättigte und **alle** Requests (auch HTML) ausbremste. Jetzt: blockierendes `flock` pro Variante (`<variante>.lock`), Waiter servieren nach Lock-Freigabe die inzwischen geschriebene Datei. Zusätzlich sendet der PHP-Pfad `X-Massif-Media: php` — Cache-Hit-URLs mit diesem Header bedeuten, dass der statische Fastpath (`.htaccess` / nginx-Snippet) nicht greift und jeder Bild-Request einen vollen REDAXO-Boot bezahlt (per `curl -sI <variant-url>` prüfbar). 0-Byte-Cache-Dateien (bekannte broken-AVIF-Form) werden nicht mehr als leere 200 serviert. Tests: `tests/Integration/EndpointServeTest.php` (Fastpath-ohne-Source, Miss-Encode am URL-Pfad, 304-Revalidierung, 0-Byte-Refusal, 403).
