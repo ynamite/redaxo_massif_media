@@ -482,6 +482,29 @@ Der Vorteil:
 
 ---
 
+## TinyMCE-Editorbilder
+
+Fügt ein Redakteur über das tinymce-Addon ein Bild ein, landet im Inhalt nur ein einfaches `<img>`:
+
+```html
+<p><img src="/media/tiny/standort-karte.jpg" alt="Standort Karte"></p>
+```
+
+Mit der Option **Einstellungen → Allgemein → TinyMCE → Editor-Bilder** ersetzt MASSIF Media dieses `<img>` im Frontend durch das vollständige `<picture>`-Markup (`Image::picture($datei, alt: …)`). Das `<p>` bleibt erhalten, nur `src` und `alt` werden übernommen.
+
+Ersetzt werden Bilder unter `/media/tiny/…` (so fügt tinymce Bilder aus dem Medienpool ein) sowie, falls in den TinyMCE-Einstellungen ein Upload-Typ konfiguriert ist, `/media/<upload-typ>/…`.
+
+Das `sizes`-Attribut ist als Einstellung konfigurierbar und lässt sich pro Modul im Code überschreiben, bevor die Seite ausgegeben wird:
+
+```php
+use Ynamite\Media\View\TinymceImageScanner;
+
+TinymceImageScanner::setSizes('(min-width: 768px) 50vw, 100vw');
+// TinymceImageScanner::setSizes(null); // zurück zur Einstellung
+```
+
+---
+
 ## REX_PIC Beispiele
 
 ### Einfachster Fall

@@ -58,6 +58,22 @@ $f->setLabel('Default <code>sizes</code>');
 $f->setAttribute('placeholder', '(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw');
 $f->setNotice('Wird genutzt, wenn beim Aufruf kein <code>sizes</code> übergeben wird.');
 
+$form->addFieldset('TinyMCE');
+
+$f = $form->addCheckboxField(Config::KEY_TINYMCE_PICTURE);
+$f->setLabel('Editor-Bilder');
+$f->addOption('Von TinyMCE eingefügte Bilder als <code>&lt;picture&gt;</code> rendern', 1);
+$f->setNotice(
+    'Ersetzt im Frontend-Output <code>&lt;img src="/media/&lt;typ&gt;/…"&gt;</code> durch <code>Image::picture()</code>-Markup. '
+    . '<code>&lt;typ&gt;</code> ist <code>tiny</code> (Mediapool-Auswahl) oder der in den TinyMCE-Einstellungen hinterlegte Upload-Typ. '
+    . 'Nur <code>src</code> und <code>alt</code> werden übernommen.'
+);
+
+$f = $form->addTextField(Config::KEY_TINYMCE_SIZES);
+$f->setLabel('Editor-Bilder <code>sizes</code>');
+$f->setAttribute('placeholder', 'leer = Default sizes');
+$f->setNotice('Optionales <code>sizes</code> für Editor-Bilder. Per Code überschreibbar: <code>TinymceImageScanner::setSizes(…)</code>.');
+
 $content = $form->getMessage() . $form->get();
 
 $fragment = new rex_fragment();

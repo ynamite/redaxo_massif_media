@@ -33,6 +33,8 @@ final class Config
     public const KEY_EXTERNAL_MAX_BYTES = 'external_max_bytes';
     public const KEY_EXTERNAL_HOST_ALLOWLIST = 'external_host_allowlist';
     public const KEY_CACHE_GENERATION = 'cache_generation';
+    public const KEY_TINYMCE_PICTURE = 'tinymce_picture';
+    public const KEY_TINYMCE_SIZES = 'tinymce_sizes';
 
     /**
      * Setting keys whose change invalidates already-cached variant content.
@@ -79,6 +81,8 @@ final class Config
         self::KEY_EXTERNAL_TIMEOUT_SECONDS => 15,
         self::KEY_EXTERNAL_MAX_BYTES => 26_214_400,      // 25 MB
         self::KEY_EXTERNAL_HOST_ALLOWLIST => '',         // empty = allow any host
+        self::KEY_TINYMCE_PICTURE => 0,
+        self::KEY_TINYMCE_SIZES => '',                   // empty = default_sizes
     ];
 
     public static function get(string $key, mixed $fallback = null): mixed
@@ -280,6 +284,17 @@ final class Config
     public static function defaultSizes(): string
     {
         return (string) self::get(self::KEY_DEFAULT_SIZES);
+    }
+
+    public static function tinymcePictureEnabled(): bool
+    {
+        return self::checkboxBool(self::KEY_TINYMCE_PICTURE);
+    }
+
+    /** Empty string = fall back to {@see defaultSizes()}. */
+    public static function tinymceSizes(): string
+    {
+        return trim((string) self::get(self::KEY_TINYMCE_SIZES));
     }
 
     public static function lqipEnabled(): bool

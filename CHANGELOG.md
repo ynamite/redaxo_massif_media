@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.14] — 2026-09-22
+
+### Added
+
+- **TinyMCE-Editorbilder als `<picture>`.** Neue Option unter Einstellungen → Allgemein → TinyMCE (Default: aus). Im Frontend-`OUTPUT_FILTER` (und im block_peek-Preview) wird `<img src="/media/<typ>/<datei>">` — das Markup, das das tinymce-Addon für hochgeladene Bilder einfügt — durch `Image::picture($datei, alt: …, sizes: …)` ersetzt. `<typ>` ist `tiny` (von tinymce für Mediapool-Auswahl hartkodiert) oder der in den TinyMCE-Einstellungen konfigurierte Upload-Typ. Nur `src`/`alt` werden übernommen, das umgebende `<p>` bleibt. Fail-open wie `EditorContentScanner`. `sizes` ist als Einstellung konfigurierbar und per `TinymceImageScanner::setSizes()` zur Laufzeit (z. B. im Modul-Output) überschreibbar. Tests: `tests/Unit/View/TinymceImageScannerTest.php`.
+
 ## [1.0.13] — 2026-08-04
 
 ### Fixed

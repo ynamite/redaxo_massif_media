@@ -11,6 +11,7 @@ use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Var\RexPic;
 use Ynamite\Media\Var\RexVideo;
 use Ynamite\Media\View\EditorContentScanner;
+use Ynamite\Media\View\TinymceImageScanner;
 
 // REX_PIC[...] / REX_VIDEO[...] in slice content → <picture> / <video> markup.
 // Native rex_vars, scoped to article rendering — do not fire on backend pages
@@ -32,7 +33,10 @@ rex_extension::register('PACKAGES_INCLUDED', [RequestHandler::class, 'handle'], 
 //      on module/article templates, so editor-input markers stay literal at
 //      cache-build time; the post-render scan rewrites them to `<picture>` /
 //      `<video>` markup. Cheap-skips when neither marker is present.
-//   2. Drain the static Preloader queue (populated by Image::preload() /
+//   2. Optionally swap tinymce-inserted `<img src="/media/<type>/…">` for
+//      `Image::picture()` markup (Config::tinymcePictureEnabled). Frontend
+//      only — backend pages (mediapool, editor previews) must keep raw <img>.
+//   3. Drain the static Preloader queue (populated by Image::preload() /
 //      ->preload()) and inject `<link rel="preload">` tags before `</head>`.
 //
 // Order matters: the scan pass may invoke `Image::picture(..., preload: true)`
@@ -46,6 +50,9 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
 
     $original = $subject;
     $subject = EditorContentScanner::scan($subject);
+    if (!rex::isBackend() && Config::tinymcePictureEnabled()) {
+        $subject = TinymceImageScanner::scan($subject);
+    }
 
     $preloadLinks = Preloader::drain();
     if ($preloadLinks !== '' && stripos($subject, '</head>') !== false) {
@@ -72,7 +79,11 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
 if (rex_addon::get('block_peek')->isAvailable()) {
     rex_extension::register('BLOCK_PEEK_OUTPUT', static function (rex_extension_point $ep): ?string {
         $subject = $ep->getSubject();
-        return is_string($subject) ? EditorContentScanner::scan($subject) : null;
+        if (!is_string($subject)) {
+            return null;
+        }
+        $subject = EditorContentScanner::scan($subject);
+        return Config::tinymcePictureEnabled() ? TinymceImageScanner::scan($subject) : $subject;
     });
 }
 

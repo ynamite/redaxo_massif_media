@@ -376,12 +376,13 @@ The scanner cheap-skips with two `stripos` calls when neither marker substring i
 
 #### `OUTPUT_FILTER` ordering
 
-`boot.php` registers a single `OUTPUT_FILTER` closure that does two things in sequence:
+`boot.php` registers a single `OUTPUT_FILTER` closure that does three things in sequence:
 
 1. `EditorContentScanner::scan($subject)` — replaces editor REX_PIC/REX_VIDEO literals.
-2. `Preloader::drain()` + `</head>` injection.
+2. `TinymceImageScanner::scan($subject)` — frontend only, gated by `Config::tinymcePictureEnabled()` (default off). Swaps `<img src="/media/<type>/<file>">` (tinymce's upload markup) for `Image::picture()`. `<type>` is `tiny` (hardcoded in tinymce's `assets/scripts/base.js` for mediapool-picked raster images) plus the upload type from tinymce's `media_upload_settings.upload_media_manager_type` config if set; neither is duplicated in our settings. `sizes` resolves `TinymceImageScanner::setSizes()` override → `Config::tinymceSizes()` → addon default. Also runs on `BLOCK_PEEK_OUTPUT`.
+3. `Preloader::drain()` + `</head>` injection.
 
-Order matters: a `REX_PIC[..., preload="true"]` in editor content invokes `Image::picture(..., preload: true)` during the scan, which queues a preload `<link>` via `Preloader::queue()`. That queue MUST drain before the `</head>` injection runs — keep step 1 before step 2.
+Order matters: a `REX_PIC[..., preload="true"]` in editor content invokes `Image::picture(..., preload: true)` during the scan, which queues a preload `<link>` via `Preloader::queue()`. That queue MUST drain before the `</head>` injection runs — keep steps 1–2 before step 3.
 
 ## Glide and media gotchas
 
