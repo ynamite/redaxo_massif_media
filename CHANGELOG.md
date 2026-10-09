@@ -5,6 +5,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.15] — 2026-10-09
+
 ### Fixed
 
 - **`REX_PIC`/`REX_VIDEO`-Scan nicht mehr im Backend.** Der Post-Render-Scan (`EditorContentScanner`) lief im `OUTPUT_FILTER` auch auf Backend-Seiten und hat dort HTML-escapte Tags im Quelltext geparst — etwa in der Modul-Code-Textarea. Folge: ein `ImageNotFoundException`-Eintrag im System-Log pro Seitenaufruf (z. B. `"REX_MEDIA[1` bei `src="REX_MEDIA[1]"`), und bei unquotiertem `src` wurde `<picture>`-Markup in die Textarea injiziert, das beim Speichern den Tag im Modul bzw. Slice überschrieben hätte. Der Scan läuft jetzt wie der TinyMCE-Scan nur noch im Frontend; block_peek-Vorschauen rendern weiterhin über `BLOCK_PEEK_OUTPUT`.
