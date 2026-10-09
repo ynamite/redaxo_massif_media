@@ -34,8 +34,11 @@ rex_extension::register('PACKAGES_INCLUDED', [RequestHandler::class, 'handle'], 
 //      cache-build time; the post-render scan rewrites them to `<picture>` /
 //      `<video>` markup. Cheap-skips when neither marker is present.
 //   2. Optionally swap tinymce-inserted `<img src="/media/<type>/…">` for
-//      `Image::picture()` markup (Config::tinymcePictureEnabled). Frontend
-//      only — backend pages (mediapool, editor previews) must keep raw <img>.
+//      `Image::picture()` markup (Config::tinymcePictureEnabled).
+// Both scans are frontend only. Backend pages show tags as *source* — module
+// edit textareas, slice edit forms — HTML-escaped; scanning there logs bogus
+// errors and can inject `<picture>` markup into a textarea, which a save then
+// persists over the tag. Backend previews go through BLOCK_PEEK_OUTPUT below.
 //   3. Drain the static Preloader queue (populated by Image::preload() /
 //      ->preload()) and inject `<link rel="preload">` tags before `</head>`.
 //
@@ -49,9 +52,11 @@ rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $e
     }
 
     $original = $subject;
-    $subject = EditorContentScanner::scan($subject);
-    if (!rex::isBackend() && Config::tinymcePictureEnabled()) {
-        $subject = TinymceImageScanner::scan($subject);
+    if (!rex::isBackend()) {
+        $subject = EditorContentScanner::scan($subject);
+        if (Config::tinymcePictureEnabled()) {
+            $subject = TinymceImageScanner::scan($subject);
+        }
     }
 
     $preloadLinks = Preloader::drain();
