@@ -72,7 +72,7 @@ $f->setNotice(
 $f = $form->addTextField(Config::KEY_TINYMCE_SIZES);
 $f->setLabel('Editor-Bilder <code>sizes</code>');
 $f->setAttribute('placeholder', 'leer = Default sizes');
-$f->setNotice('Optionales <code>sizes</code> für Editor-Bilder. Per Code überschreibbar: <code>TinymceImageScanner::setSizes(…)</code>.');
+$f->setNotice('Optionales <code>sizes</code> für Editor-Bilder ohne in TinyMCE gesetzte Breite (mit Breite wird <code>sizes</code> daraus abgeleitet). Per Code überschreibbar: <code>TinymceImageScanner::setSizes(…)</code>.');
 
 $content = $form->getMessage() . $form->get();
 
