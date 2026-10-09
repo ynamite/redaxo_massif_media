@@ -490,11 +490,22 @@ Fügt ein Redakteur über das tinymce-Addon ein Bild ein, landet im Inhalt nur e
 <p><img src="/media/tiny/standort-karte.jpg" alt="Standort Karte"></p>
 ```
 
-Mit der Option **Einstellungen → Allgemein → TinyMCE → Editor-Bilder** ersetzt MASSIF Media dieses `<img>` im Frontend durch das vollständige `<picture>`-Markup (`Image::picture($datei, alt: …)`). Das `<p>` bleibt erhalten, nur `src` und `alt` werden übernommen.
+Mit der Option **Einstellungen → Allgemein → TinyMCE → Editor-Bilder** ersetzt MASSIF Media dieses `<img>` im Frontend durch das vollständige `<picture>`-Markup (`Image::picture($datei, alt: …)`). Das `<p>` bleibt erhalten. Übernommen werden `src`, `alt`, `class` und die in tinymce gesetzte Breite:
+
+- **Breite:** aus dem `width`-Attribut, sonst aus `width: …px` im `style` (nur Pixelwerte, `%`/`em`/`auto` werden ignoriert). Sie geht als `Image::picture(width: …)` ins Markup, das Bild erscheint also in der in tinymce eingestellten Grösse (begrenzt durch `max-width` des Layouts).
+- **Höhe** wird bewusst ignoriert und aus dem Seitenverhältnis des Bilds abgeleitet — genau das, was tinymce bei fixiertem Seitenverhältnis anzeigt. Bei entsperrtem Seitenverhältnis wird das Bild nicht verzerrt, sondern im eigenen Verhältnis dargestellt.
+- Der übrige `style` (Float, Margins usw.) wird verworfen.
 
 Ersetzt werden Bilder unter `/media/tiny/…` (so fügt tinymce Bilder aus dem Medienpool ein) sowie, falls in den TinyMCE-Einstellungen ein Upload-Typ konfiguriert ist, `/media/<upload-typ>/…`.
 
-Das `sizes`-Attribut ist als Einstellung konfigurierbar und lässt sich pro Modul im Code überschreiben, bevor die Seite ausgegeben wird:
+Das `sizes`-Attribut wird so bestimmt:
+
+1. `TinymceImageScanner::setSizes(…)` aus dem Code (siehe unten) gewinnt immer.
+2. Hat das Bild eine Breite (siehe oben): `auto, (max-width: <B>px) 100vw, <B>px` — das Bild ist höchstens so breit wie in tinymce gesetzt und höchstens so breit wie der Viewport.
+3. Sonst die Einstellung **Editor-Bilder `sizes`**.
+4. Sonst der Addon-Default.
+
+Überschreiben pro Modul im Code, bevor die Seite ausgegeben wird:
 
 ```php
 use Ynamite\Media\View\TinymceImageScanner;
