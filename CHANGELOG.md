@@ -5,6 +5,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Changed
+
+- **TinyMCE-Editorbilder übernehmen Breite und `class`.** Der `TinymceImageScanner` liest die in tinymce gesetzte Breite (`width`-Attribut, sonst `width: …px` im `style`, nur Pixelwerte) und übergibt sie als `Image::picture(width: …)` — das `<picture>` erscheint in der Grösse, die der Redakteur eingestellt hat, statt in der intrinsischen. Die Höhe wird bewusst ignoriert und aus dem Seitenverhältnis abgeleitet (tinymce rundet die Höhe; mit beiden Werten liefe fast jedes Bild in den Crop-Pfad). `class` wird übernommen, der übrige `style` weiterhin verworfen. Mit bekannter Breite wird `sizes` zu `auto, (max-width: <B>px) 100vw, <B>px`; das hat Vorrang vor der Einstellung **Editor-Bilder `sizes`**, `TinymceImageScanner::setSizes()` gewinnt weiterhin.
+
 ## [1.0.15] — 2026-10-09
 
 ### Fixed
