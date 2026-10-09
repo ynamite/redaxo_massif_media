@@ -363,6 +363,8 @@ REX_VIDEO[poster="REX_PIC[src='hero.jpg' width='1280' as='url']"]
 
 2. **Post-render scan** (`View/EditorContentScanner`): runs in the `OUTPUT_FILTER` extension point in `boot.php`. Scans the final rendered HTML, regex-matches each `REX_PIC[…]` / `REX_VIDEO[…]` substring, and replaces with `<picture>` / `<video>` markup. Necessary because `rex_var::parse()` is never called on slice values, MetaInfo text, or YForm rich-text fields — only on module/article templates (`article_content_base.php:523`, `cache_template.php:29`). Without this pass, a tag typed into a rich-text editor stays literal in the rendered page.
 
+   **Frontend only** (`!rex::isBackend()` in `boot.php`). Backend pages render tags as *source* — module edit textareas, slice edit forms — HTML-escaped (`REX_PIC[src=&quot;…&quot;]`). Scanning there logs bogus `ImageNotFoundException`s per page view (the regex stops at the first `]`, e.g. inside `REX_MEDIA[1]`) and, for unquoted `src`, injects `<picture>` markup into the textarea, which a save then persists over the tag. Backend slice previews that need rendering go through `BLOCK_PEEK_OUTPUT`. Don't remove the gate; if a backend page ever needs the scan, whitelist that page.
+
 The post-render scan does NOT support:
 - Nested REX_VARs inside attribute values (template-level vars have already resolved by output-filter time, so any nested REX_VAR in editor input never went through the cache-build pass either).
 - `[` or `]` inside attribute values (same constraint as REDAXO's tokenizer).
@@ -378,8 +380,8 @@ The scanner cheap-skips with two `stripos` calls when neither marker substring i
 
 `boot.php` registers a single `OUTPUT_FILTER` closure that does three things in sequence:
 
-1. `EditorContentScanner::scan($subject)` — replaces editor REX_PIC/REX_VIDEO literals.
-2. `TinymceImageScanner::scan($subject)` — frontend only, gated by `Config::tinymcePictureEnabled()` (default off). Swaps `<img src="/media/<type>/<file>">` (tinymce's upload markup) for `Image::picture()`. `<type>` is `tiny` (hardcoded in tinymce's `assets/scripts/base.js` for mediapool-picked raster images) plus the upload type from tinymce's `media_upload_settings.upload_media_manager_type` config if set; neither is duplicated in our settings. `sizes` resolves `TinymceImageScanner::setSizes()` override → `Config::tinymceSizes()` → addon default. Also runs on `BLOCK_PEEK_OUTPUT`.
+1. `EditorContentScanner::scan($subject)` — frontend only (see "Post-render scan" above). Replaces editor REX_PIC/REX_VIDEO literals.
+2. `TinymceImageScanner::scan($subject)` — frontend only, also gated by `Config::tinymcePictureEnabled()` (default off). Swaps `<img src="/media/<type>/<file>">` (tinymce's upload markup) for `Image::picture()`. `<type>` is `tiny` (hardcoded in tinymce's `assets/scripts/base.js` for mediapool-picked raster images) plus the upload type from tinymce's `media_upload_settings.upload_media_manager_type` config if set; neither is duplicated in our settings. `sizes` resolves `TinymceImageScanner::setSizes()` override → `Config::tinymceSizes()` → addon default. Also runs on `BLOCK_PEEK_OUTPUT`.
 3. `Preloader::drain()` + `</head>` injection.
 
 Order matters: a `REX_PIC[..., preload="true"]` in editor content invokes `Image::picture(..., preload: true)` during the scan, which queues a preload `<link>` via `Preloader::queue()`. That queue MUST drain before the `</head>` injection runs — keep steps 1–2 before step 3.
