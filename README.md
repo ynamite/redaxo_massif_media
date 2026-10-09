@@ -854,7 +854,7 @@ REDAXO ruft `rex_var::parse()` auf den Modul-/Template-PHP-Code auf. `REX_PIC[�
 
 **2. Post-Render-Scan** (Slice-Content / WYSIWYG, Rich-Text-Felder):
 
-REDAXOs `rex_var::parse()` läuft nicht auf gespeicherten Slice-Werten — nur auf Modul-/Template-PHP-Code. Damit `REX_PIC[…]` auch in Editor-Inhalten funktioniert, scannt der Addon im `OUTPUT_FILTER` das gerenderte HTML nach `REX_PIC[…]` / `REX_VIDEO[…]` und ersetzt die Treffer. Der Scan überspringt Seiten ohne entsprechende Marker per `stripos`-Prüfung (Kosten ≈ 0); auf Seiten mit Markern wird pro Tag ein `Image::picture()` / `Video::render()` aufgerufen.
+REDAXOs `rex_var::parse()` läuft nicht auf gespeicherten Slice-Werten — nur auf Modul-/Template-PHP-Code. Damit `REX_PIC[…]` auch in Editor-Inhalten funktioniert, scannt der Addon im `OUTPUT_FILTER` das gerenderte HTML nach `REX_PIC[…]` / `REX_VIDEO[…]` und ersetzt die Treffer. Der Scan überspringt Seiten ohne entsprechende Marker per `stripos`-Prüfung (Kosten ≈ 0); auf Seiten mit Markern wird pro Tag ein `Image::picture()` / `Video::render()` aufgerufen. Der Scan läuft nur im Frontend — im Backend (Modul-Editor, Slice-Formulare) bleiben die Tags als Quelltext unangetastet; Slice-Vorschauen via block_peek werden separat gerendert.
 
 Limitierungen des Scan-Pfads gegenüber dem Cache-Build-Pfad:
 
