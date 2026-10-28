@@ -5,6 +5,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.17] — 2026-10-28
+
 ### Added
 
 - **Lokale Entwicklung: fehlende Mediapool-Dateien kommen von der Live-Site.** Fehlt eine Mediapool-Datei lokal, wird `<server>/media/<datei>` über die bestehende Pipeline für externe Quellen geladen (Cache, TTL, SSRF-Schutz, Glide-Varianten, LQIP). `<server>` ist der `server:`-Wert aus der `config.yml`. Statt `<!-- massif_media: src not found … -->` erscheint so das echte Bild. Das gilt für `Image::picture()`, `Image::url()`, Art Direction und `REX_PIC`. Bei `REX_VIDEO` zeigt die `<source>` direkt auf die Live-URL. Der Fallback greift nur, wenn der `server:`-Host vom Anfrage-Host abweicht und weder `.test` noch `localhost` ist. Auf Live und Staging ändert sich daher nichts, im CLI ebenfalls nicht. Die Host-Allowlist gilt für diesen Host nicht, der SSRF-Schutz schon. Der Fokuspunkt aus der lokalen `rex_media`-Zeile wird übernommen.
