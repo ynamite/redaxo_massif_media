@@ -171,6 +171,16 @@ cache/_external/<urlHash>/
 - External fetch is synchronous on first render / expired TTL. Keep this trade-off unless a queue/placeholder system is introduced.
 - **Failed fetches are negative-cached.** A fetch failure writes `failedAt` into the manifest; within `Config::sentinelTtlSeconds()` (shared with the metadata failed-read sentinel, default 60s) no re-fetch happens — a stale `_origin.bin` on disk is served as-is (stale-on-error, logged), otherwise the resolve fails fast from the cached failure. A successful fetch clears `failedAt`. Without this, one dead external URL blocks every page render for the full transport timeout.
 
+#### Remote mediapool fallback (local dev)
+
+When `MediapoolSourceFactory` throws because the file is missing on disk, `ImageResolver::resolveRemote()` retries via `ExternalSourceFactory` with `Source\RemoteMedia::url($filename)` = `<rex::getServer()>/media/<rawurlencode(file)>`. Local sites don't sync `media/`, but they do sync the DB.
+
+- `RemoteMedia::base()` returns null, meaning no fallback, when the `server:` host equals the request host (`www.`/port/case-insensitive), when there's no `HTTP_HOST` (CLI), or when the host is `.test`, `localhost` or REDAXO's install default `redaxo.org`. Prod/staging therefore keep the current behaviour. Don't drop the same-host check: on prod, every missing file would fetch from itself.
+- `resolve(..., bypassAllowlist: true)`: the host comes from config.yml rather than editor input, so `external_host_allowlist` doesn't apply. `SsrfGuard`'s IP check still runs.
+- The source is an `ExternalSource`, so `MetadataReader` sees no `rex_media`. The resolver reads `med_focuspoint` from the local row (`ResolvedImage::withFocal()`). Without this, the focal point is lost silently.
+- If the remote also fails, the resolver throws `ImageNotFoundException` with the original message plus the remote reason, and `ImageBuilder` emits the usual missing-src marker. Negative caching (above) keeps a dead remote from stalling renders.
+- `VideoBuilder` doesn't go through the resolver. A missing local video points `<source>` straight at the `RemoteMedia::url()`.
+
 ### Rendering order
 
 For `<picture>` output:
