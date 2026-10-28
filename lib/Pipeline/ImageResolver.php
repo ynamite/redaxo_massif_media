@@ -8,6 +8,7 @@ use rex_media;
 use Ynamite\Media\Exception\ImageNotFoundException;
 use Ynamite\Media\Source\ExternalSourceFactory;
 use Ynamite\Media\Source\MediapoolSourceFactory;
+use Ynamite\Media\Source\RemoteMedia;
 use Ynamite\Media\Source\SourceInterface;
 
 /**
@@ -41,11 +42,47 @@ final class ImageResolver
      */
     public function resolve(string|rex_media $src): ResolvedImage
     {
-        $source = is_string($src) && self::looksLikeUrl($src)
-            ? $this->externalFactory->resolve($src)
-            : $this->mediapoolFactory->resolve($src);
+        if (is_string($src) && self::looksLikeUrl($src)) {
+            return $this->metadataReader->read($this->externalFactory->resolve($src));
+        }
+
+        try {
+            $source = $this->mediapoolFactory->resolve($src);
+        } catch (ImageNotFoundException $missing) {
+            return $this->resolveRemote($src, $missing);
+        }
 
         return $this->metadataReader->read($source);
+    }
+
+    /**
+     * Local-dev fallback: mediapool file missing on disk → fetch the live
+     * site's `/media/<file>` through the external pipeline (see
+     * {@see RemoteMedia}). The rex_media row is synced even when the file
+     * isn't, so its focal point is carried over — the external source alone
+     * has no mediapool metadata.
+     */
+    private function resolveRemote(string|rex_media $src, ImageNotFoundException $missing): ResolvedImage
+    {
+        $filename = $src instanceof rex_media ? $src->getFileName() : $src;
+        $url = RemoteMedia::url($filename);
+        if ($url === null) {
+            throw $missing;
+        }
+
+        try {
+            // Host comes from config.yml, not editor input → skip the allowlist; SSRF guard stays on.
+            $source = $this->externalFactory->resolve($url, bypassAllowlist: true);
+        } catch (ImageNotFoundException $e) {
+            throw new ImageNotFoundException($missing->getMessage() . ' (remote fallback failed: ' . $e->getMessage() . ')', 0, $e);
+        }
+
+        $image = $this->metadataReader->read($source);
+        $media = $src instanceof rex_media ? $src : rex_media::get($filename);
+        $raw = $media?->getValue('med_focuspoint');
+        $focal = is_string($raw) ? $this->metadataReader->normalizeFocal($raw) : null;
+
+        return $focal === null ? $image : $image->withFocal($focal);
     }
 
     /**

@@ -22,7 +22,6 @@ use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Pipeline\RenderContext;
-use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
 use Ynamite\Media\Source\ExternalSource;
@@ -311,7 +310,7 @@ final class ImageBuilder
         }
 
         if ($this->focal !== null) {
-            $image = $this->withFocal($image, $this->focal);
+            $image = $image->withFocal($this->focal);
         }
 
         if ($image->isPassthrough()) {
@@ -412,7 +411,7 @@ final class ImageBuilder
         }
 
         if ($this->focal !== null) {
-            $image = $this->withFocal($image, $this->focal);
+            $image = $image->withFocal($this->focal);
         }
 
         if ($image->isPassthrough()) {
@@ -453,19 +452,6 @@ final class ImageBuilder
             return 'webp';
         }
         return strtolower((string) $configured[0]);
-    }
-
-    private function withFocal(ResolvedImage $image, string $focal): ResolvedImage
-    {
-        return new ResolvedImage(
-            source: $image->source,
-            intrinsicWidth: $image->intrinsicWidth,
-            intrinsicHeight: $image->intrinsicHeight,
-            mime: $image->mime,
-            sourceFormat: $image->sourceFormat,
-            focalPoint: $focal,
-            isAnimated: $image->isAnimated,
-        );
     }
 
     /**

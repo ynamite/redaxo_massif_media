@@ -33,11 +33,15 @@ final class ExternalSourceFactory
     }
 
     /**
+     * `$bypassAllowlist` is for URLs built from site config (the
+     * {@see RemoteMedia} fallback), never editor input. The SSRF IP check
+     * still runs.
+     *
      * @throws ImageNotFoundException on SSRF / fetch / write failure
      */
-    public function resolve(string $url): ExternalSource
+    public function resolve(string $url, bool $bypassAllowlist = false): ExternalSource
     {
-        [$host, $ip] = SsrfGuard::validate($url, Config::externalHostAllowlist());
+        [$host, $ip] = SsrfGuard::validate($url, $bypassAllowlist ? [] : Config::externalHostAllowlist());
 
         $hash = ExternalSource::hashFor($url);
         $manifest = ExternalManifest::read($hash);

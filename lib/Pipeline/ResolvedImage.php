@@ -19,6 +19,19 @@ final readonly class ResolvedImage
     ) {
     }
 
+    public function withFocal(string $focal): self
+    {
+        return new self(
+            source: $this->source,
+            intrinsicWidth: $this->intrinsicWidth,
+            intrinsicHeight: $this->intrinsicHeight,
+            mime: $this->mime,
+            sourceFormat: $this->sourceFormat,
+            focalPoint: $focal,
+            isAnimated: $this->isAnimated,
+        );
+    }
+
     public function isPassthrough(): bool
     {
         return in_array($this->sourceFormat, ['svg', 'gif'], true);

@@ -14,6 +14,7 @@ use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\Preloader;
+use Ynamite\Media\Source\RemoteMedia;
 
 final class VideoBuilder
 {
@@ -146,12 +147,15 @@ final class VideoBuilder
         }
 
         $isExternal = is_string($this->src) && str_contains($this->src, '://');
+        $absPath = rex_path::media($filename);
+        // Local dev: missing mediapool video → point straight at the live site's
+        // /media/ (external videos are passed through as-is anyway).
+        $remoteUrl = !$isExternal && !is_readable($absPath) ? RemoteMedia::url($filename) : null;
 
-        if ($isExternal) {
-            $url = $this->src;
+        if ($isExternal || $remoteUrl !== null) {
+            $url = $remoteUrl ?? $this->src;
             $ext = self::extFromUrl($url);
         } else {
-            $absPath = rex_path::media($filename);
             if (!is_readable($absPath)) {
                 rex_logger::logException(
                     new RuntimeException('massif_media: video src not readable: ' . $filename),

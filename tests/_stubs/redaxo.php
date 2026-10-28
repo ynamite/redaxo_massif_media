@@ -208,6 +208,17 @@ if (!class_exists('rex')) {
     {
         private static bool $isBackend = false;
         private static bool $isDebug = false;
+        private static string $server = 'https://www.redaxo.org/';
+
+        public static function getServer(): string
+        {
+            return self::$server;
+        }
+
+        public static function _setServer(string $value): void
+        {
+            self::$server = $value;
+        }
 
         public static function isBackend(): bool
         {
