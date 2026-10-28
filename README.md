@@ -1515,6 +1515,20 @@ wird ein leerer String ausgegeben.
 
 Endbenutzer sehen keine Fehlermeldung, der `rex_logger`-Eintrag bleibt aber erhalten.
 
+## Lokale Entwicklung ohne `media/`-Ordner
+
+Fehlt eine Mediapool-Datei lokal (z. B. weil `media/` beim Sync von der Live-Site ausgelassen wird), holt MASSIF Media das Original von der Live-Site: `<server>/media/<datei>`, wobei `<server>` der `server:`-Wert aus der REDAXO-`config.yml` ist. Die Datei läuft danach durch die normale Pipeline für externe Quellen (Cache unter `cache/_external/<hash>/`, TTL, SSRF-Schutz, Glide-Varianten, LQIP). Das gilt für `Image::picture()`, `Image::url()`, Art-Direction-Varianten und `REX_PIC`. Bei `REX_VIDEO` zeigt die `<source>` direkt auf die Live-URL.
+
+Der Fallback greift nur, wenn
+
+- der Host von `server:` sich vom Host der aktuellen Anfrage unterscheidet (`www.` und Port werden ignoriert). Auf Live und Staging zeigt `server:` auf die eigene Domain, dort ändert sich nichts.
+- es eine Anfrage-Domain gibt. Im CLI greift er nicht.
+- `server:` nicht auf `.test`, `localhost` oder den REDAXO-Default `www.redaxo.org` zeigt.
+
+Die Host-Allowlist für externe Quellen gilt für diesen Host nicht, weil er aus der Site-Konfiguration stammt und nicht aus Redakteurs-Eingaben. Der SSRF-Schutz bleibt aktiv. Ein Fokuspunkt aus der lokalen `rex_media`-Zeile (`med_focuspoint`) wird übernommen.
+
+Liefert auch die Live-Site die Datei nicht (404, Timeout), verhält sich das Addon wie ohne Fallback: Log-Eintrag und bei `debug: true` der Kommentar `<!-- massif_media: src not found "…" -->`.
+
 ---
 
 # Technische Details
