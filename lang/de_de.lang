@@ -19,3 +19,6 @@ massif_media_settings_saved = Einstellungen gespeichert.
 massif_media_key_regenerated = Sign Key neu generiert.
 massif_media_cache_cleared = Addon Cache geleert.
 massif_media_csrf_invalid = CSRF Token ungültig — Formular bitte erneut absenden.
+
+massif_media_asset_host = Asset-Host (Pull Zone)
+massif_media_asset_host_notice = Unabhängig vom CDN-Modus: Eine Pull Zone (z. B. Bunny.net) liefert lokal erzeugte Bildvarianten und Mediapool-Dateien aus; die Kodierung bleibt auf dem Server. Nur bei deaktiviertem CDN-Modus wirksam. Basis-URL ohne abschließenden Slash; leer = bisherige URLs. Externe Quellen bleiben unverändert.

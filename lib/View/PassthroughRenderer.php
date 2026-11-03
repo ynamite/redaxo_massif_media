@@ -80,7 +80,7 @@ final class PassthroughRenderer
     ): string {
         $src = $image->source instanceof ExternalSource
             ? $image->source->url
-            : rex_url::base() . 'media/' . $image->source->key();
+            : UrlBuilder::assetUrl(rex_url::base() . 'media/' . $image->source->key());
 
         $attrs = [
             'src' => $src,

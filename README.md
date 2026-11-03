@@ -136,6 +136,19 @@ Redakteure müssen dafür kein PHP schreiben.
 
 ---
 
+### Asset-Host (Pull Zone)
+
+Unter **Einstellungen → CDN → Asset-Host (Pull Zone)** kann eine Pull-Zone-Basis-URL
+wie `https://cdn.example.net` hinterlegt werden. Bilder werden weiterhin lokal
+als AVIF/WebP/JPG erzeugt; die Pull Zone (z. B. Bunny.net ohne Optimizer) übernimmt
+nur die Auslieferung vom Origin. Der Host wird lokalen Varianten, animiertem WebP,
+SVG/GIF-Passthrough und Mediapool-Videos vorangestellt. Externe Quellen bleiben
+unverändert. Leer lassen, um die bisherigen URLs zu behalten.
+
+Die Option ist unabhängig vom folgenden CDN-Override und wirkt nur bei
+**deaktiviertem CDN-Modus**. `Config::assetHost()` liefert den wirksamen Host ohne
+abschließenden Slash (bei aktivem CDN-Modus einen leeren String).
+
 ### Optionaler CDN-Override
 
 MASSIF Media kann optional so konfiguriert werden, dass Bild-URLs über ein CDN laufen.
@@ -1226,6 +1239,7 @@ Alle Einstellungen sind erreichbar unter:
 | `default_sizes` | `(min-width: 1280px) 640px, (min-width: 768px) 50vw, 90vw` | Default `sizes`-Attribut                                       |
 | `lqip_*`        | aktiviert, 32 px, blur 5, q 40                             | LQIP-Tuning                                                    |
 | `color_enabled` | aktiviert                                                  | Dominante Farbe als `background-color`                         |
+| `asset_host`    | `''`                                                       | Pull-Zone-Host bei deaktiviertem CDN-Modus                      |
 | `cdn_*`         | deaktiviert                                                | CDN-Override mit Base und Template                             |
 
 ---

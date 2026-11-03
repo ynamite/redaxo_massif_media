@@ -14,6 +14,7 @@ use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\Preloader;
+use Ynamite\Media\Pipeline\UrlBuilder;
 use Ynamite\Media\Source\RemoteMedia;
 
 final class VideoBuilder
@@ -338,7 +339,7 @@ final class VideoBuilder
             $base = Config::cdnBase();
             return $base . '/' . ltrim($filename, '/') . '?v=' . $mtime;
         }
-        return rex_url::base() . 'media/' . $filename . '?v=' . $mtime;
+        return UrlBuilder::assetUrl(rex_url::base() . 'media/' . $filename . '?v=' . $mtime);
     }
 
     /**

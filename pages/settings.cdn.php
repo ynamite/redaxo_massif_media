@@ -9,6 +9,11 @@ $form = ConfigForm::factory(Config::ADDON);
 
 $form->addFieldset('CDN');
 
+$f = $form->addTextField(Config::KEY_ASSET_HOST);
+$f->setLabel(rex_i18n::msg('massif_media_asset_host'));
+$f->setAttribute('placeholder', 'https://cdn.example.net');
+$f->setNotice(rex_i18n::msg('massif_media_asset_host_notice'));
+
 $f = $form->addCheckboxField(Config::KEY_CDN_ENABLED);
 $f->setLabel('CDN aktiviert');
 $f->addOption('Lokale Glide-Pipeline überspringen, CDN-URLs ausgeben', 1);

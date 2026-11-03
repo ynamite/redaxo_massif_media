@@ -12,6 +12,13 @@ use Ynamite\Media\Glide\Signature;
 
 final class UrlBuilder
 {
+    /** Prefix a local URL, including REDAXO's relative backend paths. */
+    public static function assetUrl(string $url): string
+    {
+        $host = Config::assetHost();
+        return $host !== '' ? $host . '/' . ltrim($url, './') : $url;
+    }
+
     /**
      * Build a URL for a single variant of a resolved image.
      *
@@ -52,6 +59,9 @@ final class UrlBuilder
         $signature = Signature::sign($cachePath, $filterBlob !== '' ? $filterBlob : null);
 
         $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
+        if (!$image->source->isExternal()) {
+            $url = self::assetUrl($url);
+        }
         $url .= '?s=' . $signature;
         $bust = $image->source->cacheBust();
         if ($bust !== '' && $bust !== '0') {
@@ -88,7 +98,7 @@ final class UrlBuilder
         }
         $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key());
         $signature = Signature::sign($cachePath);
-        $url = rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath);
+        $url = self::assetUrl(rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath));
         $url .= '?s=' . $signature;
         $bust = $image->source->cacheBust();
         if ($bust !== '' && $bust !== '0') {

@@ -5,6 +5,12 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.18] — 2026-11-03
+
+### Added
+
+- **Asset-Host (Pull Zone):** Neue Einstellung `asset_host` auf dem CDN-Tab und `Config::assetHost()` für reine Origin-Pull-Auslieferung (z. B. Bunny.net). Lokale Bildvarianten, animiertes WebP, SVG/GIF-Passthrough und Mediapool-Videos erhalten den Host als Präfix; die Kodierung bleibt auf dem Server. Standard ist leer. Externe Quellen und der bestehende CDN-Modus bleiben unverändert; bei aktivem CDN-Modus ist der Asset-Host wirkungslos.
+
 ## [1.0.17] — 2026-10-28
 
 ### Added

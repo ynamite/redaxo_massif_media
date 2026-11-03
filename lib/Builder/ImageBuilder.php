@@ -417,7 +417,7 @@ final class ImageBuilder
         if ($image->isPassthrough()) {
             return $image->source instanceof ExternalSource
                 ? $image->source->url
-                : rex_url::base() . 'media/' . $image->source->key();
+                : UrlBuilder::assetUrl(rex_url::base() . 'media/' . $image->source->key());
         }
 
         $effectiveFormat = strtolower($format ?? $this->resolveDefaultFormat());

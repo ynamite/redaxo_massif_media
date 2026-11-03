@@ -23,6 +23,7 @@ final class Config
     public const KEY_LQIP_BLUR = 'lqip_blur';
     public const KEY_LQIP_QUALITY = 'lqip_quality';
     public const KEY_COLOR_ENABLED = 'color_enabled';
+    public const KEY_ASSET_HOST = 'asset_host';
     public const KEY_CDN_ENABLED = 'cdn_enabled';
     public const KEY_CDN_BASE = 'cdn_base';
     public const KEY_CDN_URL_TEMPLATE = 'cdn_url_template';
@@ -72,6 +73,7 @@ final class Config
         self::KEY_LQIP_BLUR => 5,
         self::KEY_LQIP_QUALITY => 40,
         self::KEY_COLOR_ENABLED => 1,
+        self::KEY_ASSET_HOST => '',
         self::KEY_CDN_ENABLED => 0,
         self::KEY_CDN_BASE => '',
         self::KEY_CDN_URL_TEMPLATE => '',
@@ -320,6 +322,12 @@ final class Config
     public static function colorEnabled(): bool
     {
         return self::checkboxBool(self::KEY_COLOR_ENABLED);
+    }
+
+    /** Effective Pull Zone host; CDN mode keeps its existing URL handling. */
+    public static function assetHost(): string
+    {
+        return self::cdnEnabled() ? '' : rtrim(trim((string) self::get(self::KEY_ASSET_HOST)), '/');
     }
 
     public static function cdnEnabled(): bool
