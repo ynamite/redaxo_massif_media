@@ -16,22 +16,6 @@ Guidance for Claude Code working in this repository.
 
 Design spec, if needed: `/Users/yvestorres/.claude/plans/this-directory-is-a-luminous-candy.md`.
 
-## Product scope
-
-The addon provides:
-
-- modern `<picture>` output with AVIF/WebP/JPG browser negotiation
-- SVG/GIF passthrough
-- responsive video rendering
-- on-demand resizing through `league/glide` with Imagick
-- HMAC-signed cache URLs to prevent disk-fill abuse
-- optional CDN URL generation for ImageKit / Cloudinary / Imgix-style templates
-- optional external HTTPS image sources with SSRF protection, local origin caching, TTL, and conditional GET
-- LQIP placeholders, dominant colour extraction, focal-point support, and preload injection
-- backend settings under **AddOns → MASSIF Media → Einstellungen**
-- backend docs under **AddOns → MASSIF Media → Dokumentation**, rendered from `README.md`
-- editor-facing `REX_PIC[...]` and `REX_VIDEO[...]` placeholders via native `rex_var`
-
 ## Core invariants
 
 Do not casually change these. They are load-bearing.
@@ -190,68 +174,9 @@ For `<picture>` output:
 - builder-level filters do **not** cascade into art-direction variants; each art variant owns its own `filterParams`
 - when no explicit `sizes` is given, every `<source>` and the `<img>` emit `sizes="auto, <configured-sizes>"` on lazy images. `auto` (WHATWG) lets browsers size lazy images by their rendered width; per spec it must be the first entry and is only valid on lazy-loaded images, so the configured `sizes` string stays as the fallback for `loading="eager"` images. An **explicitly provided** `sizes` is emitted verbatim — no `auto,` prefix. In `sizes=auto`-capable browsers the auto entry overrides the rest of the list, which would silently discard the author's value; callers who want the hybrid write `sizes="auto, 100vw"` themselves. The `<link rel="preload">` path (`Preloader`) deliberately omits `auto` — preloaded images are eager.
 
-## Directory map
-
-```text
-lib/
-├── Image.php, Pic.php, Video.php
-├── Builder/
-│   ├── ImageBuilder.php
-│   └── VideoBuilder.php
-├── Source/
-│   ├── SourceInterface.php
-│   ├── MediapoolSource*.php
-│   ├── ExternalSource*.php
-│   ├── ExternalManifest.php
-│   ├── HttpFetcher.php
-│   └── SsrfGuard.php
-├── Pipeline/
-│   ├── ImageResolver.php
-│   ├── MetadataReader.php
-│   ├── ResolvedImage.php
-│   ├── SrcsetBuilder.php
-│   ├── UrlBuilder.php
-│   ├── Placeholder.php
-│   ├── DominantColor.php
-│   ├── AnimatedWebpEncoder.php
-│   ├── CacheStats.php
-│   ├── CacheInvalidator.php
-│   ├── RenderContext.php
-│   └── Preloader.php
-├── View/
-│   ├── PictureRenderer.php
-│   ├── PassthroughRenderer.php
-│   └── ArtDirectionVariant.php
-├── Glide/
-│   ├── Server.php
-│   ├── Endpoint.php
-│   ├── RequestHandler.php
-│   ├── Signature.php
-│   ├── CacheKeyBuilder.php
-│   ├── FitTokenBuilder.php
-│   ├── FilterParams.php
-│   ├── ColorProfile.php
-│   └── StripMetadata.php
-├── Var/
-│   ├── RexPic.php
-│   └── RexVideo.php
-├── Config.php
-├── Enum/
-└── Exception/
-
-pages/
-├── index.php
-├── settings.php
-├── settings.general.php
-├── settings.placeholder.php
-├── settings.cdn.php
-└── settings.security.php
-```
-
 ## Development conventions
 
 - Use PHP 8.2+ features: `readonly`, enums, named args.
-- PSR-4 comes from `composer.json`.
 - Run `composer dump-autoload` after adding classes.
 - `vendor/` is committed so REDAXO Connect ZIP installs work without `composer install`.
 - Before committing release vendor changes, run `composer install --no-dev` and `bin/check-vendor`.
@@ -418,20 +343,7 @@ The 16×16 floor is in the AV1 spec, not specific to a codec build. Don't unwind
 
 ### AVIF encoding override
 
-`Glide\SafeAvifEncoder` extends `League\Glide\Api\Encoder` and is wired in via `$api->setEncoder(...)` in both `Server::create()` and `Server::createForExternal()`. Its job is to route the AVIF encode through GD's `imageavif()` instead of Imagick's libheif-backed AVIF encoder, on the hosts where both are present.
-
-Why: at least one Imagick build seen in the wild (Plesk-shipped Imagick with libheif on shared hosting) produces 0-byte output via *every* Imagick AVIF code path — intervention/image v3's specialised `AvifEncoder` (`setCompression(COMPRESSION_ZIP)` + doubled property setters + `getImagesBlob`) AND the minimal pattern `media_negotiator/lib/Helper.php::imagickConvert()` documents (`setImageFormat → setImageCompressionQuality → getImageBlob`). 1.0.5's first attempt at this override used the minimal pattern directly and still produced 0 bytes on those servers. Reading `media_negotiator/lib/rex_effect_negotiator.php` more carefully showed that *its* working AVIF path on the same servers ends in `imagecreatefromstring($blob)` — i.e. the Imagick-encoded AVIF blob is just transport, the FINAL serve goes through GD's `imageavif()` via REDAXO's media pipeline. So the actually-working encoder is GD, not Imagick.
-
-`SafeAvifEncoder::run()` mirrors that:
-
-1. Format is non-AVIF → `parent::run()`.
-2. `imageavif()` not available → `parent::run()` (GD AVIF support is required for the override; if missing, fall back to whatever intervention/image produces).
-3. Active driver is GD already → `parent::run()` (intervention/image's GD `AvifEncoder` already uses `imageavif`).
-4. Imagick driver + GD has `imageavif`: clone the live Imagick instance, render to PNG (lossless intermediate), decode the PNG via `imagecreatefromstring()`, encode AVIF via `imageavif($gd, null, $q)`.
-
-The PNG round-trip is lossless and adds one extra encode/decode pair. Worth the cost: GD's `imageavif()` is the only path consistently producing valid AVIF on the broken-libheif Imagick builds, and on healthy-Imagick hosts the visual quality of GD's AVIF encoder is comparable.
-
-If you ever update `intervention/image` and confirm against the Plesk reference build that their Imagick AvifEncoder produces non-empty output there, this override can come out. Symptom of regression: AVIF cache files at exactly 0 bytes, served as 200 OK with empty body, broken images on AVIF-capable browsers only.
+`Glide\SafeAvifEncoder` routes AVIF through GD's `imageavif()` on Imagick hosts, because some Imagick/libheif builds emit 0-byte AVIF. Don't remove it without re-verifying on the Plesk reference build — full rationale in `lib/Glide/CLAUDE.md`.
 
 ### Encoder capability detection
 
@@ -476,17 +388,7 @@ Reason: Glide binds the closure to `League\Glide\Server`, which breaks static cl
 
 ### Watermark manipulator (`Glide\Watermark`)
 
-`Glide\Watermark` extends Glide's stock `League\Glide\Manipulators\Watermark` and replaces it **in-place** in the manipulator array in both `Server::create()` and `Server::createForExternal()`, via `Server::configureManipulators()`. The swap uses a `::class ===` match (not `instanceof`) so only Glide's stock instance is swapped, never an already-installed subclass on a re-configure. The watermarks-filesystem routing layer (`Endpoint::translateMark`, `Pipeline\WatermarkResolver`) is untouched — this is purely a pixel-quality swap, the URL contract is unchanged.
-
-- **Why custom:** Glide's stock manipulator delegates the mark resize to `intervention/image` v3, whose Imagick `ResizeModifier::apply()` calls `Imagick::scaleImage()` — a box-style scaler with **no filter argument**, which produces blurry/aliased edges on sharp marks (logos, text). Our `run()` does the resize itself with `Imagick::resizeImage(..., Imagick::FILTER_LANCZOS, 1, false)`, normalizes the mark to sRGB before any pixel math, applies opacity via `evaluateImage(EVALUATE_MULTIPLY, alpha/100, CHANNEL_ALPHA)`, and composites with `COMPOSITE_OVER`. Imagick-only; on GD installs it falls back to `parent::run()`. Fail-open: a broken/missing mark logs via `rex_logger` and renders the image without the watermark, never 500s.
-
-- **`getApiParams()` override is load-bearing, AND you MUST re-run `Api::setApiParams()` after the swap — both, or `marks` silently vanishes.** There are *two* param filters between `makeImage` and `run()`, both keyed on `getApiParams()`:
-  1. `BaseManipulator::setParams()` filters the param array to keys in the *manipulator's own* `getApiParams()`. Stock omits `marks`, so we override `getApiParams()` to add it.
-  2. `Server::makeImage()` → `Server::getAllParams()` filters incoming params to keys in the *Api's aggregated* `getApiParams()` — the union of every manipulator's params, which `Api` computes **once in its constructor** (`setApiParams()`) and caches. `setManipulators()` does **not** refresh that cache, and our in-place swap happens *after* construction. So `configureManipulators()` calls `$api->setApiParams()` after `setManipulators()` to rebuild the union from the swapped list. Without this call, `getAllParams()` strips `marks` before `makeImage` ever runs — relative sizing stays a silent no-op despite the override being correct. **Symptom of regression:** `marks="0.25"` has zero effect while `markw="25w"` still works. The unit test (which calls `setParams` directly) cannot catch this; the integration test (`WatermarkPipelineTest::testRelativeMarksControlsWatermarkSize`) can — it goes through the real `makeImage` path.
-
-- **`markfit` reads the raw param, not the inherited `getFit()`.** `getFit()`'s whitelist is Glide's crop vocabulary (`contain`/`max`/`stretch`/`crop*`) and returns `null` for `cover`, which would degrade cover to contain. `computeMarkSize()` reads `getParam('markfit')` directly and treats `cover` **and** any `crop*` token as fill (max-scale), `stretch` as exact w×h, everything else (incl. default `contain`) as fit-inside. Only matters when both `markw` and `markh` are set.
-
-- **`marks` is also in `FilterParams::FRIENDLY_TO_GLIDE` + `RANGES`** so it reaches `activeFilters` and the cache-key hash. This matters now that `marks` is functional: two different `marks` values must hash to different cache paths, or they'd collide on disk (they didn't before, because `marks` did nothing).
+The in-place swap of Glide's stock watermark needs BOTH the `getApiParams()` override (adds `marks`) AND `$api->setApiParams()` after `setManipulators()`, or `marks` silently vanishes. Details in `lib/Glide/CLAUDE.md`.
 
 ### Animated images
 
@@ -631,36 +533,7 @@ Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)
 
 ### Cut a release
 
-1. update `version:` in `package.yml`
-2. move `CHANGELOG.md` items from `[Unreleased]` to `## [x.y.z] — YYYY-MM-DD`
-3. run tests locally; run full suite if Glide/pipeline changed
-4. run `composer install --no-dev`
-5. run `bin/check-vendor`
-6. commit
-7. create GitHub release:
-
-```bash
-gh release create X.Y.Z --title "X.Y.Z" --notes "<release notes>"
-```
-
-Release publishing is handled by `.github/workflows/publish-to-redaxo.yml` on `release: published`.
-
-CI quality gate:
-
-- PHP 8.2 setup
-- `composer test:unit`
-- `composer install --no-dev`
-- `bin/check-vendor`
-- ZIP build
-- attach ZIP to GitHub release
-- publish to my.redaxo.org
-
-Required repo secrets:
-
-- `MYREDAXO_USERNAME`
-- `MYREDAXO_API_KEY`
-
-Integration tests are not CI-gated; run them locally before tagging when touching Glide/cache/rendering.
+Use the `release` skill (`.claude/skills/release/SKILL.md`).
 
 ## Out of scope / v2 candidates
 
