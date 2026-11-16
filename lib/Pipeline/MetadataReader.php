@@ -28,12 +28,14 @@ final class MetadataReader
             sourceFormat: (string) ($cached['source_format'] ?? 'unknown'),
             focalPoint: isset($cached['focal']) && $cached['focal'] !== '' ? (string) $cached['focal'] : null,
             isAnimated: (bool) ($cached['is_animated'] ?? false),
+            frameCount: (int) ($cached['frames'] ?? 1),
         );
     }
 
     public static function metaCachePath(SourceInterface $source): string
     {
-        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust());
+        // Recompute pre-frame-count sidecars after upgrading from 1.0.18.
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v2');
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json'
@@ -76,6 +78,7 @@ final class MetadataReader
         $absolutePath = $source->absolutePath();
         [$width, $height, $mime] = $this->probeDimensionsAndMime($absolutePath);
         $sourceFormat = $this->formatFromMime($mime);
+        $frames = $this->probeFrameCount($absolutePath, $sourceFormat);
 
         // A genuinely unreadable asset reads as 0×0 with no identifiable format.
         // SVG also reads as 0×0 (no raster dimensions) but resolves to format 'svg'
@@ -97,34 +100,32 @@ final class MetadataReader
             'mime' => $mime,
             'source_format' => $sourceFormat,
             'focal' => $focal,
-            'is_animated' => $this->probeAnimated($absolutePath, $sourceFormat),
+            'frames' => $frames,
+            'is_animated' => $frames > 1,
             'failed' => $failed,
         ];
     }
 
     /**
-     * Detect multi-frame sources. Only checked for formats that can carry
-     * animation (gif, webp, png/apng) — other formats short-circuit to false
-     * to avoid the Imagick open. Falls back to false if Imagick is unavailable
-     * or the read fails (worst case: animated source treated as static, which
-     * is the existing behaviour).
+     * Count frames only for formats that can carry animation (gif, webp,
+     * png/apng). Other formats, unavailable Imagick and failed reads use 1.
      */
-    private function probeAnimated(string $absolutePath, string $sourceFormat): bool
+    private function probeFrameCount(string $absolutePath, string $sourceFormat): int
     {
         if (!in_array($sourceFormat, ['gif', 'webp', 'png'], true)) {
-            return false;
+            return 1;
         }
         if (!extension_loaded('imagick')) {
-            return false;
+            return 1;
         }
         try {
             $im = new \Imagick();
             $im->pingImage($absolutePath);
             $count = $im->getNumberImages();
             $im->clear();
-            return $count > 1;
+            return $count;
         } catch (\Throwable) {
-            return false;
+            return 1;
         }
     }
 

@@ -169,6 +169,16 @@ $f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_SENTINEL_T
 $f->setAttribute('min', '5');
 $f->setNotice('Kurze TTL für fehlgeschlagene Reads (verhindert Hammering bei kaputten Assets).');
 
+$form->addFieldset('Animierte Bilder');
+
+$f = $form->addInputField('number', Config::KEY_ANIMATED_MAX_MPX);
+$f->setLabel('Max. Grösse animierter Bilder (Megapixel über alle Frames)');
+$f->setAttribute('class', 'form-control');
+$f->setAttribute('style', 'width: 140px');
+$f->setAttribute('placeholder', (string) Config::DEFAULTS[Config::KEY_ANIMATED_MAX_MPX]);
+$f->setAttribute('min', '0');
+$f->setNotice('Grössere Animationen werden unverändert ausgeliefert. 40 ≈ 1,1 GB RAM und ~6 s pro Breite.');
+
 $form->addFieldset('Externe URL-Quellen');
 
 $f = $form->addInputField('number', Config::KEY_EXTERNAL_TTL_SECONDS);

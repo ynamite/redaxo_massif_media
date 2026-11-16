@@ -7,6 +7,7 @@ namespace Tests\Massif\Media\Integration;
 use PHPUnit\Framework\TestCase;
 use rex_config;
 use rex_file;
+use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Source\MediapoolSource;
@@ -95,6 +96,7 @@ final class MetadataReaderTest extends TestCase
 
         self::assertSame('gif', $resolved->sourceFormat);
         self::assertFalse($resolved->isAnimated);
+        self::assertSame(1, $resolved->frameCount);
     }
 
     public function testJpegIsAnimatedFalse(): void
@@ -102,6 +104,56 @@ final class MetadataReaderTest extends TestCase
         $resolved = $this->reader->read($this->source('landscape-800x600.jpg'));
 
         self::assertFalse($resolved->isAnimated, 'JPEG short-circuits the probe and stays false.');
+        self::assertSame(1, $resolved->frameCount);
+    }
+
+    public function testReadsFrameCount(): void
+    {
+        if (!extension_loaded('imagick')) {
+            $this->markTestSkipped('Frame count detection needs Imagick.');
+        }
+        $source = $this->source('animated-3frame.gif');
+
+        $resolved = $this->reader->read($source);
+
+        self::assertSame(3, $resolved->frameCount);
+        self::assertTrue($resolved->isAnimated);
+        self::assertSame(3, $this->readSidecar($source)['frames']);
+        self::assertSame(3, $this->reader->read($source)->frameCount);
+    }
+
+    public function testLegacyMetaIsRecomputed(): void
+    {
+        if (!extension_loaded('imagick')) {
+            $this->markTestSkipped('Frame count detection needs Imagick.');
+        }
+        $source = $this->source('animated-3frame.gif');
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust());
+        $legacyPath = rex_path::addonAssets(Config::ADDON, 'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json');
+        rex_file::put($legacyPath, json_encode([
+            'width' => 1234,
+            'height' => 64,
+            'mime' => 'image/gif',
+            'source_format' => 'gif',
+            'focal' => null,
+            'is_animated' => true,
+            'failed' => false,
+        ]));
+
+        $resolved = $this->reader->read($source);
+
+        self::assertNotSame($legacyPath, MetadataReader::metaCachePath($source));
+        self::assertSame(64, $resolved->intrinsicWidth);
+        self::assertSame(3, $resolved->frameCount);
+        self::assertTrue($resolved->isAnimated);
+    }
+
+    public function testUnreadableSourceHasOneFrame(): void
+    {
+        $resolved = $this->reader->read($this->source('corrupt.jpg'));
+
+        self::assertSame(1, $resolved->frameCount);
+        self::assertFalse($resolved->isAnimated);
     }
 
     public function testGoodSidecarReusedWithinMetadataTtl(): void

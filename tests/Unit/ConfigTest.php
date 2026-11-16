@@ -215,6 +215,25 @@ final class ConfigTest extends TestCase
         self::assertSame(0, Config::sentinelTtlSeconds());
     }
 
+    public function testAnimatedMaxMegapixelsReturnsDefaultWhenUnset(): void
+    {
+        self::assertSame(40, Config::animatedMaxMegapixels());
+    }
+
+    public function testAnimatedMaxMegapixelsReadsConfiguredValue(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_ANIMATED_MAX_MPX, '12');
+
+        self::assertSame(12, Config::animatedMaxMegapixels());
+    }
+
+    public function testAnimatedMaxMegapixelsClampsNegativeToZero(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_ANIMATED_MAX_MPX, '-1');
+
+        self::assertSame(0, Config::animatedMaxMegapixels());
+    }
+
     private function resetCacheGenerationStatic(): void
     {
         $prop = new \ReflectionProperty(Config::class, 'cacheGenerationCache');

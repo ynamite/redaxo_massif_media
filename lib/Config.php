@@ -29,6 +29,7 @@ final class Config
     public const KEY_CDN_URL_TEMPLATE = 'cdn_url_template';
     public const KEY_METADATA_TTL_SECONDS = 'metadata_ttl_seconds';
     public const KEY_SENTINEL_TTL_SECONDS = 'sentinel_ttl_seconds';
+    public const KEY_ANIMATED_MAX_MPX = 'animated_max_megapixels';
     public const KEY_EXTERNAL_TTL_SECONDS = 'external_ttl_seconds';
     public const KEY_EXTERNAL_TIMEOUT_SECONDS = 'external_timeout_seconds';
     public const KEY_EXTERNAL_MAX_BYTES = 'external_max_bytes';
@@ -79,6 +80,7 @@ final class Config
         self::KEY_CDN_URL_TEMPLATE => '',
         self::KEY_METADATA_TTL_SECONDS => 7_776_000,
         self::KEY_SENTINEL_TTL_SECONDS => 60,
+        self::KEY_ANIMATED_MAX_MPX => 40,
         self::KEY_EXTERNAL_TTL_SECONDS => 86_400,        // 24h
         self::KEY_EXTERNAL_TIMEOUT_SECONDS => 15,
         self::KEY_EXTERNAL_MAX_BYTES => 26_214_400,      // 25 MB
@@ -369,6 +371,12 @@ final class Config
     public static function sentinelTtlSeconds(): int
     {
         return max(0, (int) self::get(self::KEY_SENTINEL_TTL_SECONDS));
+    }
+
+    /** Maximum total megapixels across all frames; 0 disables animated encoding. */
+    public static function animatedMaxMegapixels(): int
+    {
+        return max(0, (int) self::get(self::KEY_ANIMATED_MAX_MPX));
     }
 
     public static function externalTimeoutSeconds(): int
