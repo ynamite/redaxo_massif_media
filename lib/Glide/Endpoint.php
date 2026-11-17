@@ -13,6 +13,7 @@ use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\WatermarkResolver;
+use Ynamite\Media\Source\ExternalManifest;
 use Ynamite\Media\Source\ExternalSourceFactory;
 
 final class Endpoint
@@ -457,6 +458,9 @@ final class Endpoint
 
     private static function resolveImage(string $src): ResolvedImage
     {
+        if (self::originalPath($src) === null) {
+            throw new \RuntimeException('Source outside its root or missing: ' . $src);
+        }
         if (str_starts_with($src, '_external/')) {
             $source = (new ExternalSourceFactory())->resolveByHash(substr($src, strlen('_external/')));
             if ($source === null) {
@@ -467,10 +471,32 @@ final class Endpoint
         return (new ImageResolver(new MetadataReader()))->resolve($src);
     }
 
+    private static function originalPath(string $src): ?string
+    {
+        if (in_array('..', explode('/', str_replace('\\', '/', $src)), true)) {
+            return null;
+        }
+        if (str_starts_with($src, '_external/')) {
+            $hash = substr($src, strlen('_external/'));
+            if (!preg_match('/^[a-f0-9]{16}$/D', $hash)) {
+                return null;
+            }
+            $root = realpath(rex_path::addonAssets(Config::ADDON, 'cache/_external'));
+            $path = realpath(ExternalManifest::originPath($hash));
+            $root = $root === false ? false : $root . '/' . $hash;
+        } else {
+            $root = realpath(rex_path::media());
+            $path = realpath(rex_path::media($src));
+        }
+        return $root !== false && $path !== false && str_starts_with($path, $root . '/') ? $path : null;
+    }
+
     private static function sendOriginal(ResolvedImage $image): void
     {
-        $path = $image->source->absolutePath();
-        if (!is_readable($path) || !self::isServable($path)) {
+        $path = self::originalPath($image->source->key());
+        if ($path === null || !is_readable($path) || !self::isServable($path)
+            || !in_array($image->mime, ['image/gif', 'image/webp', 'image/png', 'image/jpeg', 'image/avif', 'image/svg+xml', 'image/svg'], true)
+        ) {
             self::respond(404, 'Not found');
             return;
         }

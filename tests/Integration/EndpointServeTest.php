@@ -6,6 +6,8 @@ namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Ynamite\Media\Config;
 use Ynamite\Media\Glide\Endpoint;
 use Ynamite\Media\Glide\CacheKeyBuilder;
@@ -344,6 +346,78 @@ final class EndpointServeTest extends TestCase
         self::assertSame('Forbidden', $body);
     }
 
+    public function testSignedTraversalNeverStreamsOriginal(): void
+    {
+        mkdir($this->tmpBase . '/private');
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $this->tmpBase . '/private/animation.webp');
+
+        $body = $this->handle('../private/animation.webp/animated.webp');
+
+        self::assertSame(404, http_response_code());
+        self::assertSame('Not found', $body);
+    }
+
+    public function testSignedParentSegmentInsideMediaIsRejected(): void
+    {
+        mkdir($this->mediaDir . '/gallery');
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $this->mediaDir . '/animation.webp');
+
+        $body = $this->handle('gallery/../animation.webp/animated.webp');
+
+        self::assertSame(404, http_response_code());
+        self::assertSame('Not found', $body);
+    }
+
+    public function testSignedSymlinkOutsideMediaNeverStreamsOriginal(): void
+    {
+        mkdir($this->tmpBase . '/media-private');
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $this->tmpBase . '/media-private/animation.webp');
+        $link = $this->mediaDir . '/animation.webp';
+        symlink($this->tmpBase . '/media-private/animation.webp', $link);
+        try {
+            $body = $this->handle('animation.webp/animated.webp');
+
+            self::assertSame(404, http_response_code());
+            self::assertSame('Not found', $body);
+        } finally {
+            unlink($link);
+        }
+    }
+
+    public function testSignedNonImageNeverStreamsOriginal(): void
+    {
+        file_put_contents($this->mediaDir . '/private.webp', 'private configuration bytes');
+
+        $body = $this->handle('private.webp/animated.webp');
+
+        self::assertSame(404, http_response_code());
+        self::assertSame('Not found', $body);
+    }
+
+    public function testExternalOriginSymlinkCannotEscapeItsBucket(): void
+    {
+        $url = 'https://example.com/animation.webp';
+        $hash = \Ynamite\Media\Source\ExternalSource::hashFor($url);
+        $other = \Ynamite\Media\Source\ExternalManifest::originPath('0123456789abcdef');
+        @mkdir(dirname($other), 0777, true);
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $other);
+        \Ynamite\Media\Source\ExternalManifest::write($hash, [
+            'url' => $url, 'etag' => null, 'lastModified' => time(), 'fetchedAt' => time(), 'ttl' => 86_400,
+        ]);
+        $origin = \Ynamite\Media\Source\ExternalManifest::originPath($hash);
+        symlink($other, $origin);
+        try {
+            $body = $this->handle('_external/' . $hash . '/animated.webp');
+
+            self::assertSame(404, http_response_code());
+            self::assertSame('Not found', $body);
+        } finally {
+            unlink($origin);
+        }
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testUnavailableWebpStreamsOriginal(): void
     {
         $this->stageAnimatedMetadata(3);
