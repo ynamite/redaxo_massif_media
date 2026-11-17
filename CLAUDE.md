@@ -120,6 +120,8 @@ Symptom of regression: clear cache, refresh frontend, no new cache files appear.
 
 ### Cache path shapes
 
+Animated sources use their own shapes, `{src}/animated.webp` and `{src}/animated-{w}.webp` (see Animated images).
+
 Endpoint parsing must keep supporting all four shapes:
 
 ```text
@@ -397,8 +399,8 @@ Glide encodes only the first frame of animated GIFs; animated GIF/WebP sources n
 - Animated WebP must use `AnimatedWebpEncoder` (`coalesceImages()` + `writeImages($path, true)`, atomic writes).
 - Widths: 640, 1280, intrinsic (never upscaled). Cache paths: `{src}/animated.webp` = intrinsic width (legacy name, keeps 1.0.18 HTML valid), `{src}/animated-{w}.webp` for smaller ones. Not one of the four Glide shapes; the Endpoint serves cached files first and encodes only when encodable and the width is canonical and in the pool.
 - Budget `animated_max_megapixels` (default 40; frames × w × h; 0 = never encode); above it the original is delivered as plain `<img>`. Cost ≈ 28 MB RAM / ≈ 0.14 s per source Mpx per width.
-- Pre-warm on `MEDIA_ADDED` and `MEDIA_UPDATED` (only if file replaced), web requests only, `set_time_limit(120)`.
-- Preload uses `imagesrcset`/`imagesizes` for animated sources.
+- Pre-warm on `MEDIA_ADDED` and `MEDIA_UPDATED` (only if file replaced), runs in any SAPI (failures are logged, never thrown), `set_time_limit(120)`.
+- Preload: encodable animated sources preload the WebP via `imagesrcset`/`imagesizes`; other passthrough sources (SVG, GIF, over-budget/CDN animations) preload the original `?v=` URL; raster images unchanged (Glide variants).
 - Passthrough (SVG/GIF/animated WebP) URLs carry `?v=<cacheBust>`; no LQIP/dominant colour for animated WebP; `art:` ignored for animated sources.
 - Animated output is mediapool-only; external sources short-circuit.
 

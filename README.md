@@ -322,7 +322,7 @@ Die zurückgegebene URL geht **durch denselben Glide-Cache** wie `picture()` —
 
 `width` ist optional — ohne Angabe wird der Median des `effectiveMaxWidth`-gecappten Width-Pools gewählt (dieselbe Logik wie `PictureRenderer`s Fallback-`<img src>`).
 
-**SVG / GIF / animiertes WebP (Passthrough):** Es wird die rohe Mediapool-URL mit `?v=<cacheBust>` zurückgegeben — `width` / `format` / Filter werden still ignoriert. Hängst du selbst `?…` an, entsteht ein doppeltes `?`; nutze dann `&`. Animierte Quellen liefern die Original-URL, **nicht** die animierte WebP-Variante (CSS `background-image` mit animiertem WebP loopt automatisch — selten gewollt).
+**SVG / GIF / animiertes WebP (Passthrough):** Es wird die rohe Mediapool-URL mit `?v=<cacheBust>` zurückgegeben — `width` / `format` / Filter werden still ignoriert. Wer selbst `?…` anhängt, erhält ein doppeltes `?` — dann `&` verwenden. Animierte Quellen liefern die Original-URL, **nicht** die animierte WebP-Variante (CSS `background-image` mit animiertem WebP loopt automatisch — selten gewollt).
 
 ---
 
@@ -384,7 +384,7 @@ Der `_external/`-Präfix ist reserviert; Mediapool-Filenames können nicht mit `
 
 **CDN-Modus wird übersprungen.** Wenn `cdn_enabled` an ist, gehen Mediapool-Quellen wie gehabt durch das CDN-Template; externe Quellen routen aber weiter über den `_external/<hash>`-Pfad — der Upstream ist schon ein CDN, ihn nochmal durch unseren zu schicken wäre sinnlos. Externe `<video>`-Quellen werden dagegen direkt als `<video src="https://…">` emittiert (kein Proxy, kein Fetch).
 
-**Animated WebP** und **Art Direction** funktionieren für externe Bilder genauso wie für Mediapool-Bilder. Filter, Focal-Point per Setter (`->focal('50% 30%')`) und `fit`-Token funktionieren ebenfalls — externe Quellen haben keinen `med_focuspoint`-Wert auf einer rex_media-Row, aber per-Call-Override über `focal:` ist möglich.
+**Art Direction** funktioniert für externe Bilder genauso wie für Mediapool-Bilder. Animierte GIFs/WebPs sind dagegen Mediapool-only. Filter, Focal-Point per Setter (`->focal('50% 30%')`) und `fit`-Token funktionieren ebenfalls — externe Quellen haben keinen `med_focuspoint`-Wert auf einer rex_media-Row, aber per-Call-Override über `focal:` ist möglich.
 
 **Cache-Invalidierung** für externe URLs läuft via TTL-Refresh oder manuell:
 
@@ -617,7 +617,7 @@ REX_PIC[src="hero.jpg" alt="Aussicht" width="1440" class="rounded shadow-lg"]
 REX_PIC[src="logo.svg" alt="Firmenlogo" width="240" height="60"]
 ```
 
-SVG und GIF werden direkt durchgereicht.
+SVG, GIF und animiertes WebP, das nicht encodiert werden kann (z. B. über dem Budget), werden direkt durchgereicht.
 
 Bei SVG und nicht animierten GIFs gibt es kein `<picture>` und kein Resizing, sondern ein einfaches `<img>`.
 
@@ -1079,7 +1079,7 @@ Ein typisches Bild wird ungefähr so gerendert:
 
 SVG und GIF werden schlicht als `<img>` ausgegeben, ohne `srcset` und ohne Sources.
 
-Animierte GIFs sind eine Ausnahme und werden weiter unten separat beschrieben.
+Animierte GIFs und WebPs sind eine Ausnahme und werden weiter unten separat beschrieben; über dem Budget fallen sie auf ein einfaches `<img>` zurück.
 
 ---
 
@@ -1154,15 +1154,15 @@ Beispiel:
 <picture>
   <source
     type="image/webp"
-    srcset="/.../spinner.gif/animated-640.webp?s=… 640w,
-            /.../spinner.gif/animated-1280.webp?s=… 1280w,
-            /.../spinner.gif/animated.webp?s=… 1600w"
+    srcset="/.../loop.gif/animated-640.webp?s=… 640w,
+            /.../loop.gif/animated-1280.webp?s=… 1280w,
+            /.../loop.gif/animated.webp?s=… 1600w"
     sizes="…" />
   <img
-    src="/media/spinner.gif?v=…"
+    src="/media/loop.gif?v=…"
     alt="…"
-    width="200"
-    height="200"
+    width="1600"
+    height="900"
     loading="lazy"
     decoding="async" />
 </picture>
@@ -1189,11 +1189,11 @@ Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro 
 
 ## Pre-Warm beim Upload
 
-Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das passiert nur in Web-Requests (das CLI-Imagick kann Formate fehlen; dort wird nur geloggt) mit `set_time_limit(120)`.
+Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das gilt nur für Quellen innerhalb des Budgets und läuft mit `set_time_limit(120)`. Es läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt.
 
 ## Preload
 
-Mit `preload: true` werden animierte Quellen als WebP über `imagesrcset`/`imagesizes` vorgeladen, alle anderen als Original.
+Mit `preload: true` werden animierte Quellen als WebP über `imagesrcset`/`imagesizes` vorgeladen. Übrige Passthrough-Quellen (SVG, GIF, Animation über Budget) werden mit dem Original (`?v=`-URL) vorgeladen. Rasterbilder bleiben unverändert und laden über die Glide-Varianten vor.
 
 ---
 

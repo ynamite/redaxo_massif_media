@@ -11,8 +11,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 - **Animierte GIFs und animierte WebPs werden in bis zu drei Breiten ausgeliefert.** Breiten 640, 1280 und die intrinsische Breite (nie hochskaliert); alle Frames, Delays und die Loop-Zahl bleiben erhalten. Markup: `<picture><source type="image/webp" srcset sizes>` + `<img>` mit dem Original. Animierte Quellen laufen nie durch Glide. Die grösste Breite behält den alten Namen `{src}/animated.webp` (von 1.0.18 gecachtes HTML bleibt gültig), kleinere heissen `{src}/animated-{w}.webp`. Schreibzugriffe sind atomar.
 - **Budget `animated_max_megapixels`** (Default 40, `0` = nie encodieren) auf „Sicherheit & Cache“: Frames × Breite × Höhe der Canvas. Darüber wird das Original als einfaches `<img>` ausgeliefert. Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro Quell-Megapixel und Breite (40 Mpx ≈ 1,1 GB, ≈ 6 s pro Breite).
-- **Pre-Warm beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die animierten Varianten in Web-Requests vorab encodiert (CLI-Imagick kann Formate fehlen; dort wird nur geloggt), mit `set_time_limit(120)`.
-- **Preload für animierte Quellen** über `imagesrcset`/`imagesizes` auf die WebP-Variante; andere Quellen preloaden weiterhin das Original.
+- **Pre-Warm beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die animierten Varianten (nur innerhalb des Budgets) vorab encodiert, mit `set_time_limit(120)`. Läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt.
+- **Preload für animierte Quellen** über `imagesrcset`/`imagesizes` auf die WebP-Variante; übrige Passthrough-Quellen (SVG, GIF, Animation über Budget) werden neu mit dem Original (`?v=`-URL) vorgeladen. Rasterbilder bleiben unverändert (Glide-Varianten).
 
 ### Changed
 
