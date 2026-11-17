@@ -79,7 +79,7 @@ final class AssetHostTest extends TestCase
 
         self::assertStringStartsWith(
             'https://cdn.example.net/assets/addons/massif_media/cache/banner.gif/animated.webp?s=',
-            (new UrlBuilder())->buildAnimatedWebp($image),
+            (new UrlBuilder())->buildAnimatedWebp($image, 1600),
         );
     }
 
@@ -88,7 +88,7 @@ final class AssetHostTest extends TestCase
         \rex_config::set(Config::ADDON, 'asset_host', 'https://cdn.example.net');
         foreach (['vector.svg', 'tiny-32x32.gif'] as $fixture) {
             copy(__DIR__ . '/../_fixtures/' . $fixture, $this->tmpDir . '/media/' . $fixture);
-            $url = 'https://cdn.example.net/media/' . $fixture;
+            $url = 'https://cdn.example.net/media/' . $fixture . '?v=' . filemtime($this->tmpDir . '/media/' . $fixture);
             self::assertSame($url, Image::url($fixture));
             self::assertStringContainsString('src="' . $url . '"', Image::picture($fixture));
         }
@@ -104,8 +104,8 @@ final class AssetHostTest extends TestCase
         self::assertSame('https://optimizer.example.com/hero.jpg?w=400&fm=webp&q=75', (new UrlBuilder())->build(Sources::image(), 400, 'webp', 75));
         self::assertStringContainsString('src="https://optimizer.example.com/clip.mp4?v=', Video::render('clip.mp4'));
         $gif = Sources::image('banner.gif', sourceFormat: 'gif', isAnimated: true);
-        self::assertSame('', (new UrlBuilder())->buildAnimatedWebp($gif));
-        self::assertStringContainsString('src="/media/banner.gif"', (new PassthroughRenderer())->render($gif));
+        self::assertSame('', (new UrlBuilder())->buildAnimatedWebp($gif, 1600));
+        self::assertStringContainsString('src="/media/banner.gif?v=1700000000"', (new PassthroughRenderer())->render($gif));
     }
 
     public function testAssetHostHandlesRelativeAndSubdirectoryPaths(): void
@@ -126,7 +126,7 @@ final class AssetHostTest extends TestCase
 
         self::assertSame($url, $builder->build($image, 400, 'webp'));
         self::assertStringContainsString('src="https://origin.example.com/photo.jpg"', (new PassthroughRenderer())->render($image));
-        self::assertSame('', $builder->buildAnimatedWebp($image));
+        self::assertSame('', $builder->buildAnimatedWebp($image, 800));
         self::assertStringContainsString('src="https://origin.example.com/clip.mp4"', Video::render('https://origin.example.com/clip.mp4'));
     }
 }

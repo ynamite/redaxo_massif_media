@@ -60,8 +60,10 @@ final class Endpoint
         // Animated WebP variants live outside the Glide pipeline (Glide's
         // encoder is single-frame). Detect them first and dispatch to the
         // dedicated encoder; everything else falls through to Glide.
-        if (str_ends_with($cachePath, '/animated.webp')) {
-            self::handleAnimated($cachePath, $abs);
+        if (preg_match('#/animated(?:-(\d+))?\.webp$#D', $cachePath, $match, PREG_OFFSET_CAPTURE)) {
+            $src = substr($cachePath, 0, $match[0][1]);
+            $width = isset($match[1]) ? (int) $match[1][0] : null;
+            self::handleAnimated($src, $width, $abs);
             return;
         }
 
@@ -402,41 +404,44 @@ final class Endpoint
             || (bool) preg_match('/^cover-\d{1,3}-\d{1,3}$/', $token);
     }
 
-    private static function handleAnimated(string $cachePath, string $abs): void
+    private static function handleAnimated(string $src, ?int $width, string $abs): void
     {
-        $src = substr($cachePath, 0, -strlen('/animated.webp'));
         // Defensive: animated WebP isn't emitted for external sources
         // (UrlBuilder::buildAnimatedWebp short-circuits when isExternal()).
         // A request that arrives here for an `_external/...` path is malformed
         // — refuse rather than try to resolve.
         if ($src === '' || str_starts_with($src, '_external/')) {
-            self::respond(400, 'Bad request');
-            return;
-        }
-
-        if (self::isServable($abs)) {
-            self::sendFile($abs, 'image/webp');
+            self::respond(400, 'Ungültige Anfrage');
             return;
         }
 
         try {
+            $image = (new ImageResolver(new MetadataReader()))->resolve($src);
+            $width ??= $image->intrinsicWidth;
+            if (!$image->isAnimatedEncodable() || !in_array($width, AnimatedWebpEncoder::widths($image), true)) {
+                self::respond(404, 'Nicht gefunden');
+                return;
+            }
+            if (self::isServable($abs)) {
+                self::sendFile($abs, 'image/webp');
+                return;
+            }
             $lock = self::lockVariant($abs);
             try {
                 if (!self::isServable($abs)) {
-                    $image = (new ImageResolver(new MetadataReader()))->resolve($src);
-                    (new AnimatedWebpEncoder())->encode($image, $image->intrinsicWidth);
+                    (new AnimatedWebpEncoder())->encode($image, $width);
                 }
             } finally {
                 self::unlockVariant($lock);
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);
-            self::respond(404, 'Not found');
+            self::respond(404, 'Nicht gefunden');
             return;
         }
 
         if (!self::isServable($abs)) {
-            self::respond(404, 'Not found');
+            self::respond(404, 'Nicht gefunden');
             return;
         }
         self::sendFile($abs, 'image/webp');

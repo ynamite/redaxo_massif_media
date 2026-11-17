@@ -221,15 +221,7 @@ final class PictureRenderer
         }
 
         if ($variant->focal !== null) {
-            $image = new ResolvedImage(
-                source: $image->source,
-                intrinsicWidth: $image->intrinsicWidth,
-                intrinsicHeight: $image->intrinsicHeight,
-                mime: $image->mime,
-                sourceFormat: $image->sourceFormat,
-                focalPoint: $variant->focal,
-                isAnimated: $image->isAnimated,
-            );
+            $image = $image->withFocal($variant->focal);
         }
         return $image;
     }

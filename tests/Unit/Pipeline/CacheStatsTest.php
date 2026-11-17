@@ -115,6 +115,20 @@ final class CacheStatsTest extends TestCase
         self::assertSame(1000, $second['total_bytes']);
     }
 
+    public function testCountsAnimatedWidthsWithoutConfusingGlideVariants(): void
+    {
+        $this->writeFile('a.gif/animated.webp', 100);
+        $this->writeFile('nested/a.webp/animated-640.webp', 200);
+        $this->writeFile('a.gif/animated-1280.webp', 300);
+        $this->writeFile('a.gif/webp-640-75.webp', 400);
+        $this->writeFile('a.gif/animated-640-75.webp', 500);
+
+        $stats = (new CacheStats())->compute();
+
+        self::assertSame(['count' => 3, 'bytes' => 600], $stats['by_kind']['animated']);
+        self::assertSame(['count' => 2, 'bytes' => 900], $stats['by_kind']['variants']);
+    }
+
     public function testReturnsMemoizedStatsWithinTtl(): void
     {
         $this->writeFile('hero.jpg/avif-800-50.avif', 1000);

@@ -5,10 +5,116 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Unit\Builder;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Ynamite\Media\Builder\ImageBuilder;
+use Ynamite\Media\Config;
+use Ynamite\Media\Pipeline\Preloader;
+use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Source\MediapoolSourceFactory;
+use Ynamite\Media\Source\ExternalManifest;
+use Ynamite\Media\Source\ExternalSource;
 
 final class ImageBuilderTest extends TestCase
 {
+    private string $tmpBase;
+
+    protected function setUp(): void
+    {
+        $this->tmpBase = sys_get_temp_dir() . '/massif_builder_' . uniqid('', true);
+        mkdir($this->tmpBase . '/media', 0777, true);
+        \rex_path::_setBase($this->tmpBase);
+        \rex_config::set(Config::ADDON, Config::KEY_SIGN_KEY, 'builder-test');
+        Preloader::reset();
+    }
+
+    protected function tearDown(): void
+    {
+        \rex_dir::delete($this->tmpBase, true);
+        \rex_config::_reset();
+        Preloader::reset();
+    }
+
+    #[DataProvider('passthroughFixtures')]
+    public function testPassthroughUrlMarkupAndPreloadUseOriginalCacheToken(string $fixture): void
+    {
+        copy(__DIR__ . '/../../_fixtures/' . $fixture, $this->tmpBase . '/media/' . $fixture);
+        touch($this->tmpBase . '/media/' . $fixture, 1_700_000_000);
+        $builder = (new ImageBuilder($fixture))->preload()->fetchPriority('high')->focal('25% 75%');
+
+        $html = $builder->render();
+
+        self::assertSame('/media/' . $fixture . '?v=1700000000', $builder->url());
+        self::assertStringContainsString('src="/media/' . $fixture . '?v=1700000000"', $html);
+        self::assertStringContainsString('fetchpriority="high"', $html);
+        self::assertStringContainsString('style="object-position:25% 75%"', $html);
+        $preload = Preloader::drain();
+        self::assertStringContainsString('as="image" href="/media/' . $fixture . '?v=1700000000"', $preload);
+        self::assertStringNotContainsString('imagesrcset=', $preload);
+        self::assertSame('', Preloader::drain());
+    }
+
+    public static function passthroughFixtures(): array
+    {
+        return [['vector.svg'], ['tiny-32x32.gif'], ['animated-3frame.gif'], ['animated-700.webp']];
+    }
+
+    public function testPassthroughPreloadIsOptIn(): void
+    {
+        copy(__DIR__ . '/../../_fixtures/vector.svg', $this->tmpBase . '/media/logo.svg');
+        (new ImageBuilder('logo.svg'))->render();
+        self::assertSame('', Preloader::drain());
+    }
+
+    public function testPassthroughPreloadQueuesOriginalUrl(): void
+    {
+        copy(__DIR__ . '/../../_fixtures/vector.svg', $this->tmpBase . '/media/logo.svg');
+        touch($this->tmpBase . '/media/logo.svg', 1_700_000_000);
+        (new ImageBuilder('logo.svg'))->preload()->render();
+
+        self::assertStringContainsString('as="image" href="/media/logo.svg?v=1700000000"', Preloader::drain());
+    }
+
+    public function testPassthroughForwardsFetchPriority(): void
+    {
+        copy(__DIR__ . '/../../_fixtures/vector.svg', $this->tmpBase . '/media/logo.svg');
+        $html = (new ImageBuilder('logo.svg'))->fetchPriority('high')->render();
+        self::assertStringContainsString('fetchpriority="high"', $html);
+    }
+
+    public function testAnimatedSizesReachPassthroughSource(): void
+    {
+        copy(__DIR__ . '/../../_fixtures/animated-3frame.gif', $this->tmpBase . '/media/animation.gif');
+        $source = (new MediapoolSourceFactory())->resolve('animation.gif');
+        $path = MetadataReader::metaCachePath($source);
+        @mkdir(dirname($path), 0777, true);
+        file_put_contents($path, json_encode([
+            'width' => 1600, 'height' => 900, 'mime' => 'image/gif', 'source_format' => 'gif',
+            'focal' => null, 'is_animated' => true, 'frames' => 3, 'failed' => false,
+        ]));
+
+        $html = (new ImageBuilder('animation.gif'))->sizes('50vw')->render();
+
+        self::assertStringContainsString('<source type="image/webp"', $html);
+        self::assertStringContainsString('sizes="50vw"', $html);
+        self::assertStringContainsString(' 640w', $html);
+    }
+
+    public function testExternalPassthroughUrlAndPreloadAreUnchanged(): void
+    {
+        $url = 'http://1.1.1.1/animation.gif?a=1&v=original';
+        $hash = ExternalSource::hashFor($url);
+        $origin = ExternalManifest::originPath($hash);
+        @mkdir(dirname($origin), 0777, true);
+        copy(__DIR__ . '/../../_fixtures/animated-3frame.gif', $origin);
+        ExternalManifest::write($hash, ['url' => $url, 'etag' => null, 'lastModified' => null, 'fetchedAt' => time(), 'ttl' => 86400]);
+        \rex_config::set(Config::ADDON, 'asset_host', 'https://assets.example.com');
+        $builder = (new ImageBuilder($url))->preload();
+
+        self::assertSame($url, $builder->url());
+        self::assertStringStartsWith('<img src="http://1.1.1.1/animation.gif?a=1&amp;v=original"', $builder->render());
+        self::assertStringContainsString('href="http://1.1.1.1/animation.gif?a=1&amp;v=original"', Preloader::drain());
+    }
+
     private function buildAndExtractFilters(callable $configure): array
     {
         $b = new ImageBuilder('test.jpg');

@@ -20,6 +20,8 @@ use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
 use Ynamite\Media\Source\MediapoolSource;
 use Ynamite\Media\View\PictureRenderer;
+use Ynamite\Media\View\ArtDirectionVariant;
+use Ynamite\Media\Source\MediapoolSourceFactory;
 
 final class PictureRendererTest extends TestCase
 {
@@ -76,6 +78,28 @@ final class PictureRendererTest extends TestCase
             new Placeholder(),
             new DominantColor(),
         );
+    }
+
+    public function testVariantFocalOverridePreservesFrameCountAndBudget(): void
+    {
+        @mkdir($this->tmpBase . '/media', 0777, true);
+        copy(__DIR__ . '/../../_fixtures/animated-3frame.gif', $this->tmpBase . '/media/animation.gif');
+        $source = (new MediapoolSourceFactory())->resolve('animation.gif');
+        $path = MetadataReader::metaCachePath($source);
+        @mkdir(dirname($path), 0777, true);
+        file_put_contents($path, json_encode([
+            'width' => 1600, 'height' => 900, 'mime' => 'image/gif', 'source_format' => 'gif',
+            'focal' => null, 'is_animated' => true, 'frames' => 380, 'failed' => false,
+        ]));
+        // Inspect resolution only: rendering animated art-direction sources is out of scope.
+        $method = new \ReflectionMethod(PictureRenderer::class, 'resolveVariantImage');
+        $image = $method->invoke($this->renderer(), new ArtDirectionVariant('(max-width: 600px)', 'animation.gif', focal: '25% 75%'));
+
+        self::assertInstanceOf(ResolvedImage::class, $image);
+        self::assertSame('25% 75%', $image->focalPoint);
+        self::assertSame(380, $image->frameCount);
+        self::assertTrue($image->isAnimated);
+        self::assertFalse($image->isAnimatedEncodable());
     }
 
     private function image(

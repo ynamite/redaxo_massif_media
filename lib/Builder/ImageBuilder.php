@@ -7,7 +7,6 @@ namespace Ynamite\Media\Builder;
 use rex;
 use rex_logger;
 use rex_media;
-use rex_url;
 use Throwable;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
@@ -24,7 +23,6 @@ use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Pipeline\RenderContext;
 use Ynamite\Media\Pipeline\SrcsetBuilder;
 use Ynamite\Media\Pipeline\UrlBuilder;
-use Ynamite\Media\Source\ExternalSource;
 use Ynamite\Media\View\PassthroughRenderer;
 use Ynamite\Media\View\PictureRenderer;
 
@@ -314,6 +312,9 @@ final class ImageBuilder
         }
 
         if ($image->isPassthrough()) {
+            if ($this->preload) {
+                Preloader::queueLink(UrlBuilder::originalUrl($image), 'image', $image->mime);
+            }
             return (new PassthroughRenderer(new UrlBuilder()))->render(
                 $image,
                 $this->width,
@@ -323,6 +324,8 @@ final class ImageBuilder
                 $this->loading,
                 $this->decoding,
                 $this->class,
+                $this->sizes,
+                $this->fetchPriority,
             );
         }
 
@@ -393,9 +396,9 @@ final class ImageBuilder
      *     `effectiveMaxWidth`-capped width pool — matches `PictureRenderer`'s
      *     fallback `<img src>` choice (lib/View/PictureRenderer.php:89-90).
      *
-     * Passthrough sources (SVG / GIF) return the bare mediapool URL — no Glide
-     * pipeline, dimensions and filters are silently ignored. Animated GIFs
-     * return the static GIF URL, NOT the animated WebP wrap, since
+     * Passthrough sources return the original URL with its source cache token;
+     * dimensions and filters are silently ignored. Animated sources
+     * return the original URL, since
      * `<video poster>` + animated WebP is undefined per HTML5 and CSS
      * `background-image` of an animated WebP autoplays the loop, rarely the
      * intended behaviour.
@@ -415,9 +418,7 @@ final class ImageBuilder
         }
 
         if ($image->isPassthrough()) {
-            return $image->source instanceof ExternalSource
-                ? $image->source->url
-                : UrlBuilder::assetUrl(rex_url::base() . 'media/' . $image->source->key());
+            return UrlBuilder::originalUrl($image);
         }
 
         $effectiveFormat = strtolower($format ?? $this->resolveDefaultFormat());

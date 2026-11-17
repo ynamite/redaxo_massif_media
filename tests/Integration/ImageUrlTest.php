@@ -128,7 +128,7 @@ final class ImageUrlTest extends TestCase
 
         $url = Image::url('logo.svg', width: 200);
 
-        self::assertSame('/media/logo.svg', $url);
+        self::assertSame('/media/logo.svg?v=' . filemtime($svgPath), $url);
         self::assertStringNotContainsString('/cache/', $url);
         self::assertStringNotContainsString('?s=', $url);
     }
@@ -143,7 +143,7 @@ final class ImageUrlTest extends TestCase
         // silently ignored. Animated GIFs do NOT return the buildAnimatedWebp
         // URL — that's a `<picture>`-only optimization for the `<source>` tag,
         // and using it as a `<video poster>` is undefined per HTML5.
-        self::assertSame('/media/banner.gif', $url);
+        self::assertSame('/media/banner.gif?v=' . filemtime($this->mediaDir . '/banner.gif'), $url);
     }
 
     public function testUrlReturnsEmptyStringForMissingSource(): void

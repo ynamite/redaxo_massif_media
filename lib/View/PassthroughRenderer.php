@@ -4,38 +4,27 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\View;
 
-use rex_url;
+use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
+use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Loading;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\UrlBuilder;
-use Ynamite\Media\Source\ExternalSource;
 
 final class PassthroughRenderer
 {
     /**
      * UrlBuilder is optional so existing callers that don't care about the
      * animated-WebP wrap (eg. simple test setups) can skip it. When omitted,
-     * even animated GIFs fall through to the plain <img> path.
+     * even animated sources fall through to the plain <img> path.
      */
     public function __construct(private ?UrlBuilder $urlBuilder = null)
     {
     }
 
     /**
-     * Emit markup for sources that cannot go through the regular Glide
-     * resize pipeline (svg, gif, or unknown formats).
-     *
-     *   - SVG / static GIF / unknown:  plain <img> at intrinsic dims.
-     *   - Animated GIF (mediapool):    <picture> with <source type="image/webp"
-     *                                  srcset="…/animated.webp"> + <img> GIF
-     *                                  fallback. Modern browsers fetch the
-     *                                  WebP (typ. 40-60% smaller); older
-     *                                  browsers and CDN-mode installs fall
-     *                                  through to the GIF.
-     *   - External-URL passthrough:    plain <img src="https://upstream...">.
-     *                                  No animated-WebP wrap (we don't proxy
-     *                                  bytes for external SVG/GIF).
+     * Keep original bytes in the fallback <img>. Encodable mediapool GIF/WebP
+     * animations get a responsive WebP source before it.
      */
     public function render(
         ResolvedImage $image,
@@ -46,24 +35,27 @@ final class PassthroughRenderer
         Loading $loading = Loading::LAZY,
         Decoding $decoding = Decoding::ASYNC,
         ?string $class = null,
+        ?string $sizes = null,
+        FetchPriority $fetchPriority = FetchPriority::AUTO,
     ): string {
         $w = $width ?? $image->intrinsicWidth;
-        $h = $height ?? ($ratio !== null && $ratio > 0
+        $ratio = $ratio !== null && $ratio > 0 ? $ratio : $image->aspectRatio();
+        $h = $height ?? ($ratio > 0
             ? (int) round($w / $ratio)
             : $image->intrinsicHeight);
 
-        $imgTag = $this->buildImgTag($image, $w, $h, $alt, $loading, $decoding, $class);
+        $imgTag = $this->buildImgTag($image, $w, $h, $alt, $loading, $decoding, $class, $fetchPriority);
 
-        $animatedWebpUrl = $image->isAnimated && $this->urlBuilder !== null
-            ? $this->urlBuilder->buildAnimatedWebp($image)
-            : '';
-        if ($animatedWebpUrl === '') {
+        $srcset = $this->urlBuilder?->buildAnimatedSrcset($image) ?? '';
+        if ($srcset === '') {
             return $imgTag;
         }
 
         return '<picture>'
             . '<source type="image/webp" srcset="'
-            . htmlspecialchars($animatedWebpUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            . htmlspecialchars($srcset, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            . '" sizes="'
+            . htmlspecialchars($sizes ?? Config::defaultSizes(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
             . '">'
             . $imgTag
             . '</picture>';
@@ -77,24 +69,27 @@ final class PassthroughRenderer
         Loading $loading,
         Decoding $decoding,
         ?string $class,
+        FetchPriority $fetchPriority,
     ): string {
-        $src = $image->source instanceof ExternalSource
-            ? $image->source->url
-            : UrlBuilder::assetUrl(rex_url::base() . 'media/' . $image->source->key());
-
         $attrs = [
-            'src' => $src,
+            'src' => UrlBuilder::originalUrl($image),
             'width' => (string) $w,
             'height' => (string) $h,
             'alt' => $alt ?? '',
             'loading' => $loading->value,
             'decoding' => $decoding->value,
         ];
+        if ($fetchPriority !== FetchPriority::AUTO) {
+            $attrs['fetchpriority'] = $fetchPriority->value;
+        }
         if ($alt === null || $alt === '') {
             $attrs['aria-hidden'] = 'true';
         }
         if ($class !== null && $class !== '') {
             $attrs['class'] = $class;
+        }
+        if ($image->focalPoint !== null) {
+            $attrs['style'] = 'object-position:' . $image->focalPoint;
         }
 
         $tag = '<img';

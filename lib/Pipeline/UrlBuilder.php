@@ -9,6 +9,7 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Glide\CacheKeyBuilder;
 use Ynamite\Media\Glide\Server;
 use Ynamite\Media\Glide\Signature;
+use Ynamite\Media\Source\ExternalSource;
 
 final class UrlBuilder
 {
@@ -17,6 +18,17 @@ final class UrlBuilder
     {
         $host = Config::assetHost();
         return $host !== '' ? $host . '/' . ltrim($url, './') : $url;
+    }
+
+    public static function originalUrl(ResolvedImage $image): string
+    {
+        if ($image->source instanceof ExternalSource) {
+            return $image->source->url;
+        }
+
+        $url = self::assetUrl(rex_url::base() . 'media/' . $image->source->key());
+        $bust = $image->source->cacheBust();
+        return $bust !== '' && $bust !== '0' ? $url . '?v=' . $bust : $url;
     }
 
     /**
@@ -79,24 +91,19 @@ final class UrlBuilder
     }
 
     /**
-     * Build a signed URL for the animated WebP variant of an animated source.
-     * Returns '' when CDN mode is on (the CDN doesn't run our encoder), when
-     * the source isn't actually animated, or when the source is external
-     * (animated GIF wrapping is opt-in for mediapool only — external URLs
-     * pass through their original byte stream). Caller falls back to the
-     * raw `<img>` in any of these cases.
+     * Build a signed animated WebP URL. Sources outside the encoding budget,
+     * external sources and CDN mode fall back to their original bytes.
      */
-    public function buildAnimatedWebp(ResolvedImage $image): string
+    public function buildAnimatedWebp(ResolvedImage $image, int $width): string
     {
         if (
-            !$image->isAnimated
-            || $image->sourceFormat !== 'gif'
+            !$image->isAnimatedEncodable()
             || Config::cdnEnabled()
             || $image->source->isExternal()
         ) {
             return '';
         }
-        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key(), $image->intrinsicWidth, $image->intrinsicWidth);
+        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key(), $width, $image->intrinsicWidth);
         $signature = Signature::sign($cachePath);
         $url = self::assetUrl(rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath));
         $url .= '?s=' . $signature;
@@ -106,6 +113,19 @@ final class UrlBuilder
         }
         $url .= '&g=' . Config::cacheGeneration();
         return $url;
+    }
+
+    public function buildAnimatedSrcset(ResolvedImage $image): string
+    {
+        $entries = [];
+        foreach (AnimatedWebpEncoder::widths($image) as $width) {
+            $url = $this->buildAnimatedWebp($image, $width);
+            if ($url === '') {
+                return '';
+            }
+            $entries[] = $url . ' ' . $width . 'w';
+        }
+        return implode(', ', $entries);
     }
 
     /**
