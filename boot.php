@@ -152,19 +152,32 @@ rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
 // rex_extension runs same-level callbacks in registration order, so on
 // MEDIA_UPDATED the stale cache is dropped before re-encoding. MEDIA_ADDED
 // carries the filename in params['filename'] (mediapool service_media).
-// Must never break an upload — swallow everything.
+// Must not break an upload: exceptions are swallowed (fatals/timeouts can't be).
+// MEDIA_UPDATED also fires on metadata-only saves (filetype param null) — only
+// re-encode when the file itself was replaced. Only gif/webp can be animated.
 $prewarmMedia = static function (rex_extension_point $ep): void {
     $filename = $ep->getParam('filename');
     if (!is_string($filename) || $filename === '') {
         return;
     }
+    if ($ep->getName() === 'MEDIA_UPDATED' && $ep->getParam('filetype') === null) {
+        return;
+    }
+    if (!in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['gif', 'webp'], true)) {
+        return;
+    }
     try {
         $image = (new ImageResolver(new MetadataReader()))->resolve($filename);
         if ($image->isAnimatedEncodable()) {
+            @set_time_limit(120);
             (new AnimatedWebpEncoder())->prewarm($image);
         }
     } catch (Throwable $e) {
-        rex_logger::logException($e);
+        try {
+            rex_logger::logException($e);
+        } catch (Throwable) {
+            // logging must not break the upload either
+        }
     }
 };
 rex_extension::register('MEDIA_ADDED', $prewarmMedia);

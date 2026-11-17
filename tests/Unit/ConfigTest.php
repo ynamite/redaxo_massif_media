@@ -23,6 +23,17 @@ final class ConfigTest extends TestCase
         self::assertSame($key, Config::signKey());
     }
 
+    public function testSignKeyAdoptsKeyPersistedByOtherProcess(): void
+    {
+        Config::$signKeyPersister = static fn (string $candidate): string => 'other-process-key';
+        try {
+            self::assertSame('other-process-key', Config::signKey());
+            self::assertSame('other-process-key', Config::signKey());
+        } finally {
+            Config::$signKeyPersister = null;
+        }
+    }
+
     public function testLqipBlurReturnsDefaultWhenUnset(): void
     {
         self::assertSame(5, Config::lqipBlur());

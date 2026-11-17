@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ynamite\Media;
 
+use rex;
 use rex_config;
+use rex_logger;
+use rex_sql;
 
 final class Config
 {
@@ -103,15 +106,57 @@ final class Config
         return rex_config::set(self::ADDON, $key, $value);
     }
 
+    /**
+     * Test seam: replaces the DB insert-if-absent step. Receives the candidate
+     * key, returns the key that won.
+     *
+     * @var (callable(string): string)|null
+     */
+    public static $signKeyPersister = null;
+
     public static function signKey(): string
     {
         $key = (string) self::get(self::KEY_SIGN_KEY, '');
         if ($key === '') {
             // Self-heal: a migration may mark the addon installed without running install.php.
-            $key = self::generateSignKey();
+            $key = self::persistSignKey(self::generateSignKey());
+            // rex_config saves at shutdown, last writer wins — set the DB winner so
+            // its save can't overwrite it with a different key.
             self::set(self::KEY_SIGN_KEY, $key);
         }
         return $key;
+    }
+
+    /**
+     * Atomic insert-if-absent straight to the DB (empty stored values count as
+     * absent), then re-read the winner. Concurrent requests converge on one key.
+     */
+    private static function persistSignKey(string $candidate): string
+    {
+        if (self::$signKeyPersister !== null) {
+            return (self::$signKeyPersister)($candidate);
+        }
+        if (!class_exists('rex_sql')) {
+            return $candidate;
+        }
+        try {
+            $table = rex::getTable('config');
+            $sql = rex_sql::factory();
+            $sql->setQuery(
+                'INSERT INTO ' . $table . ' (`namespace`, `key`, `value`) VALUES (?, ?, ?) '
+                . 'ON DUPLICATE KEY UPDATE `value` = IF(`value` IN (\'""\', \'\', \'null\'), VALUES(`value`), `value`)',
+                [self::ADDON, self::KEY_SIGN_KEY, json_encode($candidate)],
+            );
+            $rows = rex_sql::factory()->getArray(
+                'SELECT `value` FROM ' . $table . ' WHERE `namespace` = ? AND `key` = ?',
+                [self::ADDON, self::KEY_SIGN_KEY],
+            );
+            $winner = isset($rows[0]['value']) ? json_decode((string) $rows[0]['value'], true) : null;
+            return is_string($winner) && $winner !== '' ? $winner : $candidate;
+        } catch (\Throwable $e) {
+            rex_logger::logException($e);
+            return $candidate;
+        }
     }
 
     public static function generateSignKey(): string

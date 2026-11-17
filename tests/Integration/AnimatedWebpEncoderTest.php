@@ -213,10 +213,13 @@ final class AnimatedWebpEncoderTest extends TestCase
             1400, 200, 'image/gif', 'gif', isAnimated: true, frameCount: 2,
         );
 
+        \rex_logger::_reset();
         (new AnimatedWebpEncoder())->prewarm($image);
 
-        self::assertFileDoesNotExist(
-            rex_path::addonAssets(Config::ADDON, 'cache/corrupt.gif/animated.webp'),
+        self::assertNotEmpty(\rex_logger::$logged, 'failure must be logged, not thrown');
+        self::assertSame(
+            [],
+            glob(rex_path::addonAssets(Config::ADDON, 'cache/corrupt.gif/animated*.webp')) ?: [],
         );
     }
 

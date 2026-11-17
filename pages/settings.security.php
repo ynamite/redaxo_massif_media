@@ -15,7 +15,7 @@ if (rex_request_method() === 'post' && (string) rex_post('massif_media_action', 
     } else {
         $action = (string) rex_post('massif_media_action', 'string', '');
         if ($action === 'regenerate_key') {
-            Config::set(Config::KEY_SIGN_KEY, bin2hex(random_bytes(32)));
+            Config::set(Config::KEY_SIGN_KEY, Config::generateSignKey());
             echo rex_view::success('Sign Key neu generiert. Bestehende URLs sind ungültig.');
         } elseif ($action === 'clear_cache') {
             $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
@@ -44,7 +44,7 @@ $signKey = Config::signKey();
 $body = '<p>HMAC Sign-Key (beim Aktivieren des Addons automatisch erzeugt). '
       . 'Wird zur Signierung der Bild-URLs verwendet.</p>'
       . '<pre style="white-space:pre-wrap;word-break:break-all"><code>'
-      . htmlspecialchars($signKey !== '' ? $signKey : '(nicht gesetzt)', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+      . htmlspecialchars($signKey, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
       . '</code></pre>'
       . '<form action="' . htmlspecialchars($action, ENT_QUOTES) . '" method="post" class="form-inline">'
       . $hidden
