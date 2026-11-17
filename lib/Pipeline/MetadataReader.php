@@ -34,8 +34,8 @@ final class MetadataReader
 
     public static function metaCachePath(SourceInterface $source): string
     {
-        // Recompute pre-frame-count sidecars after upgrading from 1.0.18.
-        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v2');
+        // Recompute sidecars that classified animated WebP as static without Imagick.
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v3');
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json'
@@ -108,7 +108,7 @@ final class MetadataReader
 
     /**
      * Count frames only for formats that can carry animation (gif, webp,
-     * png/apng). Other formats and unavailable Imagick use 1; failed pings use 0.
+     * png/apng). Without Imagick, WebP headers identify animation; failed pings use 0.
      */
     private function probeFrameCount(string $absolutePath, string $sourceFormat): int
     {
@@ -116,6 +116,17 @@ final class MetadataReader
             return 1;
         }
         if (!extension_loaded('imagick')) {
+            if ($sourceFormat === 'webp') {
+                $header = @file_get_contents($absolutePath, false, null, 0, 21);
+                if ($header !== false && strlen($header) === 21
+                    && substr($header, 0, 4) === 'RIFF'
+                    && substr($header, 8, 8) === 'WEBPVP8X'
+                    && (ord($header[20]) & 0x02) !== 0
+                ) {
+                    // shortcut: 2 means animated with unknown count; use Imagick for exact counts.
+                    return 2;
+                }
+            }
             return 1;
         }
         try {

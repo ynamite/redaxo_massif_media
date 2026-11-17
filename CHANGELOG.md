@@ -16,6 +16,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Changed
 
+- Animierte WebPs werden auch ohne Imagick anhand des Dateikopfs erkannt, als Original ausgeliefert und bei Art Direction übersprungen; bisherige Metadaten werden neu berechnet.
 - **Animiertes Encoding schreibt die coalesceten, skalierten Frames direkt, ohne `deconstructImages()`.** Transparenz bleibt erhalten. Die Ausgabe ist atomar, mit 0755-Verzeichnissen und 0644-Dateien, auch beim Pre-Warm.
 - **Ein globaler Encode-Lock ausserhalb des Caches** (`addonData`) überlebt Cache-Leeren und dedupliziert Requests und Pre-Warm. Requests warten nicht (bei Lock belegt: Original-Fallback), das Pre-Warm wartet und prüft den Cache danach erneut. Obergrenze: ein animiertes Encoding pro Host gleichzeitig; ein kleiner Semaphor erhöht bei Bedarf den Durchsatz.
 - **Original-Fallback statt 404:** Ein gültig signierter Request für eine animierte Variante, die nicht erzeugt werden kann, liefert die Original-Bytes mit dem Content-Type des Originals und `Cache-Control: no-store`. Das gilt bei belegtem Lock, überschrittenem Budget, nicht unterstützter Breite oder Quelle und fehlender WebP-Encodierung. Auch Legacy-`animated.webp`-URLs und Legacy-Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei statt 404; fehlende Originale liefern weiterhin 404, ungültige Signaturen bleiben 403.

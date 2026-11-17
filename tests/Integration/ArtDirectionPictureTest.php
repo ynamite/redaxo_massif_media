@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use rex_config;
 use rex_path;
 use Ynamite\Media\Config;
@@ -171,5 +173,20 @@ final class ArtDirectionPictureTest extends TestCase
             '@<source media="\(max-width: 600px\)"[^>]+srcset="[^"]*portrait-600x800\.jpg/webp-\d+-\d+-cover-50-30-\d+\.webp@',
             $html,
         );
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testAnimatedWebpArtVariantWithoutImagickIsSkipped(): void
+    {
+        require __DIR__ . '/../_stubs/no-imagick.php';
+        copy($this->fixturesDir . '/animated-3frame.webp', $this->tmpBase . '/media/animation.webp');
+
+        $html = Image::for('landscape-800x600.jpg')->alt('Hero')->art([
+            ['media' => '(max-width: 600px)', 'src' => 'animation.webp'],
+        ])->render();
+
+        self::assertSame(Image::for('landscape-800x600.jpg')->alt('Hero')->render(), $html);
+        self::assertStringNotContainsString('animation.webp', $html);
     }
 }

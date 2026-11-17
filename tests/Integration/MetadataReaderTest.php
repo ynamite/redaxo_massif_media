@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use rex_config;
 use rex_file;
 use rex_path;
@@ -120,6 +122,47 @@ final class MetadataReaderTest extends TestCase
             self::assertTrue($resolved->isAnimated);
             self::assertSame(3, $this->readSidecar($source)['frames']);
             self::assertSame(3, $this->reader->read($source)->frameCount);
+        }
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testDetectsAnimatedWebpWithoutImagickAndCachesIt(): void
+    {
+        require __DIR__ . '/../_stubs/no-imagick.php';
+        $source = $this->source('animated-3frame.webp');
+        // A GD-only host may already have cached the old static classification.
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v2');
+        rex_file::put(rex_path::addonAssets(Config::ADDON, 'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json'), json_encode([
+            'width' => 64, 'height' => 64, 'mime' => 'image/webp', 'source_format' => 'webp',
+            'frames' => 1, 'is_animated' => false, 'failed' => false,
+        ]));
+
+        $resolved = $this->reader->read($source);
+
+        self::assertTrue($resolved->isAnimated);
+        self::assertSame(2, $resolved->frameCount);
+        self::assertTrue($resolved->isPassthrough());
+        self::assertSame(2, $this->readSidecar($source)['frames']);
+        self::assertTrue($this->reader->read($source)->isAnimated);
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testStaticWebpWithoutImagickIsNotAnimated(): void
+    {
+        require __DIR__ . '/../_stubs/no-imagick.php';
+        $path = tempnam(sys_get_temp_dir(), 'massif-static-webp-');
+        $image = imagecreatetruecolor(32, 32);
+        try {
+            imagewebp($image, $path);
+            $resolved = $this->reader->read(new MediapoolSource('static.webp', $path, 1));
+
+            self::assertSame('webp', $resolved->sourceFormat);
+            self::assertFalse($resolved->isAnimated);
+            self::assertSame(1, $resolved->frameCount);
+        } finally {
+            unlink($path);
         }
     }
 

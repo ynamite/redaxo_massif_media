@@ -418,6 +418,20 @@ final class EndpointServeTest extends TestCase
 
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
+    public function testWebpWithoutImagickStreamsOriginalForAnimatedAndGlideRequests(): void
+    {
+        require __DIR__ . '/../_stubs/no-imagick.php';
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $this->mediaDir . '/animation.webp');
+        foreach (['animated.webp', 'jpg-32-80.jpg'] as $variant) {
+            $path = 'animation.webp/' . $variant;
+            $body = $this->handle($path);
+
+            self::assertSame(200, http_response_code());
+            self::assertSame(file_get_contents($this->mediaDir . '/animation.webp'), $body);
+            self::assertFileDoesNotExist($this->cacheDir . '/' . $path);
+        }
+    }
+
     public function testUnavailableWebpStreamsOriginal(): void
     {
         $this->stageAnimatedMetadata(3);
