@@ -203,6 +203,23 @@ final class AnimatedWebpEncoderTest extends TestCase
         self::assertSame(3, (new CacheStats())->compute()['by_kind']['animated']['count']);
     }
 
+    public function testPrewarmSwallowsFailures(): void
+    {
+        @mkdir($this->tmpBase, 0777, true);
+        $path = $this->tmpBase . '/corrupt.gif';
+        copy(__DIR__ . '/../_fixtures/corrupt.jpg', $path);
+        $image = new ResolvedImage(
+            new MediapoolSource('corrupt.gif', $path, 1_700_000_000),
+            1400, 200, 'image/gif', 'gif', isAnimated: true, frameCount: 2,
+        );
+
+        (new AnimatedWebpEncoder())->prewarm($image);
+
+        self::assertFileDoesNotExist(
+            rex_path::addonAssets(Config::ADDON, 'cache/corrupt.gif/animated.webp'),
+        );
+    }
+
     public function testSecondCallHitsCache(): void
     {
         $encoder = new AnimatedWebpEncoder();

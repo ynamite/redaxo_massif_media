@@ -6,7 +6,10 @@ require __DIR__ . '/vendor/autoload.php';
 
 use Ynamite\Media\Config;
 use Ynamite\Media\Glide\RequestHandler;
+use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\CacheInvalidator;
+use Ynamite\Media\Pipeline\ImageResolver;
+use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Preloader;
 use Ynamite\Media\Var\RexPic;
 use Ynamite\Media\Var\RexVideo;
@@ -143,3 +146,26 @@ $invalidateMediaCache = static function (rex_extension_point $ep): void {
 };
 rex_extension::register('MEDIA_UPDATED', $invalidateMediaCache);
 rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
+
+// MEDIA_ADDED / MEDIA_UPDATED → pre-warm animated WebP encodes so the first
+// visitor doesn't pay for them. Registered AFTER the invalidation above:
+// rex_extension runs same-level callbacks in registration order, so on
+// MEDIA_UPDATED the stale cache is dropped before re-encoding. MEDIA_ADDED
+// carries the filename in params['filename'] (mediapool service_media).
+// Must never break an upload — swallow everything.
+$prewarmMedia = static function (rex_extension_point $ep): void {
+    $filename = $ep->getParam('filename');
+    if (!is_string($filename) || $filename === '') {
+        return;
+    }
+    try {
+        $image = (new ImageResolver(new MetadataReader()))->resolve($filename);
+        if ($image->isAnimatedEncodable()) {
+            (new AnimatedWebpEncoder())->prewarm($image);
+        }
+    } catch (Throwable $e) {
+        rex_logger::logException($e);
+    }
+};
+rex_extension::register('MEDIA_ADDED', $prewarmMedia);
+rex_extension::register('MEDIA_UPDATED', $prewarmMedia);
