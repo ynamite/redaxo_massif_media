@@ -125,6 +125,40 @@ final class AnimatedWebpEncoderTest extends TestCase
         $check->clear();
     }
 
+    public function testResizesAnimatedWebpSource(): void
+    {
+        $image = new ResolvedImage(
+            new MediapoolSource('animated-700.webp', $this->fixturesDir . '/animated-700.webp', 1_700_000_000),
+            700, 300, 'image/webp', 'webp', isAnimated: true, frameCount: 3,
+        );
+        $path = (new AnimatedWebpEncoder())->encode($image, 640);
+
+        self::assertFileExists($path);
+        $check = new \Imagick($path);
+        self::assertSame(3, $check->getNumberImages());
+        self::assertSame(640, $check->getImageWidth());
+        $check->clear();
+    }
+
+    public function testFailedWriteNeverPublishesAndLeavesNoTempFiles(): void
+    {
+        $image = $this->fixture();
+        $final = AnimatedWebpEncoder::cacheFile('animated-3frame.gif', 64, 64);
+        mkdir($final, 0777, true); // rename onto a directory fails
+
+        self::assertSame('', (new AnimatedWebpEncoder())->encode($image, 64));
+        self::assertDirectoryExists($final);
+        self::assertSame(['.', '..'], scandir($final));
+        self::assertSame(['.', '..', 'animated.webp'], scandir(dirname($final)));
+    }
+
+    public function testSuccessLeavesNoTempFiles(): void
+    {
+        $path = (new AnimatedWebpEncoder())->encode($this->fixture(), 64);
+
+        self::assertSame(['.', '..', 'animated.webp'], scandir(dirname($path)));
+    }
+
     public function testEncodesAnimatedWebpSource(): void
     {
         $image = $this->fixture('webp');

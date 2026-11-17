@@ -56,6 +56,7 @@ final class AnimatedWebpEncoder
             return '';
         }
 
+        $tmp = $cachePath . '.' . getmypid() . '.' . bin2hex(random_bytes(4)) . '.tmp.webp';
         try {
             $im = new Imagick();
             $im->readImage($absolutePath);
@@ -63,6 +64,7 @@ final class AnimatedWebpEncoder
             // which is what most WebP decoders expect. Without it some sources
             // produce broken output (frames overlap with prior-frame pixels).
             $coalesced = $im->coalesceImages();
+            $im->clear();
             $coalesced->setOption('webp:method', '4');
             foreach ($coalesced as $frame) {
                 if ($width < $image->intrinsicWidth) {
@@ -73,16 +75,26 @@ final class AnimatedWebpEncoder
                 $frame->setImageCompressionQuality(Config::quality('webp'));
             }
             $output = $coalesced->deconstructImages();
+            $coalesced->clear();
 
             @mkdir(dirname($cachePath), 0777, true);
-            $output->writeImages($cachePath, true);
-
-            $im->clear();
-            $coalesced->clear();
+            // Write to a temp sibling, then rename: readers never see a partial file.
+            $output->writeImages($tmp, true);
             $output->clear();
+            if (!is_file($tmp) || filesize($tmp) === 0 || !rename($tmp, $cachePath)) {
+                @unlink($tmp);
+                return '';
+            }
         } catch (Throwable $e) {
             rex_logger::logException($e);
+            @unlink($tmp);
             return '';
+        } finally {
+            foreach (['im', 'coalesced', 'output'] as $v) {
+                if (isset($$v) && $$v instanceof Imagick) {
+                    $$v->clear();
+                }
+            }
         }
 
         return is_file($cachePath) && filesize($cachePath) > 0 ? $cachePath : '';

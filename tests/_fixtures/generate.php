@@ -61,17 +61,19 @@ if ($useImagick) {
     $gif->writeImages($fixturesDir . '/animated-3frame.gif', true);
     $gif->clear();
 
+    foreach ([[320, 200, 'animated-3frame.webp'], [700, 300, 'animated-700.webp']] as [$w, $h, $name]) {
     $webp = new Imagick();
     foreach (['#ff0000', '#00ff00', '#0000ff'] as $color) {
         $frame = new Imagick();
-        $frame->newImage(320, 200, new ImagickPixel($color));
+        $frame->newImage($w, $h, new ImagickPixel($color));
         $frame->setImageFormat('webp');
         $frame->setImageDelay(20);
         $webp->addImage($frame);
         $frame->clear();
     }
-    $webp->writeImages($fixturesDir . '/animated-3frame.webp', true);
+    $webp->writeImages($fixturesDir . '/' . $name, true);
     $webp->clear();
+    }
 } else {
     fwrite(STDERR, "Skipping animated GIF/WebP fixtures: needs Imagick.\n");
 }
@@ -85,4 +87,4 @@ file_put_contents(
     . '</svg>' . "\n",
 );
 
-echo 'Generated ' . ($useImagick ? 7 : 5) . " fixtures in $fixturesDir\n";
+echo 'Generated ' . ($useImagick ? 8 : 5) . " fixtures in $fixturesDir\n";
