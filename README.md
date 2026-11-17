@@ -384,7 +384,7 @@ Der `_external/`-Präfix ist reserviert; Mediapool-Filenames können nicht mit `
 
 **CDN-Modus wird übersprungen.** Wenn `cdn_enabled` an ist, gehen Mediapool-Quellen wie gehabt durch das CDN-Template; externe Quellen routen aber weiter über den `_external/<hash>`-Pfad — der Upstream ist schon ein CDN, ihn nochmal durch unseren zu schicken wäre sinnlos. Externe `<video>`-Quellen werden dagegen direkt als `<video src="https://…">` emittiert (kein Proxy, kein Fetch).
 
-**Art direction** supports static external and mediapool images. Animated art-direction variants are skipped; animated WebP encoding is mediapool-only. Filter, Focal-Point per Setter (`->focal('50% 30%')`) und `fit`-Token funktionieren ebenfalls — externe Quellen haben keinen `med_focuspoint`-Wert auf einer rex_media-Row, aber per-Call-Override über `focal:` ist möglich.
+**Art Direction** funktioniert für statische externe Bilder genauso wie für Mediapool-Bilder. Animierte Art-Direction-Varianten werden übersprungen; animiertes WebP-Encoding gibt es nur für Mediapool-Quellen. Filter, Focal-Point per Setter (`->focal('50% 30%')`) und `fit`-Token funktionieren ebenfalls — externe Quellen haben keinen `med_focuspoint`-Wert auf einer rex_media-Row, aber per-Call-Override über `focal:` ist möglich.
 
 **Cache-Invalidierung** für externe URLs läuft via TTL-Refresh oder manuell:
 
@@ -1144,9 +1144,11 @@ Technische Umsetzung:
 
 ---
 
-# Animated GIFs and WebPs
+# Animierte GIFs und WebPs
 
-For an animated GIF or WebP within the encoding budget, MASSIF Media renders a `<picture>` with up to three WebP widths and the original as `<img>`. This requires Imagick with WebP support; otherwise markup and preloads use the original file.
+Animierte GIFs sind typischerweise 2–3× so gross wie das äquivalente animierte WebP. Ist das Quellbild ein animiertes GIF oder WebP innerhalb des Encoding-Budgets, rendert MASSIF Media ein `<picture>` mit WebP-Source (bis zu drei Breiten) und dem Original als `<img>`. Voraussetzung ist Imagick mit WebP-Unterstützung; ohne diese nutzen Markup und Preloads die Originaldatei.
+
+Beispiel:
 
 ```html
 <picture>
@@ -1156,33 +1158,43 @@ For an animated GIF or WebP within the encoding budget, MASSIF Media renders a `
             /.../loop.gif/animated-1280.webp?s=… 1280w,
             /.../loop.gif/animated.webp?s=… 1600w"
     sizes="…" />
-  <img src="/media/loop.gif?v=…" alt="…" width="1600" height="900"
-       loading="lazy" decoding="async" />
+  <img
+    src="/media/loop.gif?v=…"
+    alt="…"
+    width="1600"
+    height="900"
+    loading="lazy"
+    decoding="async" />
 </picture>
 ```
 
-- Widths are 640, 1280 and the intrinsic width, without upscaling. Frames, delays and loop count are preserved.
-- Encoding writes the coalesced, resized frames directly with `writeImages($path, true)`. It does not call `deconstructImages()`, so transparent frames can clear earlier opaque pixels. Files are published atomically, with 0755 directories and 0644 files regardless of the caller's umask.
-- One global lock in the addon's data directory (`animated-encode.lock`) allows one animated encode per host at a time, shared by requests and upload pre-warming. It survives cache invalidation. Requests acquire it without waiting; pre-warming waits and rechecks the cache after acquiring it. A small semaphore is the upgrade path if throughput matters.
-- The intrinsic variant keeps `cache/{src}/animated.webp`; smaller widths use `cache/{src}/animated-{w}.webp`. Existing cached variants are served first.
-- If an animated variant cannot be generated now (busy lock, budget exceeded, unsupported source or width, unavailable WebP encoder, or encoding failure), a valid signed request streams the **original bytes**, with the original Content-Type and `Cache-Control: no-store`. Missing or unreadable originals still return 404; bad signatures return 403.
-- Legacy `animated.webp` URLs and legacy signed Glide transform URLs for animated sources receive the original file on a cache miss when the animation cannot be regenerated. Glide transform requests for GIF or animated WebP sources bypass Glide decoding, including external sources. No LQIP or dominant color is generated for animations.
-- Animated sources are unsupported as art-direction variants: those variants are silently skipped, including when the main image is static. A main animated image uses the passthrough renderer and ignores `art:` variants.
-- CDN mode skips both the animated wrapper and upload pre-warming.
+Moderne Browser laden die WebP-Variante, ältere das Original.
+
+Technische Details:
+
+- Breiten: 640, 1280 und die intrinsische Breite, nie hochskaliert. Alle Frames, Delays und die Loop-Zahl bleiben erhalten.
+- Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)`. Die coalesceten, skalierten Frames werden direkt geschrieben, `deconstructImages()` wird nicht aufgerufen; Transparenz bleibt erhalten (spätere Frames können frühere opake Pixel wieder transparent machen). Die Dateien werden atomar veröffentlicht, mit 0755-Verzeichnissen und 0644-Dateien unabhängig von der umask des Aufrufers.
+- Glides Standard-Encoder behält nur das erste Frame, deshalb laufen animierte Quellen nie durch Glide (kein LQIP, keine dominante Farbe).
+- Ein globaler Lock im Daten-Verzeichnis des Addons (`animated-encode.lock`) erlaubt ein animiertes Encoding pro Host gleichzeitig, geteilt zwischen Requests und Upload-Pre-Warm. Er überlebt eine Cache-Invalidierung. Requests erwerben ihn ohne zu warten; das Pre-Warm wartet und prüft den Cache nach dem Erwerb erneut. Upgrade-Pfad bei Durchsatzproblemen: ein kleiner Semaphor.
+- Cache: die grösste Breite liegt unter `cache/{src}/animated.webp` (alter Name, von 1.0.18 gecachtes HTML bleibt gültig), kleinere unter `cache/{src}/animated-{w}.webp`. Bereits gecachte Varianten werden zuerst ausgeliefert; encodiert wird nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
+- Kann eine animierte Variante gerade nicht erzeugt werden (Lock belegt, Budget überschritten, nicht unterstützte Quelle oder Breite, WebP-Encoder nicht verfügbar oder Encoding-Fehler), liefert ein gültig signierter Request die **Original-Bytes** mit dem Content-Type des Originals und `Cache-Control: no-store`. Fehlende oder unlesbare Originale liefern weiterhin 404, ungültige Signaturen 403.
+- Legacy-`animated.webp`-URLs und legacy signierte Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei, wenn die Animation nicht neu erzeugt werden kann. Glide-Transform-Requests für GIF- oder animierte WebP-Quellen umgehen das Glide-Decoding, auch bei externen Quellen. Für Animationen werden weder LQIP noch dominante Farbe erzeugt.
+- Animierte Quellen werden als `art:`-Varianten (Art Direction) nicht unterstützt: Diese Varianten werden still übersprungen, auch wenn das Hauptbild statisch ist. Ein animiertes Hauptbild läuft über den Passthrough-Renderer und ignoriert `art:`-Varianten.
+- Im CDN-Modus entfallen sowohl der Wrapper als auch das Pre-Warm beim Upload, weil das CDN die Encoding-Arbeit nicht für uns macht.
 
 ## Budget `animated_max_megapixels`
 
-The **Security & Cache** setting defaults to `40`; `0` disables animated encoding. The budget is frame count × canvas width × canvas height. Sources over budget use the original as a plain `<img>`.
+Einstellung auf dem Tab **Sicherheit & Cache** (Default `40`, `0` = nie encodieren). Gerechnet wird Frames × Breite × Höhe der Canvas. Liegt eine Quelle darüber, wird das Original als einfaches `<img>` ausgeliefert.
 
-Measured on ImageMagick 7 Q16-HDRI: approximately 28 MB RAM and 0.14 seconds per source megapixel per width (40 Mpx: approximately 1.1 GB and 6 seconds per width).
+Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro Quell-Megapixel und Breite — bei 40 Mpx also ≈ 1,1 GB und ≈ 6 s pro Breite.
 
-## Upload pre-warming
+## Pre-Warm beim Upload
 
-`MEDIA_ADDED` and `MEDIA_UPDATED` (only when the file was replaced) pre-warm variants within budget with `set_time_limit(120)`. The shared encoder waits for the global lock, then rechecks for an existing variant. Pre-warming also works in CLI, skips encoding without WebP support, and returns early in CDN mode.
+Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das gilt nur für Quellen innerhalb des Budgets und läuft mit `set_time_limit(120)`. Der gemeinsame Encoder wartet auf den globalen Lock und prüft danach, ob die Variante schon existiert. Das Pre-Warm läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt. Im CDN-Modus kehrt es sofort zurück.
 
 ## Preload
 
-With `preload: true`, eligible animations use WebP `imagesrcset`/`imagesizes`. Without WebP capability, in CDN mode, or over budget, passthrough sources preload the original (`?v=` URL). Static raster images continue to preload Glide variants.
+Mit `preload: true` werden animierte Quellen als WebP über `imagesrcset`/`imagesizes` vorgeladen. Ohne WebP-Unterstützung, im CDN-Modus oder über dem Budget werden Passthrough-Quellen (SVG, GIF, Animation) mit dem Original (`?v=`-URL) vorgeladen. Rasterbilder bleiben unverändert und laden über die Glide-Varianten vor.
 
 ---
 
@@ -1716,21 +1728,23 @@ Das reduziert Dateigrössen und entfernt potenziell sensible Metadaten.
 
 ## Animated Path
 
-Animated GIF/WebP encoding bypasses Glide and writes full coalesced frames directly, without deconstruction:
+Animierte GIFs und WebPs werden gesondert behandelt, weil Glides Standard-Encoder nur das erste Frame behalten würde. Sie laufen nie durch Glide.
+
+MASSIF Media schreibt deshalb die vollständigen coalesceten Frames direkt, ohne `deconstructImages()`:
 
 ```php
 Imagick::coalesceImages()
 writeImages($path, true)
 ```
 
-With Imagick WebP support and within `animated_max_megapixels` (default 40), each source has up to three widths (640, 1280, intrinsic; never upscaled):
+Mit Imagick-WebP-Unterstützung und innerhalb von `animated_max_megapixels` (Default 40) entstehen pro Quelle bis zu drei animierte WebPs (640, 1280, intrinsisch; nie hochskaliert). Cache-Pfade:
 
 ```text
-cache/{src}/animated.webp        # intrinsic width, legacy name
-cache/{src}/animated-{w}.webp    # smaller widths
+cache/{src}/animated.webp        # grösste Breite (intrinsisch), Legacy-Name
+cache/{src}/animated-{w}.webp    # kleinere Breiten
 ```
 
-A shared global lock outside the cache serializes animated encodes. Busy requests and other unproducible animated variants stream the original with its Content-Type and `Cache-Control: no-store`. Legacy animated and Glide transform URLs also retain this original-file fallback; signatures are always checked first. Animated art-direction variants are skipped. CDN mode skips the wrapper and upload pre-warming.
+Ein gemeinsamer globaler Lock ausserhalb des Caches serialisiert animierte Encodings. Requests bei belegtem Lock und andere nicht erzeugbare animierte Varianten liefern das Original mit seinem Content-Type und `Cache-Control: no-store`. Auch Legacy-URLs (animiert und Glide-Transform) behalten diesen Original-Fallback; Signaturen werden immer zuerst geprüft. Animierte Art-Direction-Varianten werden übersprungen. Im CDN-Modus entfallen Wrapper und Pre-Warm beim Upload.
 
 ---
 

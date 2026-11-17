@@ -9,26 +9,29 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Added
 
-- Animated GIF and WebP sources have up to three widths: 640, 1280 and intrinsic, without upscaling. Frames, delays and loop count are preserved; the original remains the `<img>` fallback. Intrinsic width keeps `{src}/animated.webp`; smaller variants use `{src}/animated-{w}.webp`.
-- `animated_max_megapixels` budget (default 40, `0` disables encoding): frame count × canvas width × canvas height. Over-budget sources use the original. Measured on ImageMagick 7 Q16-HDRI: approximately 28 MB RAM and 0.14 seconds per source megapixel per width.
-- Upload pre-warming on `MEDIA_ADDED` and file-replacing `MEDIA_UPDATED`, within budget and with `set_time_limit(120)`. CDN mode skips pre-warming.
-- Responsive animated WebP preloads through `imagesrcset`/`imagesizes`. Without Imagick WebP capability, in CDN mode, or over budget, markup and preloads use the original file.
+- **Animierte GIFs und animierte WebPs werden in bis zu drei Breiten ausgeliefert.** Breiten 640, 1280 und die intrinsische Breite (nie hochskaliert); alle Frames, Delays und die Loop-Zahl bleiben erhalten. Markup: `<picture><source type="image/webp" srcset sizes>` + `<img>` mit dem Original. Animierte Quellen laufen nie durch Glide. Die grösste Breite behält den alten Namen `{src}/animated.webp` (von 1.0.18 gecachtes HTML bleibt gültig), kleinere heissen `{src}/animated-{w}.webp`. Schreibzugriffe sind atomar.
+- **Budget `animated_max_megapixels`** (Default 40, `0` = nie encodieren) auf „Sicherheit & Cache“: Frames × Breite × Höhe der Canvas. Darüber wird das Original als einfaches `<img>` ausgeliefert. Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro Quell-Megapixel und Breite (40 Mpx ≈ 1,1 GB, ≈ 6 s pro Breite).
+- **Pre-Warm beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die animierten Varianten (nur innerhalb des Budgets) vorab encodiert, mit `set_time_limit(120)`. Im CDN-Modus entfällt das Pre-Warm. Läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt.
+- **Preload für animierte Quellen** über `imagesrcset`/`imagesizes` auf die WebP-Variante; übrige Passthrough-Quellen (SVG, GIF, Animation über Budget) werden neu mit dem Original (`?v=`-URL) vorgeladen. Ohne Imagick-WebP-Unterstützung, im CDN-Modus oder über dem Budget nutzen Markup und Preloads das Original. Rasterbilder bleiben unverändert (Glide-Varianten).
 
 ### Changed
 
-- Animated encoding writes coalesced, resized frames directly without `deconstructImages()`. Publication is atomic, with 0755 directories and 0644 files, including pre-warming.
-- One global encode lock outside the cache survives invalidation and deduplicates requests and pre-warming. Requests do not wait; pre-warming waits and rechecks the cache. Ceiling: one animated encode per host at a time; a small semaphore can increase throughput.
-- A valid signed animated request that cannot generate its variant now streams the original bytes with the original Content-Type and `Cache-Control: no-store`. This includes busy locks, budget rejection, unsupported widths/sources and unavailable WebP encoding. Legacy `animated.webp` and legacy Glide transform URLs for animations receive original-file fallback on cache misses rather than 404; missing originals still return 404. Bad signatures remain forbidden.
-- Glide cache-miss decoding is bypassed for GIF and animated WebP sources, including external sources. Animated WebPs no longer generate LQIP or dominant color.
-- Animated art-direction variants are unsupported and silently skipped, including with a static main image. Main animations ignore art direction.
-- Passthrough `<img src>` and `Image::url()` include `?v=<cacheBust>`; callers appending query parameters must use `&`. Width-only passthrough preserves intrinsic aspect ratio; focus point and fetch priority reach the `<img>`.
-- Metadata sidecars from 1.0.18 are recomputed under a new path; clearing the cache removes old sidecars.
+- **Animiertes Encoding schreibt die coalesceten, skalierten Frames direkt, ohne `deconstructImages()`.** Transparenz bleibt erhalten. Die Ausgabe ist atomar, mit 0755-Verzeichnissen und 0644-Dateien, auch beim Pre-Warm.
+- **Ein globaler Encode-Lock ausserhalb des Caches** (`addonData`) überlebt Cache-Leeren und dedupliziert Requests und Pre-Warm. Requests warten nicht (bei Lock belegt: Original-Fallback), das Pre-Warm wartet und prüft den Cache danach erneut. Obergrenze: ein animiertes Encoding pro Host gleichzeitig; ein kleiner Semaphor erhöht bei Bedarf den Durchsatz.
+- **Original-Fallback statt 404:** Ein gültig signierter Request für eine animierte Variante, die nicht erzeugt werden kann, liefert die Original-Bytes mit dem Content-Type des Originals und `Cache-Control: no-store`. Das gilt bei belegtem Lock, überschrittenem Budget, nicht unterstützter Breite oder Quelle und fehlender WebP-Encodierung. Auch Legacy-`animated.webp`-URLs und Legacy-Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei statt 404; fehlende Originale liefern weiterhin 404, ungültige Signaturen bleiben 403.
+- Glide-Decoding bei Cache-Miss wird für GIF und animierte WebP-Quellen umgangen, auch für externe Quellen. Animierte WebPs erhalten weder LQIP noch dominante Farbe.
+- **Art-Direction-Varianten (`art:`) animierter Quellen werden nicht unterstützt** und still übersprungen, auch bei statischem Hauptbild. Animierte Hauptbilder ignorieren Art Direction.
+- **Passthrough (SVG, GIF, animiertes WebP):** `<img src>` und `Image::url()` tragen jetzt `?v=<cacheBust>`. Aufrufer, die selbst Query-Parameter anhängen, müssen `&` verwenden.
+- Passthrough mit nur `width`: die Höhe folgt jetzt dem intrinsischen Seitenverhältnis.
+- Passthrough-`<img>` trägt `object-position` aus dem Fokuspunkt und gibt `fetchpriority` weiter.
+- `_meta`-Sidecars aus 1.0.18 sind verwaist: Sie werden unter einem neuen Pfad neu berechnet, ein Cache-Leeren entfernt die alten.
+- Der Endpoint liefert gecachte Animationen zuerst aus und encodiert nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
 
 ### Fixed
 
-- Empty signing keys self-heal through insert-if-absent and a confirmed database winner. Failed winner lookups retry once; unconfirmed candidates are never returned or queued for saving. Persistence failure logs once per request, prevents signing and rejects requests, including predictable empty-key HMACs.
-- Failed animation metadata pings record zero frames and a short-lived failure sentinel instead of cacheable static metadata.
-- Video `<source type>` uses the correct MIME type (`mov` → `video/quicktime`).
+- **Leerer Sign-Key heilt sich selbst** (race-sicheres Insert-if-absent in der DB, bestätigter DB-Gewinner), z. B. wenn eine ydeploy-Migration das Addon aktiviert hat, ohne dass `install.php` lief. Schlägt die Gewinner-Abfrage fehl, wird sie einmal wiederholt; unbestätigte Kandidaten werden nie zurückgegeben oder zum Speichern vorgemerkt. Schlägt die Persistenz fehl, wird einmal pro Request geloggt, es wird nicht signiert und Requests werden abgelehnt (auch vorhersagbare HMACs mit leerem Key).
+- Fehlgeschlagene Metadaten-Pings animierter Quellen werden mit null Frames und einem kurzlebigen Fehler-Marker gespeichert statt als cachebare statische Metadaten.
+- Video-`<source type>` nutzt den korrekten MIME-Typ (`mov` → `video/quicktime`).
 
 ## [1.0.18] — 2026-11-03
 
