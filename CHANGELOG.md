@@ -5,6 +5,33 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+## [1.0.19] — 2026-11-17
+
+### Added
+
+- **Animierte GIFs und animierte WebPs werden in bis zu drei Breiten ausgeliefert.** Breiten 640, 1280 und die intrinsische Breite (nie hochskaliert); alle Frames, Delays und die Loop-Zahl bleiben erhalten. Markup: `<picture><source type="image/webp" srcset sizes>` + `<img>` mit dem Original. Animierte Quellen laufen nie durch Glide. Die grösste Breite behält den alten Namen `{src}/animated.webp` (von 1.0.18 gecachtes HTML bleibt gültig), kleinere heissen `{src}/animated-{w}.webp`. Schreibzugriffe sind atomar.
+- **Budget `animated_max_megapixels`** (Default 40, `0` = nie encodieren) auf „Sicherheit & Cache“: Frames × Breite × Höhe der Canvas. Darüber wird das Original als einfaches `<img>` ausgeliefert. Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro Quell-Megapixel und Breite (40 Mpx ≈ 1,1 GB, ≈ 6 s pro Breite).
+- **Pre-Warm beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die animierten Varianten in Web-Requests vorab encodiert (CLI-Imagick kann Formate fehlen; dort wird nur geloggt), mit `set_time_limit(120)`.
+- **Preload für animierte Quellen** über `imagesrcset`/`imagesizes` auf die WebP-Variante; andere Quellen preloaden weiterhin das Original.
+
+### Changed
+
+- **Passthrough (SVG, GIF, animiertes WebP):** `<img src>` und `Image::url()` tragen jetzt `?v=<cacheBust>`. Aufrufer, die selbst `?…` anhängen, erhalten ein doppeltes `?`.
+- Passthrough mit nur `width`: die Höhe folgt jetzt dem intrinsischen Seitenverhältnis.
+- Passthrough-`<img>` trägt `object-position` aus dem Fokuspunkt und gibt `fetchpriority` weiter.
+- Animierte WebPs erhalten keinen LQIP und keine dominante Farbe mehr (kein Glide).
+- `_meta`-Sidecars aus 1.0.18 sind verwaist: Sie werden unter einem neuen Pfad neu berechnet, ein Cache-Leeren entfernt die alten.
+- Der Endpoint liefert gecachte Animationen zuerst aus und encodiert nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
+
+### Fixed
+
+- **Leerer Sign-Key heilt sich selbst** (race-sicheres Insert-if-absent in der DB), z. B. wenn eine ydeploy-Migration das Addon aktiviert hat, ohne dass `install.php` lief.
+- Video-`<source type>` nutzt den korrekten MIME-Typ (`mov` → `video/quicktime`).
+
+### Notes
+
+- Art-Direction-Varianten (`art:`) werden für animierte Quellen ignoriert.
+
 ## [1.0.18] — 2026-11-03
 
 ### Added

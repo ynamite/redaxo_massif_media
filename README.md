@@ -226,7 +226,7 @@ Die Einstellungen sind in Tabs gruppiert:
 | Allgemein          | Formate, Qualität pro Format, Breakpoint-Pools, Default-`sizes`-Attribut |
 | Placeholder        | LQIP-Tuning und dominante Farbe                                          |
 | CDN                | Optionale CDN-Auslieferung mit Template                                  |
-| Sicherheit & Cache | Sign-Key anzeigen/regenerieren, Cache leeren, Cache-TTLs                 |
+| Sicherheit & Cache | Sign-Key anzeigen/regenerieren, Cache leeren, Cache-TTLs, Animations-Budget |
 
 Die Defaults sind sinnvoll gesetzt. Die meisten Installationen müssen die Einstellungen nicht anfassen.
 
@@ -322,7 +322,7 @@ Die zurückgegebene URL geht **durch denselben Glide-Cache** wie `picture()` —
 
 `width` ist optional — ohne Angabe wird der Median des `effectiveMaxWidth`-gecappten Width-Pools gewählt (dieselbe Logik wie `PictureRenderer`s Fallback-`<img src>`).
 
-**SVG / GIF (Passthrough):** Es wird die rohe Mediapool-URL zurückgegeben — `width` / `format` / Filter werden still ignoriert. Animierte GIFs liefern die statische GIF-URL, **nicht** die animierte WebP-Variante (das `<video poster>` + animated-WebP-Konstrukt ist per HTML5 undefiniert; CSS `background-image` mit animiertem WebP loopt automatisch — selten gewollt).
+**SVG / GIF / animiertes WebP (Passthrough):** Es wird die rohe Mediapool-URL mit `?v=<cacheBust>` zurückgegeben — `width` / `format` / Filter werden still ignoriert. Hängst du selbst `?…` an, entsteht ein doppeltes `?`; nutze dann `&`. Animierte Quellen liefern die Original-URL, **nicht** die animierte WebP-Variante (CSS `background-image` mit animiertem WebP loopt automatisch — selten gewollt).
 
 ---
 
@@ -1144,11 +1144,9 @@ Technische Umsetzung:
 
 ---
 
-# Animierte GIFs als animiertes WebP
+# Animierte GIFs und WebPs
 
-Animierte GIFs sind typischerweise 2–3× so gross wie das äquivalente animierte WebP.
-
-Wenn das Quellbild ein animiertes GIF ist, rendert MASSIF Media ein `<picture>` mit WebP-Source und GIF-Fallback.
+Animierte GIFs sind typischerweise 2–3× so gross wie das äquivalente animierte WebP. Ist das Quellbild ein animiertes GIF oder WebP, rendert MASSIF Media ein `<picture>` mit WebP-Source (bis zu drei Breiten) und dem Original als `<img>`.
 
 Beispiel:
 
@@ -1156,9 +1154,12 @@ Beispiel:
 <picture>
   <source
     type="image/webp"
-    srcset="/.../spinner.gif/animated.webp?s=…" />
+    srcset="/.../spinner.gif/animated-640.webp?s=… 640w,
+            /.../spinner.gif/animated-1280.webp?s=… 1280w,
+            /.../spinner.gif/animated.webp?s=… 1600w"
+    sizes="…" />
   <img
-    src="/media/spinner.gif"
+    src="/media/spinner.gif?v=…"
     alt="…"
     width="200"
     height="200"
@@ -1167,20 +1168,32 @@ Beispiel:
 </picture>
 ```
 
-Moderne Browser laden die WebP-Variante. Ältere Browser bekommen das GIF.
+Moderne Browser laden die WebP-Variante, ältere das Original.
 
 Technische Details:
 
-- Imagick erkennt animierte GIFs beim Metadaten-Read
-- Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)`
-- Glides Standard-Encoder behält nur das erste Frame, deshalb läuft dieser Pfad an Glide vorbei
-- Die WebP-Variante wird einmalig pro Source generiert
-- Kein Multi-Width-Pool für animierte WebPs
-- Animierte WebPs werden in voller Quellgrösse erzeugt
-- Cache liegt unter `cache/{src}/animated.webp`
-- Erfordert Imagick mit WebP-Delegate
-- Ohne WebP-Delegate wird die WebP-Source still weggelassen
-- Im CDN-Modus entfällt der Wrapper komplett, weil das CDN die Encoding-Arbeit nicht für uns macht
+- Breiten: 640, 1280 und die intrinsische Breite, nie hochskaliert. Alle Frames, Delays und die Loop-Zahl bleiben erhalten.
+- Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)`, die Dateien werden atomar geschrieben.
+- Glides Standard-Encoder behält nur das erste Frame, deshalb laufen animierte Quellen nie durch Glide (kein LQIP, keine dominante Farbe).
+- Cache: die grösste Breite liegt unter `cache/{src}/animated.webp` (alter Name, von 1.0.18 gecachtes HTML bleibt gültig), kleinere unter `cache/{src}/animated-{w}.webp`.
+- Der Endpoint liefert gecachte Animationen zuerst aus und encodiert nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
+- Erfordert Imagick mit WebP-Delegate; ohne wird die WebP-Source still weggelassen.
+- Im CDN-Modus entfällt der Wrapper komplett, weil das CDN die Encoding-Arbeit nicht für uns macht.
+- `art:`-Varianten (Art Direction) werden für animierte Quellen ignoriert.
+
+## Budget `animated_max_megapixels`
+
+Einstellung auf dem Tab **Sicherheit & Cache** (Default `40`, `0` = nie encodieren). Gerechnet wird Frames × Breite × Höhe der Canvas. Liegt eine Quelle darüber, wird das Original als einfaches `<img>` ausgeliefert.
+
+Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro Quell-Megapixel und Breite — bei 40 Mpx also ≈ 1,1 GB und ≈ 6 s pro Breite.
+
+## Pre-Warm beim Upload
+
+Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das passiert nur in Web-Requests (das CLI-Imagick kann Formate fehlen; dort wird nur geloggt) mit `set_time_limit(120)`.
+
+## Preload
+
+Mit `preload: true` werden animierte Quellen als WebP über `imagesrcset`/`imagesizes` vorgeladen, alle anderen als Original.
 
 ---
 
@@ -1466,6 +1479,8 @@ Wenn der Sign-Key neu generiert wird:
 - bestehende Cache-Files bleiben aber erreichbar
 - Apache prüft beim direkten Ausliefern die Signatur nicht erneut
 
+Ein leerer Sign-Key wird automatisch neu erzeugt (race-sicher), z. B. wenn eine ydeploy-Migration das Addon aktiviert hat, ohne dass `install.php` lief.
+
 ---
 
 # Troubleshooting
@@ -1710,9 +1725,9 @@ Das reduziert Dateigrössen und entfernt potenziell sensible Metadaten.
 
 ---
 
-## Animated GIF Path
+## Animated Path
 
-Animierte GIFs werden gesondert behandelt, weil Glides Standard-Encoder nur das erste Frame behalten würde.
+Animierte GIFs und WebPs werden gesondert behandelt, weil Glides Standard-Encoder nur das erste Frame behalten würde. Sie laufen nie durch Glide.
 
 MASSIF Media nutzt deshalb:
 
@@ -1721,15 +1736,14 @@ Imagick::coalesceImages()
 writeImages($path, true)
 ```
 
-Das erzeugt ein animiertes WebP pro Quelle.
-
-Der Cache-Pfad lautet:
+Das erzeugt pro Quelle bis zu drei animierte WebPs (640, 1280, intrinsisch; nie hochskaliert). Cache-Pfade:
 
 ```text
-cache/{src}/animated.webp
+cache/{src}/animated.webp        # grösste Breite (intrinsisch), Legacy-Name
+cache/{src}/animated-{w}.webp    # kleinere Breiten
 ```
 
-Im CDN-Modus wird dieser Wrapper nicht erzeugt.
+Über dem Budget `animated_max_megapixels` (Default 40) wird nicht encodiert. Im CDN-Modus wird dieser Wrapper nicht erzeugt.
 
 ---
 
