@@ -207,6 +207,30 @@ final class MetadataReaderTest extends TestCase
         self::assertTrue($this->readSidecar($source)['failed'] ?? null, 'A failed read must persist a failed:true sentinel.');
     }
 
+    public function testFailedAnimationPingWritesShortLivedFailureInsteadOfStaticMetadata(): void
+    {
+        foreach (['gif' => 13, 'webp' => 30] as $format => $headerLength) {
+            $path = tempnam(sys_get_temp_dir(), 'massif-broken-animation-');
+            try {
+                file_put_contents($path, substr(file_get_contents($this->fixturesDir . '/animated-3frame.' . $format), 0, $headerLength));
+                self::assertIsArray(getimagesize($path), 'Header still exposes image dimensions');
+                $source = new MediapoolSource('broken.' . $format, $path, 1);
+
+                $resolved = $this->reader->read($source);
+
+                self::assertSame(0, $resolved->frameCount);
+                self::assertTrue($this->readSidecar($source)['failed']);
+                self::assertSame(0, $this->readSidecar($source)['frames']);
+                $metaPath = MetadataReader::metaCachePath($source);
+                touch($metaPath, time() - 120);
+                file_put_contents($path, file_get_contents($this->fixturesDir . '/animated-3frame.' . $format));
+                self::assertSame(3, $this->reader->read($source)->frameCount, 'Failed ping retries after the sentinel TTL');
+            } finally {
+                unlink($path);
+            }
+        }
+    }
+
     public function testSentinelReusedWithinSentinelTtl(): void
     {
         $source = $this->source('corrupt.jpg');

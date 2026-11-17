@@ -172,7 +172,8 @@ final class EndpointServeTest extends TestCase
         }
         $canvas->clear();
         $image->clear();
-        self::assertFileExists($this->cacheDir . '/' . $cachePath . '.lock');
+        self::assertFileDoesNotExist($this->cacheDir . '/' . $cachePath . '.lock');
+        self::assertFileExists(\rex_path::addonData(Config::ADDON, 'animated-encode.lock'));
         self::assertSame($body, $this->handle($cachePath));
     }
 
@@ -206,7 +207,7 @@ final class EndpointServeTest extends TestCase
     }
 
     #[DataProvider('animatedRequestStates')]
-    public function testEndpointRefusesOverBudget(string $filename, bool $cached): void
+    public function testOverBudgetStreamsOriginalUnlessVariantCached(string $filename, bool $cached): void
     {
         // 1600 × 900 × 380 = 547.2 Mpx, including a previously generated cache hit.
         $this->stageAnimatedMetadata(380);
@@ -216,14 +217,15 @@ final class EndpointServeTest extends TestCase
             file_put_contents($this->cacheDir . '/' . $path, 'previous-animation');
         }
 
-        $this->handle($path);
+        $body = $this->handle($path);
 
         if ($cached) {
             self::assertNotSame(404, http_response_code());
             self::assertSame('previous-animation', file_get_contents($this->cacheDir . '/' . $path));
             return;
         }
-        self::assertSame(404, http_response_code());
+        self::assertSame(200, http_response_code());
+        self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
         self::assertFileDoesNotExist($this->cacheDir . '/' . $path);
         self::assertFileDoesNotExist($this->cacheDir . '/' . $path . '.lock');
     }
@@ -234,14 +236,15 @@ final class EndpointServeTest extends TestCase
     }
 
     #[DataProvider('invalidWidths')]
-    public function testRejectsWidthNotInPool(int $width): void
+    public function testWidthNotInPoolStreamsOriginal(int $width): void
     {
         $this->stageAnimatedMetadata(3);
         $path = 'animation.gif/animated-' . $width . '.webp';
 
-        $this->handle($path);
+        $body = $this->handle($path);
 
-        self::assertSame(404, http_response_code());
+        self::assertSame(200, http_response_code());
+        self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
     }
 
     public static function invalidWidths(): array
@@ -250,13 +253,14 @@ final class EndpointServeTest extends TestCase
     }
 
     #[DataProvider('nonCanonicalNames')]
-    public function testRejectsNonCanonicalName(string $filename): void
+    public function testNonCanonicalNameStreamsOriginal(string $filename): void
     {
         $this->stageAnimatedMetadata(3);
 
-        $this->handle('animation.gif/' . $filename);
+        $body = $this->handle('animation.gif/' . $filename);
 
-        self::assertSame(404, http_response_code());
+        self::assertSame(200, http_response_code());
+        self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
         self::assertFileDoesNotExist($this->cacheDir . '/animation.gif/' . $filename);
     }
 
@@ -266,12 +270,112 @@ final class EndpointServeTest extends TestCase
     }
 
     #[DataProvider('unencodableMetadata')]
-    public function testRejectsUnencodableSourceWithoutCache(int $frames, int $width, int $height): void
+    public function testUnencodableSourceStreamsOriginal(int $frames, int $width, int $height): void
     {
         $this->stageAnimatedMetadata($frames, $width, $height);
-        $this->handle('animation.gif/animated.webp');
+        $body = $this->handle('animation.gif/animated.webp');
 
-        self::assertSame(404, http_response_code());
+        self::assertSame(200, http_response_code());
+        self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
+    }
+
+    public function testBusyEncoderStreamsOriginal(): void
+    {
+        $this->stageAnimatedMetadata(3);
+        $lockPath = \rex_path::addonData(Config::ADDON, 'animated-encode.lock');
+        @mkdir(dirname($lockPath), 0777, true);
+        $lock = fopen($lockPath, 'c');
+        flock($lock, LOCK_EX);
+        try {
+            $body = $this->handle('animation.gif/animated.webp');
+            self::assertSame(200, http_response_code());
+            self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
+            self::assertFileDoesNotExist($this->cacheDir . '/animation.gif/animated.webp');
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    public function testLegacyAnimatedTransformsStreamOriginalWithoutGlide(): void
+    {
+        foreach (['gif', 'webp'] as $format) {
+            $filename = 'animation.' . $format;
+            copy(__DIR__ . '/../_fixtures/animated-3frame.' . $format, $this->mediaDir . '/' . $filename);
+            $path = $filename . '/jpg-32-80.jpg';
+
+            $body = $this->handle($path);
+
+            self::assertSame(200, http_response_code());
+            self::assertSame(file_get_contents($this->mediaDir . '/' . $filename), $body);
+            self::assertFileDoesNotExist($this->cacheDir . '/' . $path);
+            self::assertFileDoesNotExist($this->cacheDir . '/' . $path . '.lock');
+        }
+    }
+
+    public function testExternalAnimatedTransformStreamsOriginalWithoutGlide(): void
+    {
+        $url = 'http://1.1.1.1/animation.webp';
+        $hash = \Ynamite\Media\Source\ExternalSource::hashFor($url);
+        $origin = \Ynamite\Media\Source\ExternalManifest::originPath($hash);
+        @mkdir(dirname($origin), 0777, true);
+        copy(__DIR__ . '/../_fixtures/animated-3frame.webp', $origin);
+        \Ynamite\Media\Source\ExternalManifest::write($hash, [
+            'url' => $url, 'etag' => null, 'lastModified' => time(), 'fetchedAt' => time(), 'ttl' => 86_400,
+        ]);
+        $path = '_external/' . $hash . '/jpg-32-80.jpg';
+
+        $body = $this->handle($path);
+
+        self::assertSame(200, http_response_code());
+        self::assertSame(file_get_contents($origin), $body);
+        self::assertFileDoesNotExist($this->cacheDir . '/' . $path);
+    }
+
+    public function testBadSignatureNeverStreamsOriginalAnimation(): void
+    {
+        $this->stageAnimatedMetadata(3);
+        $_GET = ['p' => 'animation.gif/animated.webp', 's' => 'bad-signature'];
+        ob_start();
+        Endpoint::handle();
+        $body = ob_get_clean();
+
+        self::assertSame(403, http_response_code());
+        self::assertSame('Forbidden', $body);
+    }
+
+    public function testUnavailableWebpStreamsOriginal(): void
+    {
+        $this->stageAnimatedMetadata(3);
+        $capability = new \ReflectionProperty(Config::class, 'serverFormatCapability');
+        $previous = $capability->getValue();
+        $capability->setValue(null, ['webp' => false]);
+        try {
+            $body = $this->handle('animation.gif/animated.webp');
+            self::assertSame(200, http_response_code());
+            self::assertSame(file_get_contents($this->mediaDir . '/animation.gif'), $body);
+            self::assertFileDoesNotExist($this->cacheDir . '/animation.gif/animated.webp');
+        } finally {
+            $capability->setValue(null, $previous);
+        }
+    }
+
+    public function testUnconfirmedKeyRejectsForgedRequest(): void
+    {
+        $this->stageAnimatedMetadata(3);
+        \rex_config::set(Config::ADDON, Config::KEY_SIGN_KEY, '');
+        Config::$signKeyPersister = static fn (string $candidate): string => '';
+        $_GET = ['p' => 'animation.gif/animated.webp', 's' => hash_hmac('sha256', 'animation.gif/animated.webp', '')];
+        ob_start();
+        try {
+            Endpoint::handle();
+            $body = ob_get_contents();
+        } finally {
+            ob_end_clean();
+            Config::$signKeyPersister = null;
+        }
+        self::assertSame(403, http_response_code());
+        self::assertSame('Forbidden', $body);
     }
 
     public static function unencodableMetadata(): array

@@ -133,6 +133,23 @@ final class ArtDirectionPictureTest extends TestCase
         self::assertSame($without, $with);
     }
 
+    public function testAnimatedArtVariantsAreSilentlySkipped(): void
+    {
+        \rex_logger::_reset();
+        foreach (['gif', 'webp'] as $format) {
+            $filename = 'animated-3frame.' . $format;
+            copy($this->fixturesDir . '/' . $filename, $this->tmpBase . '/media/' . $filename);
+            $html = Image::for('landscape-800x600.jpg')->alt('Hero')->art([
+                ['media' => '(max-width: 600px)', 'src' => $filename],
+            ])->render();
+
+            self::assertSame(Image::for('landscape-800x600.jpg')->alt('Hero')->render(), $html);
+            self::assertStringNotContainsString($filename, $html);
+        }
+        self::assertSame([], \rex_logger::$logged);
+        self::assertSame([], \rex_logger::$messages);
+    }
+
     public function testArtVariantFocalAppearsInGlideUrlPath(): void
     {
         // Variant focal differs from default (which is null) → cover-X-Y token

@@ -13,6 +13,9 @@ final class ConfigTest extends TestCase
     protected function tearDown(): void
     {
         rex_config::_reset();
+        Config::$signKeyPersister = null;
+        \rex_logger::_reset();
+        (new \ReflectionProperty(Config::class, 'signKeyFailureLogged'))->setValue(null, false);
     }
 
     public function testSignKeySelfHealsWhenEmpty(): void
@@ -37,6 +40,56 @@ final class ConfigTest extends TestCase
     public function testLqipBlurReturnsDefaultWhenUnset(): void
     {
         self::assertSame(5, Config::lqipBlur());
+    }
+
+    public function testSignKeyRetriesFailedWinnerLookup(): void
+    {
+        \rex_sql::$winner = 'confirmed-winner';
+        \rex_sql::$selectFailures = 1;
+
+        self::assertSame('confirmed-winner', Config::signKey());
+        self::assertSame('confirmed-winner', rex_config::get(Config::ADDON, Config::KEY_SIGN_KEY));
+        self::assertSame(2, \rex_sql::$selectCalls);
+    }
+
+    public function testSignKeyReadsWinnerAfterInsertFailure(): void
+    {
+        \rex_sql::$winner = 'confirmed-winner';
+        \rex_sql::$insertFails = true;
+
+        self::assertSame('confirmed-winner', Config::signKey());
+        self::assertSame('confirmed-winner', rex_config::get(Config::ADDON, Config::KEY_SIGN_KEY));
+    }
+
+    public function testUnconfirmedSignKeyNeverQueuesCandidateAndLogsOnce(): void
+    {
+        \rex_sql::$winner = 'other-request-winner';
+        \rex_sql::$selectFailures = 4;
+        \rex_logger::_reset();
+
+        self::assertSame('', Config::signKey());
+        self::assertSame('', Config::signKey());
+        self::assertNull(rex_config::get(Config::ADDON, Config::KEY_SIGN_KEY));
+        self::assertSame(4, \rex_sql::$selectCalls);
+        self::assertCount(1, \rex_logger::$logged);
+        self::assertSame('other-request-winner', \rex_sql::$winner);
+    }
+
+    public function testMissingWinnerFailsClosed(): void
+    {
+        \rex_sql::$missingRow = true;
+
+        self::assertSame('', Config::signKey());
+        self::assertNull(rex_config::get(Config::ADDON, Config::KEY_SIGN_KEY));
+        self::assertSame(2, \rex_sql::$selectCalls);
+    }
+
+    public function testPersisterFailureFailsClosed(): void
+    {
+        Config::$signKeyPersister = static fn (string $candidate): string => throw new \RuntimeException('Persistence unavailable');
+
+        self::assertSame('', Config::signKey());
+        self::assertNull(rex_config::get(Config::ADDON, Config::KEY_SIGN_KEY));
     }
 
     public function testCheckboxBoolReadsRexConfigFormPipeFormatAsTrue(): void

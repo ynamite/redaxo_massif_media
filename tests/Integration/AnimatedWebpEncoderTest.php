@@ -107,6 +107,112 @@ final class AnimatedWebpEncoderTest extends TestCase
         $check->clear();
     }
 
+    public function testLaterFrameClearsOpaquePixelsToTransparent(): void
+    {
+        @mkdir($this->tmpBase, 0777, true);
+        $path = $this->tmpBase . '/transparent.gif';
+        $gif = new \Imagick();
+        foreach (['red', 'transparent', 'blue'] as $color) {
+            $frame = new \Imagick();
+            $frame->newImage(16, 16, new \ImagickPixel($color));
+            $frame->setImageFormat('gif');
+            $frame->setImageBackgroundColor('transparent');
+            $frame->setImageDispose(\Imagick::DISPOSE_BACKGROUND);
+            $frame->setImageDelay(20);
+            $draw = new \ImagickDraw();
+            $draw->setFillColor('red');
+            $draw->rectangle(0, 0, 3, 3);
+            $frame->drawImage($draw);
+            $gif->addImage($frame);
+            $frame->clear();
+        }
+        $gif->writeImages($path, true);
+        $gif->clear();
+        self::assertLessThan(20_000, filesize($path));
+        $image = new ResolvedImage(
+            new MediapoolSource('transparent.gif', $path, 1),
+            16, 16, 'image/gif', 'gif', isAnimated: true, frameCount: 3,
+        );
+
+        $encoded = (new AnimatedWebpEncoder())->encode($image, 16);
+
+        foreach ([$path, $encoded] as $file) {
+            $check = new \Imagick($file);
+            $canvas = $check->coalesceImages();
+            $canvas->setIteratorIndex(1);
+            self::assertSame(0.0, $canvas->getImagePixelColor(12, 12)->getColorValue(\Imagick::COLOR_ALPHA), $file);
+            $canvas->clear();
+            $check->clear();
+        }
+    }
+
+    public function testEncodeNormalizesAndRestoresUmask(): void
+    {
+        $previous = umask(0077);
+        try {
+            $path = (new AnimatedWebpEncoder())->encode($this->fixture(), 64);
+            self::assertFileExists($path);
+            self::assertSame(0644, fileperms($path) & 0777);
+            self::assertSame(0755, fileperms(dirname($path)) & 0777);
+            self::assertSame(0077, umask());
+        } finally {
+            umask($previous);
+        }
+    }
+
+    public function testGlobalLockRejectsConcurrentEncodesAndSurvivesInvalidation(): void
+    {
+        $lockPath = rex_path::addonData(Config::ADDON, 'animated-encode.lock');
+        @mkdir(dirname($lockPath), 0777, true);
+        $lock = fopen($lockPath, 'c');
+        flock($lock, LOCK_EX);
+        try {
+            $encoder = new AnimatedWebpEncoder();
+            self::assertSame(AnimatedWebpEncoder::BUSY, $encoder->encode($this->fixture(), 64));
+            self::assertSame(AnimatedWebpEncoder::BUSY, $encoder->encode($this->fixture('webp'), 320));
+            \Ynamite\Media\Pipeline\CacheInvalidator::invalidate('animated-3frame.gif');
+            self::assertFileExists($lockPath);
+            self::assertSame(AnimatedWebpEncoder::BUSY, $encoder->encode($this->fixture(), 64));
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+        self::assertFileExists($encoder->encode($this->fixture(), 64));
+    }
+
+    public function testWaitingEncoderRechecksCacheAfterGlobalLock(): void
+    {
+        $image = $this->fixture();
+        $cachePath = AnimatedWebpEncoder::cacheFile($image->source->key(), 64, 64);
+        $lockPath = rex_path::addonData(Config::ADDON, 'animated-encode.lock');
+        @mkdir(dirname($lockPath), 0777, true);
+        $writer = <<<'PHP'
+            $lock = fopen($argv[1], 'c');
+            flock($lock, LOCK_EX);
+            fwrite(STDOUT, "locked\n");
+            fgets(STDIN);
+            usleep(100000);
+            mkdir(dirname($argv[2]), 0755, true);
+            file_put_contents($argv[2], 'winner-cache');
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            PHP;
+        $process = proc_open([PHP_BINARY, '-r', $writer, $lockPath, $cachePath], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        try {
+            self::assertSame("locked\n", fgets($pipes[1]));
+            fwrite($pipes[0], "start\n");
+
+            self::assertSame($cachePath, (new AnimatedWebpEncoder())->encode($image, 64, wait: true));
+            self::assertSame('winner-cache', file_get_contents($cachePath), 'Waiting caller must not decode and overwrite the winner');
+        } finally {
+            foreach ($pipes as $pipe) {
+                fclose($pipe);
+            }
+            self::assertSame(0, proc_close($process));
+        }
+    }
+
     public function testEncodesGifAtWidth(): void
     {
         $path = (new AnimatedWebpEncoder())->encode($this->largeGif(), 640);

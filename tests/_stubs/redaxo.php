@@ -31,6 +31,9 @@ if (!class_exists('rex_config')) {
         public static function _reset(): void
         {
             self::$store = [];
+            if (method_exists('rex_sql', '_reset')) {
+                rex_sql::_reset();
+            }
         }
     }
 }
@@ -75,6 +78,11 @@ if (!class_exists('rex_path')) {
         public static function addonAssets(string $addon, string $file = ''): string
         {
             return self::frontend('assets/addons/' . $addon . '/' . $file);
+        }
+
+        public static function addonData(string $addon, string $file = ''): string
+        {
+            return self::base('redaxo/data/addons/' . $addon . '/' . $file);
         }
     }
 }
@@ -209,6 +217,11 @@ if (!class_exists('rex')) {
         private static bool $isBackend = false;
         private static bool $isDebug = false;
         private static string $server = 'https://www.redaxo.org/';
+
+        public static function getTable(string $name): string
+        {
+            return 'rex_' . $name;
+        }
 
         public static function getServer(): string
         {

@@ -9,6 +9,18 @@ use Ynamite\Media\Glide\Signature;
 
 final class SignatureTest extends TestCase
 {
+    public function testEmptyKeyCannotSign(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        Signature::sign('hero.jpg/webp-640-75.webp', key: '');
+    }
+
+    public function testEmptyKeyRejectsPredictableHmac(): void
+    {
+        $path = 'hero.jpg/webp-640-75.webp';
+        self::assertFalse(Signature::verify($path, hash_hmac('sha256', $path, ''), key: ''));
+    }
+
     public function testSignVerifyRoundtripWithInjectedKey(): void
     {
         $key = 'test-key-42';

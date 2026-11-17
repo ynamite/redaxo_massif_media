@@ -72,6 +72,25 @@ final class ImageBuilderTest extends TestCase
         self::assertSame('', Preloader::drain());
     }
 
+    public function testUnavailableWebpPreloadsOriginalAnimation(): void
+    {
+        copy(__DIR__ . '/../../_fixtures/animated-3frame.gif', $this->tmpBase . '/media/animation.gif');
+        $capability = new \ReflectionProperty(Config::class, 'serverFormatCapability');
+        $previous = $capability->getValue();
+        $capability->setValue(null, ['webp' => false]);
+        try {
+            $html = (new ImageBuilder('animation.gif'))->preload()->render();
+            $preload = Preloader::drain();
+
+            self::assertStringStartsWith('<img', $html);
+            self::assertStringContainsString('href="/media/animation.gif?v=', $preload);
+            self::assertStringNotContainsString('imagesrcset', $preload);
+            self::assertStringNotContainsString('image/webp', $preload);
+        } finally {
+            $capability->setValue(null, $previous);
+        }
+    }
+
     public function testPassthroughPreloadQueuesOriginalUrl(): void
     {
         copy(__DIR__ . '/../../_fixtures/vector.svg', $this->tmpBase . '/media/logo.svg');

@@ -168,6 +168,23 @@ final class PassthroughRendererTest extends TestCase
         self::assertStringStartsWith('<img', $html);
     }
 
+    public function testUnavailableWebpEmitsOnlyOriginal(): void
+    {
+        $capability = new \ReflectionProperty(Config::class, 'serverFormatCapability');
+        $previous = $capability->getValue();
+        $capability->setValue(null, ['webp' => false]);
+        try {
+            $image = $this->animatedGif();
+            $urls = new UrlBuilder();
+            self::assertSame('', $urls->buildAnimatedWebp($image, 200));
+            self::assertSame('', $urls->buildAnimatedSrcset($image));
+            self::assertStringStartsWith('<img', (new PassthroughRenderer($urls))->render($image));
+            self::assertSame('', (new \Ynamite\Media\Pipeline\AnimatedWebpEncoder())->encode($image, 200));
+        } finally {
+            $capability->setValue(null, $previous);
+        }
+    }
+
     public function testAnimatedGifInCdnModeFallsBackToPlainImg(): void
     {
         rex_config::set(Config::ADDON, Config::KEY_CDN_ENABLED, 1);

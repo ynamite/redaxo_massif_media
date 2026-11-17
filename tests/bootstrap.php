@@ -7,6 +7,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 // Register minimal REDAXO core class stubs if the real ones aren't loaded.
 require __DIR__ . '/_stubs/redaxo.php';
+require __DIR__ . '/_stubs/sign-key-sql.php';
 
 // Convert PHP runtime notices/warnings/deprecations into ErrorExceptions during
 // the test run so they surface as test failures rather than silently passing.
