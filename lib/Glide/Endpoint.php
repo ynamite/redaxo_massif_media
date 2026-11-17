@@ -424,7 +424,7 @@ final class Endpoint
             try {
                 if (!self::isServable($abs)) {
                     $image = (new ImageResolver(new MetadataReader()))->resolve($src);
-                    (new AnimatedWebpEncoder())->encode($image);
+                    (new AnimatedWebpEncoder())->encode($image, $image->intrinsicWidth);
                 }
             } finally {
                 self::unlockVariant($lock);

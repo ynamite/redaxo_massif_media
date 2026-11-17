@@ -112,14 +112,15 @@ final class MetadataReaderTest extends TestCase
         if (!extension_loaded('imagick')) {
             $this->markTestSkipped('Frame count detection needs Imagick.');
         }
-        $source = $this->source('animated-3frame.gif');
+        foreach (['animated-3frame.gif', 'animated-3frame.webp'] as $filename) {
+            $source = $this->source($filename);
+            $resolved = $this->reader->read($source);
 
-        $resolved = $this->reader->read($source);
-
-        self::assertSame(3, $resolved->frameCount);
-        self::assertTrue($resolved->isAnimated);
-        self::assertSame(3, $this->readSidecar($source)['frames']);
-        self::assertSame(3, $this->reader->read($source)->frameCount);
+            self::assertSame(3, $resolved->frameCount, $filename);
+            self::assertTrue($resolved->isAnimated);
+            self::assertSame(3, $this->readSidecar($source)['frames']);
+            self::assertSame(3, $this->reader->read($source)->frameCount);
+        }
     }
 
     public function testLegacyMetaIsRecomputed(): void

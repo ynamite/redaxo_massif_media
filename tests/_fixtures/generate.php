@@ -60,8 +60,20 @@ if ($useImagick) {
     $gif->setImageFormat('gif');
     $gif->writeImages($fixturesDir . '/animated-3frame.gif', true);
     $gif->clear();
+
+    $webp = new Imagick();
+    foreach (['#ff0000', '#00ff00', '#0000ff'] as $color) {
+        $frame = new Imagick();
+        $frame->newImage(320, 200, new ImagickPixel($color));
+        $frame->setImageFormat('webp');
+        $frame->setImageDelay(20);
+        $webp->addImage($frame);
+        $frame->clear();
+    }
+    $webp->writeImages($fixturesDir . '/animated-3frame.webp', true);
+    $webp->clear();
 } else {
-    fwrite(STDERR, "Skipping animated GIF fixture: needs Imagick.\n");
+    fwrite(STDERR, "Skipping animated GIF/WebP fixtures: needs Imagick.\n");
 }
 
 file_put_contents(
@@ -73,4 +85,4 @@ file_put_contents(
     . '</svg>' . "\n",
 );
 
-echo "Generated 5 fixtures in $fixturesDir\n";
+echo 'Generated ' . ($useImagick ? 7 : 5) . " fixtures in $fixturesDir\n";

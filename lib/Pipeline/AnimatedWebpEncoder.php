@@ -11,37 +11,42 @@ use Throwable;
 use Ynamite\Media\Config;
 
 /**
- * Re-encodes an animated source (currently only animated GIF) into a single
- * animated WebP variant at intrinsic dimensions. Lives outside the Glide
+ * Re-encodes animated GIF/WebP sources at up to three widths outside the Glide
  * pipeline because Glide's encoder writes a single frame and silently drops
  * the rest — animated outputs need Imagick `writeImages($path, true)` (the
  * `$adjoin = true` flag preserves all frames in the output container).
  *
- * Cache layout uses a flat one-segment stem so Endpoint::parseCachePath can
- * distinguish animated requests from regular Glide variants:
- *   cache/{src}/animated.webp
- * No width / quality / fit / filters in the path — there's only ever one
- * animated variant per source. Browsers that support WebP support animated
- * WebP, and the GIF fallback in the <picture> markup covers the rest.
- *
- * Bypasses Config::lqipEnabled / colorEnabled; this is a format-upgrade for
- * animated sources, not a placeholder. Always opportunistically generated
- * when the source is animated and Imagick is available.
+ * The intrinsic width keeps cache/{src}/animated.webp for existing URLs;
+ * smaller widths use cache/{src}/animated-{width}.webp.
  */
 final class AnimatedWebpEncoder
 {
+    /** @return list<int> */
+    public static function widths(ResolvedImage $image): array
+    {
+        $widths = [];
+        foreach ([640, 1280] as $width) {
+            if ($width < $image->intrinsicWidth) {
+                $widths[] = $width;
+            }
+        }
+        $widths[] = $image->intrinsicWidth;
+
+        return $widths;
+    }
+
     /**
      * Encode (or confirm cached) the animated WebP for a source. Returns the
      * absolute on-disk cache path, or '' when generation is impossible
-     * (passthrough check failed, Imagick missing, write failed).
+     * (source/width rejected, Imagick missing, write failed).
      */
-    public function encode(ResolvedImage $image): string
+    public function encode(ResolvedImage $image, int $width): string
     {
-        if (!$this->shouldEncode($image)) {
+        if (!$image->isAnimatedEncodable() || !in_array($width, self::widths($image), true)) {
             return '';
         }
 
-        $cachePath = self::cacheFile($image->source->key());
+        $cachePath = self::cacheFile($image->source->key(), $width, $image->intrinsicWidth);
         if (is_file($cachePath) && filesize($cachePath) > 0) {
             return $cachePath;
         }
@@ -58,13 +63,23 @@ final class AnimatedWebpEncoder
             // which is what most WebP decoders expect. Without it some sources
             // produce broken output (frames overlap with prior-frame pixels).
             $coalesced = $im->coalesceImages();
-            $coalesced->setImageFormat('webp');
+            $coalesced->setOption('webp:method', '4');
+            foreach ($coalesced as $frame) {
+                if ($width < $image->intrinsicWidth) {
+                    $frame->resizeImage($width, 0, Imagick::FILTER_LANCZOS, 1);
+                    $frame->setImagePage(0, 0, 0, 0);
+                }
+                $frame->setImageFormat('webp');
+                $frame->setImageCompressionQuality(Config::quality('webp'));
+            }
+            $output = $coalesced->deconstructImages();
 
             @mkdir(dirname($cachePath), 0777, true);
-            $coalesced->writeImages($cachePath, true);
+            $output->writeImages($cachePath, true);
 
             $im->clear();
             $coalesced->clear();
+            $output->clear();
         } catch (Throwable $e) {
             rex_logger::logException($e);
             return '';
@@ -73,33 +88,36 @@ final class AnimatedWebpEncoder
         return is_file($cachePath) && filesize($cachePath) > 0 ? $cachePath : '';
     }
 
+    public function prewarm(ResolvedImage $image): void
+    {
+        try {
+            foreach (self::widths($image) as $width) {
+                $this->encode($image, $width);
+            }
+        } catch (Throwable $e) {
+            rex_logger::logException($e);
+        }
+    }
+
     /**
      * Cache path the encoder writes to. Public so URL builder + Endpoint can
      * agree on the same on-disk location without duplicating the construction.
      */
-    public static function cacheFile(string $sourceKey): string
+    public static function cacheFile(string $sourceKey, int $width, int $intrinsicWidth): string
     {
         return rex_path::addonAssets(
             Config::ADDON,
-            'cache/' . self::cacheRelPath($sourceKey),
+            'cache/' . self::cacheRelPath($sourceKey, $width, $intrinsicWidth),
         );
     }
 
     /**
      * Cache-relative path (the part that ends up in URL `?p=` and in
      * Signature::sign payload). Single source of truth for the
-     * `{src}/animated.webp` shape — Endpoint matches the same string when
-     * routing animated requests.
+     * animated variant names, including the legacy intrinsic-width name.
      */
-    public static function cacheRelPath(string $sourceKey): string
+    public static function cacheRelPath(string $sourceKey, int $width, int $intrinsicWidth): string
     {
-        return $sourceKey . '/animated.webp';
-    }
-
-    private function shouldEncode(ResolvedImage $image): bool
-    {
-        // Only animated GIF for the v1 MVP. Animated PNG (apng) and animated
-        // WebP-as-source aren't worth the markup branching until someone asks.
-        return $image->isAnimated && $image->sourceFormat === 'gif';
+        return $sourceKey . ($width === $intrinsicWidth ? '/animated.webp' : '/animated-' . $width . '.webp');
     }
 }

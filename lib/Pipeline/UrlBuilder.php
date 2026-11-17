@@ -96,7 +96,7 @@ final class UrlBuilder
         ) {
             return '';
         }
-        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key());
+        $cachePath = AnimatedWebpEncoder::cacheRelPath($image->source->key(), $image->intrinsicWidth, $image->intrinsicWidth);
         $signature = Signature::sign($cachePath);
         $url = self::assetUrl(rex_url::addonAssets(Config::ADDON, 'cache/' . $cachePath));
         $url .= '?s=' . $signature;

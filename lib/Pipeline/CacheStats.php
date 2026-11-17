@@ -160,7 +160,7 @@ final class CacheStats
         if (str_starts_with($rel, '_external/')) {
             return 'external';
         }
-        if (str_ends_with($rel, '/animated.webp')) {
+        if (preg_match('~/animated(?:-\d+)?\.webp$~', $rel)) {
             return 'animated';
         }
         return 'variants';
