@@ -368,6 +368,19 @@ final class EndpointServeTest extends TestCase
         self::assertSame('Not found', $body);
     }
 
+    public function testSignedTraversalNeverStreamsExistingFileOutsideCache(): void
+    {
+        foreach (['/outside/animated-700.webp', '/outside/hero.jpg/avif-640.avif'] as $target) {
+            @mkdir(dirname($this->tmpBase . '/assets/addons/massif_media' . $target), 0777, true);
+            file_put_contents($this->tmpBase . '/assets/addons/massif_media' . $target, 'secret-bytes');
+
+            $body = $this->handle('..' . $target);
+
+            self::assertSame(404, http_response_code());
+            self::assertSame('Not found', $body);
+        }
+    }
+
     public function testSignedSymlinkOutsideMediaNeverStreamsOriginal(): void
     {
         mkdir($this->tmpBase . '/media-private');

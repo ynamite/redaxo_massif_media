@@ -53,6 +53,13 @@ final class Endpoint
             return;
         }
 
+        // Defence in depth: a signed path must never climb out of cache/ —
+        // checked once here so every branch (cache hits included) is covered.
+        if (in_array('..', explode('/', str_replace('\\', '/', $cachePath)), true)) {
+            self::respond(404, 'Not found');
+            return;
+        }
+
         // On-disk location of the requested variant. The URL cache path IS the
         // on-disk path relative to cache/ — for mediapool via cachePathCallable
         // ({src}/{spec}.{ext}), for external via the per-bucket server whose
