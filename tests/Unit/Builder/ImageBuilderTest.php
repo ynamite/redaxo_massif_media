@@ -48,8 +48,15 @@ final class ImageBuilderTest extends TestCase
         self::assertStringContainsString('fetchpriority="high"', $html);
         self::assertStringContainsString('style="object-position:25% 75%"', $html);
         $preload = Preloader::drain();
-        self::assertStringContainsString('as="image" href="/media/' . $fixture . '?v=1700000000"', $preload);
-        self::assertStringNotContainsString('imagesrcset=', $preload);
+        if (str_starts_with($fixture, 'animated-')) {
+            self::assertStringContainsString('as="image" imagesrcset="', $preload);
+            self::assertStringContainsString('type="image/webp"', $preload);
+            self::assertStringContainsString('imagesizes="', $preload);
+            self::assertStringNotContainsString('href=', $preload);
+        } else {
+            self::assertStringContainsString('as="image" href="/media/' . $fixture . '?v=1700000000"', $preload);
+            self::assertStringNotContainsString('imagesrcset=', $preload);
+        }
         self::assertSame('', Preloader::drain());
     }
 

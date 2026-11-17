@@ -63,7 +63,7 @@ final class Endpoint
         if (preg_match('#/animated(?:-(\d+))?\.webp$#D', $cachePath, $match, PREG_OFFSET_CAPTURE)) {
             $src = substr($cachePath, 0, $match[0][1]);
             $width = isset($match[1]) ? (int) $match[1][0] : null;
-            self::handleAnimated($src, $width, $abs);
+            self::handleAnimated($src, $width, $abs, $cachePath);
             return;
         }
 
@@ -404,26 +404,31 @@ final class Endpoint
             || (bool) preg_match('/^cover-\d{1,3}-\d{1,3}$/', $token);
     }
 
-    private static function handleAnimated(string $src, ?int $width, string $abs): void
+    private static function handleAnimated(string $src, ?int $width, string $abs, string $cachePath): void
     {
         // Defensive: animated WebP isn't emitted for external sources
         // (UrlBuilder::buildAnimatedWebp short-circuits when isExternal()).
         // A request that arrives here for an `_external/...` path is malformed
         // — refuse rather than try to resolve.
         if ($src === '' || str_starts_with($src, '_external/')) {
-            self::respond(400, 'Ungültige Anfrage');
+            self::respond(400, 'Bad request');
+            return;
+        }
+
+        if (self::isServable($abs)) {
+            self::sendFile($abs, 'image/webp');
             return;
         }
 
         try {
             $image = (new ImageResolver(new MetadataReader()))->resolve($src);
             $width ??= $image->intrinsicWidth;
-            if (!$image->isAnimatedEncodable() || !in_array($width, AnimatedWebpEncoder::widths($image), true)) {
-                self::respond(404, 'Nicht gefunden');
-                return;
-            }
-            if (self::isServable($abs)) {
-                self::sendFile($abs, 'image/webp');
+            if (
+                !$image->isAnimatedEncodable()
+                || !in_array($width, AnimatedWebpEncoder::widths($image), true)
+                || AnimatedWebpEncoder::cacheRelPath($src, $width, $image->intrinsicWidth) !== $cachePath
+            ) {
+                self::respond(404, 'Not found');
                 return;
             }
             $lock = self::lockVariant($abs);
@@ -436,12 +441,12 @@ final class Endpoint
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);
-            self::respond(404, 'Nicht gefunden');
+            self::respond(404, 'Not found');
             return;
         }
 
         if (!self::isServable($abs)) {
-            self::respond(404, 'Nicht gefunden');
+            self::respond(404, 'Not found');
             return;
         }
         self::sendFile($abs, 'image/webp');

@@ -218,7 +218,13 @@ final class EndpointServeTest extends TestCase
 
         $this->handle($path);
 
+        if ($cached) {
+            self::assertNotSame(404, http_response_code());
+            self::assertSame('previous-animation', file_get_contents($this->cacheDir . '/' . $path));
+            return;
+        }
         self::assertSame(404, http_response_code());
+        self::assertFileDoesNotExist($this->cacheDir . '/' . $path);
         self::assertFileDoesNotExist($this->cacheDir . '/' . $path . '.lock');
     }
 
@@ -232,8 +238,6 @@ final class EndpointServeTest extends TestCase
     {
         $this->stageAnimatedMetadata(3);
         $path = 'animation.gif/animated-' . $width . '.webp';
-        @mkdir(dirname($this->cacheDir . '/' . $path), 0777, true);
-        file_put_contents($this->cacheDir . '/' . $path, 'invalid-width-cache');
 
         $this->handle($path);
 
@@ -245,13 +249,26 @@ final class EndpointServeTest extends TestCase
         return [[0], [400], [2000]];
     }
 
+    #[DataProvider('nonCanonicalNames')]
+    public function testRejectsNonCanonicalName(string $filename): void
+    {
+        $this->stageAnimatedMetadata(3);
+
+        $this->handle('animation.gif/' . $filename);
+
+        self::assertSame(404, http_response_code());
+        self::assertFileDoesNotExist($this->cacheDir . '/animation.gif/' . $filename);
+    }
+
+    public static function nonCanonicalNames(): array
+    {
+        return [['animated-1600.webp'], ['animated-0640.webp']];
+    }
+
     #[DataProvider('unencodableMetadata')]
-    public function testRejectsUnencodableSourceBeforeServingCache(int $frames, int $width, int $height): void
+    public function testRejectsUnencodableSourceWithoutCache(int $frames, int $width, int $height): void
     {
         $this->stageAnimatedMetadata($frames, $width, $height);
-        @mkdir($this->cacheDir . '/animation.gif', 0777, true);
-        file_put_contents($this->cacheDir . '/animation.gif/animated.webp', 'old-cache');
-
         $this->handle('animation.gif/animated.webp');
 
         self::assertSame(404, http_response_code());

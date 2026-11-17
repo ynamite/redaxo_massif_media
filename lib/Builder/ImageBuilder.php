@@ -313,7 +313,12 @@ final class ImageBuilder
 
         if ($image->isPassthrough()) {
             if ($this->preload) {
-                Preloader::queueLink(UrlBuilder::originalUrl($image), 'image', $image->mime);
+                $animatedSrcset = (new UrlBuilder())->buildAnimatedSrcset($image);
+                if ($animatedSrcset !== '') {
+                    Preloader::queueSrcset($animatedSrcset, $this->sizes ?? Config::defaultSizes(), 'image/webp');
+                } else {
+                    Preloader::queueLink(UrlBuilder::originalUrl($image), 'image', $image->mime);
+                }
             }
             return (new PassthroughRenderer(new UrlBuilder()))->render(
                 $image,

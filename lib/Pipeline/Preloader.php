@@ -17,7 +17,7 @@ final class Preloader
     /** @var array<int, array{image: ResolvedImage, width: ?int, height: ?int, ratio: ?float, sizes: ?string, widths: ?array, formats: ?array, quality: ?array, fit: ?Fit, filterParams: array}> */
     private static array $queue = [];
 
-    /** @var array<int, array{href: string, as: string, type: ?string}> */
+    /** @var array<int, array{href: string, as: string, type: ?string, imagesrcset?: string, imagesizes?: string}> */
     private static array $rawLinks = [];
 
     public static function queue(
@@ -49,6 +49,12 @@ final class Preloader
     public static function queueLink(string $href, string $as, ?string $type = null): void
     {
         self::$rawLinks[] = compact('href', 'as', 'type');
+    }
+
+    /** Responsive image preload without href (animated WebP srcset). */
+    public static function queueSrcset(string $imagesrcset, string $imagesizes, string $type): void
+    {
+        self::$rawLinks[] = ['href' => '', 'as' => 'image', 'type' => $type, 'imagesrcset' => $imagesrcset, 'imagesizes' => $imagesizes];
     }
 
     /**
@@ -116,11 +122,16 @@ final class Preloader
         self::$queue = [];
 
         foreach (self::$rawLinks as $link) {
-            $attrs = sprintf(
-                'as="%s" href="%s"',
-                htmlspecialchars($link['as'], ENT_QUOTES),
-                htmlspecialchars($link['href'], ENT_QUOTES),
-            );
+            $attrs = sprintf('as="%s"', htmlspecialchars($link['as'], ENT_QUOTES));
+            if (isset($link['imagesrcset'])) {
+                $attrs .= sprintf(
+                    ' imagesrcset="%s" imagesizes="%s"',
+                    htmlspecialchars($link['imagesrcset'], ENT_QUOTES),
+                    htmlspecialchars($link['imagesizes'] ?? '', ENT_QUOTES),
+                );
+            } else {
+                $attrs .= sprintf(' href="%s"', htmlspecialchars($link['href'], ENT_QUOTES));
+            }
             if ($link['type'] !== null && $link['type'] !== '') {
                 $attrs .= sprintf(' type="%s"', htmlspecialchars($link['type'], ENT_QUOTES));
             }
