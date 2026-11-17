@@ -17,6 +17,9 @@ final class Signature
     public static function sign(string $path, ?string $extraPayload = null, ?string $key = null): string
     {
         $key ??= Config::signKey();
+        if ($key === '') {
+            throw new \RuntimeException('massif_media: signing key unavailable');
+        }
         $payload = $extraPayload !== null && $extraPayload !== ''
             ? $path . '|' . $extraPayload
             : $path;
@@ -29,6 +32,9 @@ final class Signature
             return false;
         }
         $key ??= Config::signKey();
+        if ($key === '') {
+            return false;
+        }
         $payload = $extraPayload !== null && $extraPayload !== ''
             ? $path . '|' . $extraPayload
             : $path;

@@ -11,6 +11,7 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\WatermarkResolver;
 use Ynamite\Media\Source\ExternalSourceFactory;
 
@@ -102,6 +103,11 @@ final class Endpoint
         }
 
         try {
+            $image = self::resolveImage($parsed['source']);
+            if ($image->sourceFormat === 'gif' || ($image->sourceFormat === 'webp' && $image->frameCount !== 1)) {
+                self::sendOriginal($image);
+                return;
+            }
             $params = [
                 'w' => $parsed['w'],
                 'q' => $parsed['q'],
@@ -406,11 +412,7 @@ final class Endpoint
 
     private static function handleAnimated(string $src, ?int $width, string $abs, string $cachePath): void
     {
-        // Defensive: animated WebP isn't emitted for external sources
-        // (UrlBuilder::buildAnimatedWebp short-circuits when isExternal()).
-        // A request that arrives here for an `_external/...` path is malformed
-        // — refuse rather than try to resolve.
-        if ($src === '' || str_starts_with($src, '_external/')) {
+        if ($src === '') {
             self::respond(400, 'Bad request');
             return;
         }
@@ -421,35 +423,63 @@ final class Endpoint
         }
 
         try {
-            $image = (new ImageResolver(new MetadataReader()))->resolve($src);
+            $image = self::resolveImage($src);
             $width ??= $image->intrinsicWidth;
             if (
                 !$image->isAnimatedEncodable()
                 || !in_array($width, AnimatedWebpEncoder::widths($image), true)
                 || AnimatedWebpEncoder::cacheRelPath($src, $width, $image->intrinsicWidth) !== $cachePath
             ) {
-                self::respond(404, 'Not found');
+                self::sendOriginal($image);
                 return;
             }
-            $lock = self::lockVariant($abs);
-            try {
-                if (!self::isServable($abs)) {
-                    (new AnimatedWebpEncoder())->encode($image, $width);
-                }
-            } finally {
-                self::unlockVariant($lock);
+            $encoded = (new AnimatedWebpEncoder())->encode($image, $width);
+            if ($encoded === '' || $encoded === AnimatedWebpEncoder::BUSY) {
+                self::sendOriginal($image);
+                return;
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);
+            if (isset($image)) {
+                self::sendOriginal($image);
+                return;
+            }
             self::respond(404, 'Not found');
             return;
         }
 
         if (!self::isServable($abs)) {
-            self::respond(404, 'Not found');
+            self::sendOriginal($image);
             return;
         }
         self::sendFile($abs, 'image/webp');
+    }
+
+    private static function resolveImage(string $src): ResolvedImage
+    {
+        if (str_starts_with($src, '_external/')) {
+            $source = (new ExternalSourceFactory())->resolveByHash(substr($src, strlen('_external/')));
+            if ($source === null) {
+                throw new \RuntimeException('External source manifest not found: ' . $src);
+            }
+            return (new MetadataReader())->read($source);
+        }
+        return (new ImageResolver(new MetadataReader()))->resolve($src);
+    }
+
+    private static function sendOriginal(ResolvedImage $image): void
+    {
+        $path = $image->source->absolutePath();
+        if (!is_readable($path) || !self::isServable($path)) {
+            self::respond(404, 'Not found');
+            return;
+        }
+        http_response_code(200);
+        header('X-Massif-Media: php');
+        header('Content-Type: ' . $image->mime);
+        header('Content-Length: ' . filesize($path));
+        header('Cache-Control: no-store');
+        readfile($path);
     }
 
     private static function respond(int $code, string $body): void

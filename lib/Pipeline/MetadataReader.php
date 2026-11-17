@@ -84,7 +84,7 @@ final class MetadataReader
         // SVG also reads as 0×0 (no raster dimensions) but resolves to format 'svg'
         // via mime_content_type — it is NOT a failure and must keep the long
         // metadata TTL, so the discriminator hinges on the unknown format.
-        $failed = $width === 0 && $height === 0 && $sourceFormat === 'unknown';
+        $failed = $frames === 0 || ($width === 0 && $height === 0 && $sourceFormat === 'unknown');
 
         $focal = null;
         if ($source instanceof MediapoolSource && $source->media !== null) {
@@ -108,7 +108,7 @@ final class MetadataReader
 
     /**
      * Count frames only for formats that can carry animation (gif, webp,
-     * png/apng). Other formats, unavailable Imagick and failed reads use 1.
+     * png/apng). Other formats and unavailable Imagick use 1; failed pings use 0.
      */
     private function probeFrameCount(string $absolutePath, string $sourceFormat): int
     {
@@ -125,7 +125,7 @@ final class MetadataReader
             $im->clear();
             return $count;
         } catch (\Throwable) {
-            return 1;
+            return 0;
         }
     }
 

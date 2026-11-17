@@ -114,12 +114,30 @@ final class Config
      */
     public static $signKeyPersister = null;
 
+    private static bool $signKeyFailureLogged = false;
+
     public static function signKey(): string
     {
         $key = (string) self::get(self::KEY_SIGN_KEY, '');
         if ($key === '') {
             // Self-heal: a migration may mark the addon installed without running install.php.
-            $key = self::persistSignKey(self::generateSignKey());
+            try {
+                $key = self::persistSignKey(self::generateSignKey());
+            } catch (\Throwable $e) {
+                $key = '';
+                $failure = $e;
+            }
+            if ($key === '') {
+                if (!self::$signKeyFailureLogged) {
+                    self::$signKeyFailureLogged = true;
+                    try {
+                        rex_logger::logException($failure ?? new \RuntimeException('massif_media: could not confirm persisted signing key'));
+                    } catch (\Throwable) {
+                        // Logging must not prevent failing closed.
+                    }
+                }
+                return '';
+            }
             // rex_config saves at shutdown, last writer wins — set the DB winner so
             // its save can't overwrite it with a different key.
             self::set(self::KEY_SIGN_KEY, $key);
@@ -137,26 +155,34 @@ final class Config
             return (self::$signKeyPersister)($candidate);
         }
         if (!class_exists('rex_sql')) {
-            return $candidate;
+            return '';
         }
+        $table = rex::getTable('config');
         try {
-            $table = rex::getTable('config');
             $sql = rex_sql::factory();
             $sql->setQuery(
                 'INSERT INTO ' . $table . ' (`namespace`, `key`, `value`) VALUES (?, ?, ?) '
                 . 'ON DUPLICATE KEY UPDATE `value` = IF(`value` IN (\'""\', \'\', \'null\'), VALUES(`value`), `value`)',
                 [self::ADDON, self::KEY_SIGN_KEY, json_encode($candidate)],
             );
-            $rows = rex_sql::factory()->getArray(
-                'SELECT `value` FROM ' . $table . ' WHERE `namespace` = ? AND `key` = ?',
-                [self::ADDON, self::KEY_SIGN_KEY],
-            );
-            $winner = isset($rows[0]['value']) ? json_decode((string) $rows[0]['value'], true) : null;
-            return is_string($winner) && $winner !== '' ? $winner : $candidate;
-        } catch (\Throwable $e) {
-            rex_logger::logException($e);
-            return $candidate;
+        } catch (\Throwable) {
+            // Another request may have persisted a winner despite our failed insert.
         }
+        for ($attempt = 0; $attempt < 2; ++$attempt) {
+            try {
+                $rows = rex_sql::factory()->getArray(
+                    'SELECT `value` FROM ' . $table . ' WHERE `namespace` = ? AND `key` = ?',
+                    [self::ADDON, self::KEY_SIGN_KEY],
+                );
+                $winner = isset($rows[0]['value']) ? json_decode((string) $rows[0]['value'], true) : null;
+                if (is_string($winner) && $winner !== '') {
+                    return $winner;
+                }
+            } catch (\Throwable) {
+                // Retry the winner lookup once; never return an unconfirmed candidate.
+            }
+        }
+        return '';
     }
 
     public static function generateSignKey(): string

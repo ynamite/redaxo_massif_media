@@ -21,6 +21,8 @@ use Ynamite\Media\Config;
  */
 final class AnimatedWebpEncoder
 {
+    public const BUSY = ':busy:';
+
     /** @return list<int> */
     public static function widths(ResolvedImage $image): array
     {
@@ -38,11 +40,11 @@ final class AnimatedWebpEncoder
     /**
      * Encode (or confirm cached) the animated WebP for a source. Returns the
      * absolute on-disk cache path, or '' when generation is impossible
-     * (source/width rejected, Imagick missing, write failed).
+     * (source/width rejected, WebP unavailable, write failed), or BUSY when locked.
      */
-    public function encode(ResolvedImage $image, int $width): string
+    public function encode(ResolvedImage $image, int $width, bool $wait = false): string
     {
-        if (!$image->isAnimatedEncodable() || !in_array($width, self::widths($image), true)) {
+        if (!Config::canServerEncode('webp') || !$image->isAnimatedEncodable() || !in_array($width, self::widths($image), true)) {
             return '';
         }
 
@@ -56,8 +58,25 @@ final class AnimatedWebpEncoder
             return '';
         }
 
-        $tmp = $cachePath . '.' . getmypid() . '.' . bin2hex(random_bytes(4)) . '.tmp.webp';
+        $previousUmask = umask(0022);
+        $lock = null;
+        $tmp = null;
         try {
+            // ponytail: one animated encode per host at a time; use a small semaphore if throughput matters.
+            $lockPath = rex_path::addonData(Config::ADDON, 'animated-encode.lock');
+            @mkdir(dirname($lockPath), 0755, true);
+            $lock = @fopen($lockPath, 'c');
+            if ($lock === false) {
+                return '';
+            }
+            if (!flock($lock, LOCK_EX | ($wait ? 0 : LOCK_NB))) {
+                return self::BUSY;
+            }
+            clearstatcache(true, $cachePath);
+            if (is_file($cachePath) && filesize($cachePath) > 0) {
+                return $cachePath;
+            }
+            $tmp = $cachePath . '.' . getmypid() . '.' . bin2hex(random_bytes(4)) . '.tmp.webp';
             $im = new Imagick();
             $im->readImage($absolutePath);
             // coalesceImages() materialises each frame as a full-canvas image,
@@ -74,27 +93,31 @@ final class AnimatedWebpEncoder
                 $frame->setImageFormat('webp');
                 $frame->setImageCompressionQuality(Config::quality('webp'));
             }
-            $output = $coalesced->deconstructImages();
-            $coalesced->clear();
-
-            @mkdir(dirname($cachePath), 0777, true);
+            @mkdir(dirname($cachePath), 0755, true);
             // Write to a temp sibling, then rename: readers never see a partial file.
-            $output->writeImages($tmp, true);
-            $output->clear();
+            $coalesced->writeImages($tmp, true);
+            $coalesced->clear();
             if (!is_file($tmp) || filesize($tmp) === 0 || !rename($tmp, $cachePath)) {
                 @unlink($tmp);
                 return '';
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);
-            @unlink($tmp);
             return '';
         } finally {
-            foreach (['im', 'coalesced', 'output'] as $v) {
+            if ($tmp !== null && is_file($tmp)) {
+                @unlink($tmp);
+            }
+            foreach (['im', 'coalesced'] as $v) {
                 if (isset($$v) && $$v instanceof Imagick) {
                     $$v->clear();
                 }
             }
+            if (is_resource($lock)) {
+                flock($lock, LOCK_UN);
+                fclose($lock);
+            }
+            umask($previousUmask);
         }
 
         return is_file($cachePath) && filesize($cachePath) > 0 ? $cachePath : '';
@@ -104,7 +127,7 @@ final class AnimatedWebpEncoder
     {
         try {
             foreach (self::widths($image) as $width) {
-                $this->encode($image, $width);
+                $this->encode($image, $width, wait: true);
             }
         } catch (Throwable $e) {
             rex_logger::logException($e);

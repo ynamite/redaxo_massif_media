@@ -98,7 +98,7 @@ final class PictureRenderer
         // sources below.
         foreach ($artVariants as $variant) {
             $variantImage = $this->resolveVariantImage($variant);
-            if ($variantImage === null) {
+            if ($variantImage === null || $variantImage->isAnimated) {
                 continue;
             }
             $variantCtx = RenderContext::build(

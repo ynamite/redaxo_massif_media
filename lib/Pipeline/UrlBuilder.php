@@ -98,6 +98,7 @@ final class UrlBuilder
     {
         if (
             !$image->isAnimatedEncodable()
+            || !Config::canServerEncode('webp')
             || Config::cdnEnabled()
             || $image->source->isExternal()
         ) {

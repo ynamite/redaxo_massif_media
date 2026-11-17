@@ -156,6 +156,9 @@ rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
 // MEDIA_UPDATED also fires on metadata-only saves (filetype param null) — only
 // re-encode when the file itself was replaced. Only gif/webp can be animated.
 $prewarmMedia = static function (rex_extension_point $ep): void {
+    if (Config::cdnEnabled()) {
+        return;
+    }
     $filename = $ep->getParam('filename');
     if (!is_string($filename) || $filename === '') {
         return;
