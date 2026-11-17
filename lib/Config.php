@@ -105,7 +105,18 @@ final class Config
 
     public static function signKey(): string
     {
-        return (string) self::get(self::KEY_SIGN_KEY, '');
+        $key = (string) self::get(self::KEY_SIGN_KEY, '');
+        if ($key === '') {
+            // Self-heal: a migration may mark the addon installed without running install.php.
+            $key = self::generateSignKey();
+            self::set(self::KEY_SIGN_KEY, $key);
+        }
+        return $key;
+    }
+
+    public static function generateSignKey(): string
+    {
+        return bin2hex(random_bytes(32));
     }
 
     /**

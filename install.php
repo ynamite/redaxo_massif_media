@@ -5,9 +5,7 @@ declare(strict_types=1);
 use Ynamite\Media\Config;
 use Ynamite\Media\Install\PortablePath;
 
-if (!Config::signKey()) {
-    Config::set(Config::KEY_SIGN_KEY, bin2hex(random_bytes(32)));
-}
+Config::signKey(); // generates + persists the key on first call
 
 // Cache-generation token, appended as `&g=<int>` to every emitted variant URL.
 // Initialised on first install / first reinstall after upgrade — preserved

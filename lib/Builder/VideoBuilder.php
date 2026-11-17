@@ -222,7 +222,7 @@ final class VideoBuilder
             $tag .= ' ' . $b;
         }
         $tag .= '>';
-        $tag .= '<source src="' . htmlspecialchars($url, ENT_QUOTES) . '" type="video/' . htmlspecialchars($ext, ENT_QUOTES) . '">';
+        $tag .= '<source src="' . htmlspecialchars($url, ENT_QUOTES) . '" type="' . htmlspecialchars(self::videoMimeType($ext) ?? 'video/' . $ext, ENT_QUOTES) . '">';
         $tag .= '</video>';
 
         return $tag;

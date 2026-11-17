@@ -39,6 +39,15 @@ final class VideoBuilderPosterTest extends TestCase
         rex_logger::_reset();
     }
 
+    public function testMovSourceUsesQuicktimeMime(): void
+    {
+        file_put_contents($this->tmpDir . '/media/clip.mov', '');
+        $html = (new VideoBuilder('clip.mov'))->render();
+
+        self::assertStringContainsString('type="video/quicktime"', $html);
+        self::assertStringNotContainsString('video/mov', $html);
+    }
+
     public function testDropsMissingMediapoolPoster(): void
     {
         $html = (new VideoBuilder('clip.mp4'))->poster('nonexistent.jpg')->render();

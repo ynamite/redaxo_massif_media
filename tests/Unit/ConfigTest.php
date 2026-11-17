@@ -15,6 +15,14 @@ final class ConfigTest extends TestCase
         rex_config::_reset();
     }
 
+    public function testSignKeySelfHealsWhenEmpty(): void
+    {
+        rex_config::set(Config::ADDON, Config::KEY_SIGN_KEY, '');
+        $key = Config::signKey();
+        self::assertNotSame('', $key);
+        self::assertSame($key, Config::signKey());
+    }
+
     public function testLqipBlurReturnsDefaultWhenUnset(): void
     {
         self::assertSame(5, Config::lqipBlur());
