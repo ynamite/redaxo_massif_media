@@ -5,6 +5,14 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Platzhalter blockieren das Rendern nicht mehr.** Dominante Farbe und LQIP teilen sich pro Request ein Zeitbudget von 200 ms. Ist es aufgebraucht, werden weitere fehlende Platzhalter in diesem Request ausgelassen und bei einem späteren Request erzeugt. Der erste fehlende Platzhalter wird immer erzeugt; eine laufende Berechnung wird nicht abgebrochen.
+- **Platzhalter entstehen beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden dominante Farbe und LQIP für Rasterbilder vorab geschrieben, auch im CDN-Modus.
+- **AVIF wird schneller encodiert.** Das PNG-Zwischenbild ist unkomprimiert und `imageavif()` läuft mit Speed 8. Gemessen bei 2048 px: 52–77 % weniger AVIF-Aufwand, Dateien −1 % bis +7,5 %, kein messbarer Qualitätsverlust. Gilt für Hosts mit Imagick und GD-AVIF; bestehende Varianten bleiben gültig.
+- **Cache leeren behält, was nicht veralten kann.** Das REDAXO-weite Cache-Leeren und das automatische Leeren nach dem Speichern von Einstellungen behalten `_color/`, `_lqip/` sowie die Originale externer Quellen (`_origin.bin`, `_manifest.json`). «Addon Cache jetzt leeren» löscht weiterhin alles.
+- Metadaten-Änderungen im Medienpool (z. B. Fokuspunkt) löschen dominante Farbe und LQIP nicht mehr. Nach dem Löschen einer Datei bleiben zwei kleine Sidecars zurück, bis der Addon-Cache geleert wird.
+
 ## [1.0.19] — 2026-11-17
 
 ### Added

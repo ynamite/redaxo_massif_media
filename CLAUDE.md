@@ -230,7 +230,7 @@ Manually check:
 ### Requests and config forms
 
 - `rex_request::isPost()` does not exist. Use `rex_request_method() === 'post'`.
-- Use `\Ynamite\Media\Backend\ConfigForm::factory($addon)` for our settings (NOT `rex_config_form::factory`). The subclass overrides `save()` to snapshot `Config::CACHE_INVALIDATING_KEYS` before/after, and on any change clears the addon cache + bumps `Config::cacheGeneration()`. `rex_config_form::save()` itself does not fire `REX_FORM_SAVED` (`rex_form` does, but `rex_config_form` extends `rex_form_base` and writes through `rex_config::set` directly), so a pure extension-point hook isn't possible — the subclass is the only clean intercept point.
+- Use `\Ynamite\Media\Backend\ConfigForm::factory($addon)` for our settings (NOT `rex_config_form::factory`). The subclass overrides `save()` to snapshot `Config::CACHE_INVALIDATING_KEYS` before/after, and on any change calls `CacheInvalidator::clear(keepSourceDerived: true)` (variants + `_meta/` go, `_color/`, `_lqip/` and external origins stay; bumps `Config::cacheGeneration()`). `rex_config_form::save()` itself does not fire `REX_FORM_SAVED` (`rex_form` does, but `rex_config_form` extends `rex_form_base` and writes through `rex_config::set` directly), so a pure extension-point hook isn't possible — the subclass is the only clean intercept point.
 - The HMAC sign key (`KEY_SIGN_KEY`) is intentionally NOT in `CACHE_INVALIDATING_KEYS`. Its dedicated regen button on the security tab stays user-triggered; auto-bumping it on a settings save would invalidate every browser-cached URL plus any third-party hotlink for content that's still semantically valid.
 - Store complex config as scalars and parse through typed accessors in `Config.php`.
 - `addTextField()` adds `form-control`; `addInputField('number', ...)` does not.
@@ -418,7 +418,7 @@ Therefore:
 
 - metadata/focal caches must not rely only on filename+mtime
 - `MEDIA_UPDATED` and `MEDIA_DELETED` must call `CacheInvalidator::invalidate($filename)`
-- old tiny sidecar orphans after file replacement are accepted; global cache clear removes them
+- old tiny sidecar orphans after file replacement or deletion are accepted; only the addon's own full clear (`CacheInvalidator::clear(keepSourceDerived: false)`) removes them
 
 #### `_meta` sidecar TTL + failed-read sentinel
 
@@ -471,10 +471,13 @@ Do not cast checkbox values with `(bool) (int)`. Use `Config::checkboxBool($key)
 
 ### Cache invalidation
 
-- `CacheInvalidator::invalidate($filename)` deletes the variant directory and current `_meta`, `_lqip`, `_color` sidecars.
+- `CacheInvalidator::invalidate($filename)` deletes the variant directory and the current `_meta` sidecar.
 - `CacheInvalidator::invalidateUrl($url)` drops the full external URL bucket.
 - Variant directories are path-keyed and are the bulky part.
 - Tiny old sidecar orphans after file replacement are accepted.
+- `CacheInvalidator::invalidate()` does NOT delete `_color` / `_lqip` sidecars: neither depends on media metadata (focal point), and a replaced file gets new keys through its mtime.
+- `CacheInvalidator::clear(bool $keepSourceDerived)` is the only whole-cache wipe; it also bumps the cache generation. Keep mode (`CACHE_DELETED` hook in `boot.php`, `ConfigForm` settings save) additionally preserves each external bucket's `_origin.bin` + `_manifest.json` (TTL/ETag handle staleness; manifests are not rewritten, so a fetch-failure sentinel survives). Full mode is the addon's clear button.
+- Placeholder cache misses run through `Pipeline\RenderBudget` (200 ms per request, shared by colour and LQIP): past the budget a miss returns `''` and a later request fills it. It bounds when a generation may start, not its duration. The `MEDIA_ADDED` / file-replacing `MEDIA_UPDATED` hook writes both placeholders up front via `RenderBudget::unlimited()`. Tests reset the static budget through `tests/Helpers/ResetRenderBudgetExtension`.
 - The generic `CACHE_DELETED` hook (`boot.php`) wipes cache contents **except `_color/` and `_lqip/`** — both are pure functions of the image bytes plus, for LQIP, config values that are part of its cache key since `Placeholder` CACHE_VERSION v3 (`lqip_width`/`lqip_quality`/`lqip_blur` in the hash). No config/DB staleness exists for a generic clear to cure, and regenerating either costs a synchronous per-image decode (LQIP additionally a webp encode) during the next HTML render. `_meta/` (DB-stored focal point → clear is the backstop) stays in the wipe. The addon's own clear-cache button (`pages/settings.security.php`) still deletes everything including `_color/` and `_lqip/` — keep it that way as the escape hatch.
 - `DominantColor` sets `jpeg:size` before `readImage()` so libjpeg does a DCT-scaled decode near thumbnail size instead of full resolution. Don't remove it as "redundant with `scaleImage`" — the full-res decode is the expensive part, not the scale.
 

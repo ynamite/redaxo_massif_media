@@ -392,7 +392,7 @@ Der `_external/`-Präfix ist reserviert; Mediapool-Filenames können nicht mit `
 \Ynamite\Media\Pipeline\CacheInvalidator::invalidateUrl('https://images.example.com/hero.jpg');
 ```
 
-— löscht den ganzen `cache/_external/<hash>/`-Bucket inklusive aller Varianten und der Sidecars. "Cache leeren" auf dem **Sicherheit & Cache**-Tab räumt alles inkl. externer Buckets weg.
+— löscht den ganzen `cache/_external/<hash>/`-Bucket inklusive aller Varianten und der Sidecars. "Cache leeren" auf dem **Sicherheit & Cache**-Tab räumt alles inkl. externer Buckets weg. Das REDAXO-weite Cache-Leeren löscht nur die Varianten und behält das geladene Original (`_origin.bin`, `_manifest.json`); dessen Aktualität regeln TTL und ETag.
 
 **Was nicht durch die externe Pipeline geht:** Animated-GIF-zu-WebP-Wrap (das ist eine Mediapool-Editor-Optimierung, externe Quellen werden im `<picture>` direkt verlinkt), und das `med_focuspoint`-Feld vom `focuspoint`-Addon (existiert nur auf Mediapool-Records).
 
@@ -1190,7 +1190,7 @@ Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro 
 
 ## Pre-Warm beim Upload
 
-Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das gilt nur für Quellen innerhalb des Budgets und läuft mit `set_time_limit(120)`. Der gemeinsame Encoder wartet auf den globalen Lock und prüft danach, ob die Variante schon existiert. Das Pre-Warm läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt. Im CDN-Modus kehrt es sofort zurück.
+Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Für Rasterbilder werden im selben Schritt dominante Farbe und LQIP geschrieben (auch im CDN-Modus). Das gilt nur für Quellen innerhalb des Budgets und läuft mit `set_time_limit(120)`. Der gemeinsame Encoder wartet auf den globalen Lock und prüft danach, ob die Variante schon existiert. Das Pre-Warm läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt. Im CDN-Modus kehrt es sofort zurück.
 
 ## Preload
 
@@ -1232,6 +1232,8 @@ Technische Berechnung:
 - sub-20ms auf üblichen Foto-Grössen
 - Ergebnis ist ein 1-Pixel-äquivalenter Mittelwert
 - Cache liegt unter `cache/_color/<2-char>/<xxh64>.txt`
+- Wird beim Upload berechnet; fehlt der Eintrag, entsteht er beim Rendern
+- Beim Rendern teilen sich Farbe und LQIP ein Zeitbudget von 200 ms pro Request. Ist es aufgebraucht, wird das Bild ohne Platzhalter ausgegeben und bei einem späteren Request ergänzt
 - Erfordert die `imagick` PHP-Extension
 - Ohne Imagick wird die Farbe still übersprungen
 
@@ -1426,6 +1428,13 @@ console cache:clear
 
 hängt sich das Addon an `CACHE_DELETED` und leert den eigenen Cache mit.
 
+Erhalten bleibt, was durch ein Cache-Leeren nicht aktueller wird und teuer neu zu berechnen ist:
+
+- `_color/` und `_lqip/` (hängen nur von den Bilddaten ab, LQIP zusätzlich von Einstellungen, die Teil des Cache-Keys sind)
+- die geladenen Originale externer Quellen (`_external/<hash>/_origin.bin` und `_manifest.json`; TTL und ETag regeln ihre Aktualität)
+
+Varianten und Metadaten (`_meta/`) werden gelöscht. Dasselbe gilt für das automatische Leeren nach dem Speichern von Einstellungen, die Varianten betreffen (Formate, Qualitäten, Breiten).
+
 ---
 
 ## Nur Addon-Cache leeren
@@ -1434,7 +1443,7 @@ Auf dem Tab **Sicherheit & Cache** gibt es zusätzlich:
 
 **Addon Cache jetzt leeren**
 
-Damit wird gezielt nur der MASSIF-Media-Cache geleert.
+Damit wird gezielt nur der MASSIF-Media-Cache geleert, und zwar vollständig: auch `_color/`, `_lqip/` und die Originale externer Quellen.
 
 ---
 
