@@ -20,4 +20,7 @@
             <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
+    <extensions>
+        <bootstrap class="Tests\Massif\Media\Helpers\ResetRenderBudgetExtension"/>
+    </extensions>
 </phpunit>

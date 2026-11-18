@@ -32,6 +32,9 @@ final class Placeholder
      * Generate (or load cached) an inline base64 LQIP for an image.
      * Returns a `data:image/webp;base64,...` URI, or '' when LQIP is disabled,
      * the source is non-rasterizable (svg/gif), or generation fails.
+     *
+     * Cache misses run through {@see RenderBudget}: past the per-request
+     * budget a miss returns '' and a later request generates it.
      */
     public function generate(ResolvedImage $image): string
     {
@@ -47,6 +50,11 @@ final class Placeholder
             }
         }
 
+        return RenderBudget::run(fn (): string => $this->encode($image, $cachePath));
+    }
+
+    private function encode(ResolvedImage $image, string $cachePath): string
+    {
         try {
             $server = Server::for($image->source);
             $relCachePath = $server->makeImage(Server::glideSourcePath($image->source), [

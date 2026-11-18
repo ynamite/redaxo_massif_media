@@ -6,9 +6,11 @@ namespace Tests\Massif\Media\Integration;
 
 use PHPUnit\Framework\TestCase;
 use rex_config;
+use rex_file;
 use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Pipeline\DominantColor;
+use Ynamite\Media\Pipeline\RenderBudget;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Source\MediapoolSource;
 
@@ -100,6 +102,39 @@ final class DominantColorTest extends TestCase
 
         self::assertSame($first, $second);
         self::assertSame($mtime1, $mtime2, 'Cache hit should not rewrite the file.');
+    }
+
+    public function testMissReturnsEmptyAndWritesNothingWhenBudgetSpent(): void
+    {
+        $image = $this->landscapeImage();
+        RenderBudget::spend(RenderBudget::BUDGET_MS);
+
+        self::assertSame('', (new DominantColor())->generate($image));
+        self::assertFileDoesNotExist(DominantColor::cachePathFor($image->source));
+    }
+
+    public function testCacheHitIsServedWhenBudgetSpent(): void
+    {
+        $image = $this->landscapeImage();
+        rex_file::put(DominantColor::cachePathFor($image->source), '#112233');
+        RenderBudget::spend(RenderBudget::BUDGET_MS);
+
+        self::assertSame('#112233', (new DominantColor())->generate($image));
+    }
+
+    private function landscapeImage(): ResolvedImage
+    {
+        return new ResolvedImage(
+            source: new MediapoolSource(
+                filename: 'landscape-800x600.jpg',
+                absolutePath: $this->fixturesDir . '/landscape-800x600.jpg',
+                mtime: 1_700_000_000,
+            ),
+            intrinsicWidth: 800,
+            intrinsicHeight: 600,
+            mime: 'image/jpeg',
+            sourceFormat: 'jpg',
+        );
     }
 
     private function assertChannelsClose(string $actual, string $expected, int $tolerance): void

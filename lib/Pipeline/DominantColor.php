@@ -27,6 +27,9 @@ use Ynamite\Media\Source\SourceInterface;
  * keyed on `xxh64(source.key():source.cacheBust():CACHE_VERSION)` so stored
  * files self-invalidate when the encoding contract bumps without needing a
  * manual clear.
+ *
+ * Cache misses run through {@see RenderBudget}: past the per-request budget
+ * a miss returns '' and a later request generates it.
  */
 final class DominantColor
 {
@@ -51,6 +54,11 @@ final class DominantColor
             }
         }
 
+        return RenderBudget::run(fn (): string => $this->compute($image, $cachePath));
+    }
+
+    private function compute(ResolvedImage $image, string $cachePath): string
+    {
         $absolutePath = $image->source->absolutePath();
         if (!extension_loaded('imagick') || !is_readable($absolutePath)) {
             return '';
