@@ -77,7 +77,8 @@ final class RenderBudget
             if (!$unlimited) {
                 self::$spentMs += $elapsedMs;
             }
-            if ($result === '' && $failedMarker !== null && $elapsedMs >= self::SLOW_FAILURE_MS) {
+            // A sidecar written alongside '' is an answer ("no colour"), not a failure.
+            if ($result === '' && $failedMarker !== null && $elapsedMs >= self::SLOW_FAILURE_MS && !is_file($cachePath)) {
                 rex_file::put($failedMarker, '');
             }
         }
@@ -86,6 +87,12 @@ final class RenderBudget
     public static function failedMarkerFor(string $cachePath): string
     {
         return rex_path::addonAssets(Config::ADDON, 'cache/_failed/' . hash('xxh64', $cachePath) . '.txt');
+    }
+
+    /** Park a generation that failed for good reason, however fast it failed. */
+    public static function rememberFailure(string $cachePath): void
+    {
+        rex_file::put(self::failedMarkerFor($cachePath), '');
     }
 
     /** Drop the slow-failure marker of a sidecar so its generation is retried. */

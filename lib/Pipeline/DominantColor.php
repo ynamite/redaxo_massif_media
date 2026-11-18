@@ -47,6 +47,8 @@ final class DominantColor
      */
     private const NO_COLOR = 'transparent';
 
+    private const OPAQUE_ENOUGH = 0.95;
+
     public function generate(ResolvedImage $image): string
     {
         if (!Config::colorEnabled() || $image->sourceFormat === 'svg') {
@@ -105,6 +107,10 @@ final class DominantColor
             $hex = sprintf('#%02x%02x%02x', $rgb['r'], $rgb['g'], $rgb['b']);
         } catch (Throwable $e) {
             rex_logger::logException($e);
+            // Park it: a decode error is usually fast and permanent (corrupt
+            // file, format the ImageMagick build cannot read), so every render
+            // would otherwise retry and log it again.
+            RenderBudget::rememberFailure($cachePath);
             return '';
         }
 
@@ -118,8 +124,12 @@ final class DominantColor
             return false;
         }
         $opaque = Imagick::getQuantumRange()['quantumRangeLong'];
-        // 0.999: scaling an opaque image can leave float noise just under opaque.
-        return $im->getImageChannelRange(Imagick::CHANNEL_ALPHA)['minima'] < $opaque * 0.999;
+        // Measured on the 50 px working copy on purpose: each of its pixels
+        // averages 1/50 of the image width, so the minimum says how much of
+        // the most transparent spot is see-through. Under 5 % (a stray
+        // semi-transparent edge row from an export, a single pixel) nothing
+        // shows at display size, and the image keeps its colour.
+        return $im->getImageChannelRange(Imagick::CHANNEL_ALPHA)['minima'] < $opaque * self::OPAQUE_ENOUGH;
     }
 
     public static function cachePathFor(SourceInterface $source): string

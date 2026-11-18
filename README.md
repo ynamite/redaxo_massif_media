@@ -1178,7 +1178,7 @@ Technische Details:
 - Ein globaler Lock im Daten-Verzeichnis des Addons (`animated-encode.lock`) erlaubt ein animiertes Encoding pro Host gleichzeitig, geteilt zwischen Requests und Upload-Pre-Warm. Er überlebt eine Cache-Invalidierung. Requests erwerben ihn ohne zu warten; das Pre-Warm wartet und prüft den Cache nach dem Erwerb erneut. Upgrade-Pfad bei Durchsatzproblemen: ein kleiner Semaphor.
 - Cache: die grösste Breite liegt unter `cache/{src}/animated.webp` (alter Name, von 1.0.18 gecachtes HTML bleibt gültig), kleinere unter `cache/{src}/animated-{w}.webp`. Bereits gecachte Varianten werden zuerst ausgeliefert; encodiert wird nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
 - Kann eine animierte Variante gerade nicht erzeugt werden (Lock belegt, Budget überschritten, nicht unterstützte Quelle oder Breite, WebP-Encoder nicht verfügbar oder Encoding-Fehler), liefert ein gültig signierter Request die **Original-Bytes** mit dem Content-Type des Originals und `Cache-Control: no-store`. Fehlende oder unlesbare Originale liefern weiterhin 404, ungültige Signaturen 403.
-- Legacy-`animated.webp`-URLs und legacy signierte Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei, wenn die Animation nicht neu erzeugt werden kann. Glide-Transform-Requests für GIF- oder animierte WebP-Quellen umgehen das Glide-Decoding, auch bei externen Quellen. Für Animationen werden weder LQIP noch dominante Farbe erzeugt.
+- Legacy-`animated.webp`-URLs und legacy signierte Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei, wenn die Animation nicht neu erzeugt werden kann. Glide-Transform-Requests für GIF- oder animierte WebP-Quellen umgehen das Glide-Decoding, auch bei externen Quellen. Für Animationen wird kein LQIP erzeugt; die dominante Farbe stammt aus dem ersten Frame.
 - Animierte Quellen werden als `art:`-Varianten (Art Direction) nicht unterstützt: Diese Varianten werden still übersprungen, auch wenn das Hauptbild statisch ist. Ein animiertes Hauptbild läuft über den Passthrough-Renderer und ignoriert `art:`-Varianten.
 - Im CDN-Modus entfallen sowohl der Wrapper als auch das Pre-Warm beim Upload, weil das CDN die Encoding-Arbeit nicht für uns macht.
 
@@ -1236,8 +1236,9 @@ Technische Berechnung:
 - Cache liegt unter `cache/_color/<2-char>/<xxh64>.txt`
 - Wird beim Upload berechnet; fehlt der Eintrag, entsteht er beim Rendern
 - Beim Rendern teilen sich Farbe und LQIP ein Zeitbudget von 200 ms pro Request. Ist es aufgebraucht, wird das Bild ohne Platzhalter ausgegeben und bei einem späteren Request ergänzt
-- GIFs und animierte WebPs: nur das erste Frame wird gelesen. SVGs erhalten keine Farbe
-- Bilder mit transparenten Pixeln erhalten keine Farbe, weil die Hintergrundfarbe hinter ihnen sichtbar bliebe. Der Sidecar merkt sich das (`transparent`), damit die Datei nicht bei jedem Rendern neu dekodiert wird
+- GIFs und animierte WebPs: nur das erste Frame wird gelesen. SVGs erhalten keine Farbe. Wird eine Animation erst in späteren Frames transparent, bleibt die Farbe dahinter sichtbar
+- Bilder mit transparenten Bereichen erhalten keine Farbe, weil die Hintergrundfarbe hinter ihnen sichtbar bliebe. Gemessen wird auf der 50-px-Kopie: Erst wenn eine Stelle zu mehr als 5 % durchsichtig ist, gilt das Bild als transparent. Eine einzelne halbtransparente Randzeile aus einem Export zählt nicht. Der Sidecar merkt sich das Ergebnis (`transparent`), damit die Datei nicht bei jedem Rendern neu dekodiert wird
+- Kann eine Datei nicht dekodiert werden, wird der Versuch eine Stunde lang nicht wiederholt
 - Erfordert die `imagick` PHP-Extension
 - Ohne Imagick wird die Farbe still übersprungen
 

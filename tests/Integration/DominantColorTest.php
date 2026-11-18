@@ -181,6 +181,42 @@ final class DominantColorTest extends TestCase
         self::assertSame('', (new DominantColor())->generate($image));
     }
 
+    public function testThinTransparentEdgeStillGetsColor(): void
+    {
+        // Real case: a 3000 px wide export whose last pixel row is
+        // semi-transparent. Nothing shows through at display size.
+        $path = $this->tmpBase . '/edge.png';
+        @mkdir($this->tmpBase, 0777, true);
+        $im = new \Imagick();
+        $im->newImage(3000, 1794, new \ImagickPixel('#3366aa'));
+        $im->setImageAlphaChannel(\Imagick::ALPHACHANNEL_SET);
+        $row = new \Imagick();
+        $row->newImage(3000, 1, new \ImagickPixel('rgba(51, 102, 170, 0.35)'));
+        $im->compositeImage($row, \Imagick::COMPOSITE_COPY, 0, 1793);
+        $im->setImageFormat('png');
+        $im->writeImage($path);
+        $im->clear();
+        $image = new ResolvedImage(
+            source: new MediapoolSource(filename: 'edge.png', absolutePath: $path, mtime: 1_700_000_000),
+            intrinsicWidth: 3000,
+            intrinsicHeight: 1794,
+            mime: 'image/png',
+            sourceFormat: 'png',
+        );
+
+        $this->assertChannelsClose((new DominantColor())->generate($image), '#3366aa', tolerance: 8);
+    }
+
+    public function testUndecodableFileIsParkedInsteadOfRetriedOnEveryRender(): void
+    {
+        // e.g. animated WebP on an ImageMagick build that cannot decode it:
+        // the exception is fast, so without a marker every render logs it again.
+        $image = $this->fixture('corrupt.jpg', 'jpg');
+
+        self::assertSame('', (new DominantColor())->generate($image));
+        self::assertFileExists(RenderBudget::failedMarkerFor(DominantColor::cachePathFor($image->source)));
+    }
+
     private function fixture(string $filename, string $format, bool $animated = false): ResolvedImage
     {
         return new ResolvedImage(

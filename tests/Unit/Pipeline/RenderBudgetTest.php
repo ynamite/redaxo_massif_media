@@ -6,6 +6,7 @@ namespace Tests\Massif\Media\Unit\Pipeline;
 
 use PHPUnit\Framework\TestCase;
 use rex_dir;
+use rex_file;
 use rex_path;
 use Ynamite\Media\Pipeline\RenderBudget;
 
@@ -118,6 +119,24 @@ final class RenderBudgetTest extends TestCase
 
         RenderBudget::forgetFailure($cachePath);
         self::assertFileDoesNotExist($marker);
+        rex_dir::delete($tmpBase, true);
+    }
+
+    public function testSlowEmptyResultWithSidecarWrittenIsNotAFailure(): void
+    {
+        // "No colour" for a transparent image: '' is the answer, and the
+        // sidecar remembers it.
+        $tmpBase = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true);
+        rex_path::_setBase($tmpBase);
+        $cachePath = $tmpBase . '/cache/_color/ab/abcd.txt';
+        $slowNoColor = static function () use ($cachePath): string {
+            usleep((RenderBudget::SLOW_FAILURE_MS + 10) * 1000);
+            rex_file::put($cachePath, 'transparent');
+            return '';
+        };
+
+        self::assertSame('', RenderBudget::run($slowNoColor, $cachePath));
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($cachePath));
         rex_dir::delete($tmpBase, true);
     }
 

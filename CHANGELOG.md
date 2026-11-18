@@ -17,7 +17,8 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 ### Fixed
 
 - **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg. Schlägt ein Abruf fehl, während ein paralleler gelingt, wird dessen Ergebnis verwendet und nicht mehr als fehlgeschlagen überschrieben.
-- **Bilder mit transparenten Pixeln erhalten keine dominante Farbe mehr.** Die Hintergrundfarbe blieb nach dem Laden hinter den transparenten Bereichen sichtbar. Bereits berechnete Farben bleiben bestehen, bis der Addon-Cache geleert wird («Addon Cache jetzt leeren»).
+- **Bilder mit transparenten Bereichen erhalten keine dominante Farbe mehr.** Die Hintergrundfarbe blieb nach dem Laden hinter den transparenten Bereichen sichtbar. Vereinzelte halbtransparente Randpixel zählen nicht als Transparenz. Bereits berechnete Farben bleiben bestehen, bis der Addon-Cache geleert wird («Addon Cache jetzt leeren»).
+- Lässt sich eine Datei für die dominante Farbe nicht dekodieren, wird der Fehler nur noch einmal pro Stunde protokolliert statt bei jedem Rendern.
 - **Die Cache-Statistik zählt nur noch Cache-Inhalte.** Lock-Dateien (`<Variante>.lock`, eine pro erzeugter Variante) und Fehlermarker (`_failed/`) wurden als Varianten mitgezählt.
 
 ## [1.0.19] — 2026-11-17

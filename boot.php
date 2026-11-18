@@ -158,7 +158,8 @@ rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
 //     here, the render only reads them. Runs outside the render budget
 //     (RenderBudget::unlimited — this is not a render path) and in CDN mode
 //     too (placeholders are inlined either way). generate() itself returns ''
-//     for disabled features and passthrough sources (svg, gif, animated webp).
+//     for disabled features; the LQIP also for passthrough sources (gif,
+//     animated webp), which only get a colour.
 //   - animated WebP encodes (gif/webp only, not in CDN mode).
 // Registered AFTER the invalidation above: rex_extension runs same-level
 // callbacks in registration order, so on MEDIA_UPDATED the stale cache is
