@@ -11,11 +11,13 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 - **Platzhalter entstehen beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden dominante Farbe und LQIP für Rasterbilder vorab geschrieben, auch im CDN-Modus.
 - **AVIF wird schneller encodiert.** Das PNG-Zwischenbild ist unkomprimiert und `imageavif()` läuft mit Speed 8. Gemessen bei 2048 px: 52–77 % weniger AVIF-Aufwand, Dateien −1 % bis +7,5 %, kein messbarer Qualitätsverlust. Gilt für Hosts mit Imagick und GD-AVIF; bestehende Varianten bleiben gültig.
 - **Cache leeren behält, was nicht veralten kann.** Das REDAXO-weite Cache-Leeren und das automatische Leeren nach dem Speichern von Einstellungen behalten `_color/`, `_lqip/` sowie die Originale externer Quellen (`_origin.bin`, `_manifest.json`). «Addon Cache jetzt leeren» löscht weiterhin alles.
+- **Dominante Farbe auch für GIFs und animierte WebPs.** Sie wird aus dem ersten Frame berechnet und als `background-color` auf das `<img>` gesetzt. SVGs bleiben ohne Farbe, ein LQIP gibt es für diese Quellen weiterhin nicht.
 - Metadaten-Änderungen im Medienpool (z. B. Fokuspunkt) löschen dominante Farbe und LQIP nicht mehr. Nach dem Löschen einer Datei bleiben zwei kleine Sidecars zurück, bis der Addon-Cache geleert wird.
 
 ### Fixed
 
 - **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg. Schlägt ein Abruf fehl, während ein paralleler gelingt, wird dessen Ergebnis verwendet und nicht mehr als fehlgeschlagen überschrieben.
+- **Bilder mit transparenten Pixeln erhalten keine dominante Farbe mehr.** Die Hintergrundfarbe blieb nach dem Laden hinter den transparenten Bereichen sichtbar. Bereits berechnete Farben bleiben bestehen, bis der Addon-Cache geleert wird («Addon Cache jetzt leeren»).
 - **Die Cache-Statistik zählt nur noch Cache-Inhalte.** Lock-Dateien (`<Variante>.lock`, eine pro erzeugter Variante) und Fehlermarker (`_failed/`) wurden als Varianten mitgezählt.
 
 ## [1.0.19] — 2026-11-17
@@ -33,7 +35,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 - **Animiertes Encoding schreibt die coalesceten, skalierten Frames direkt, ohne `deconstructImages()`.** Transparenz bleibt erhalten. Die Ausgabe ist atomar, mit 0755-Verzeichnissen und 0644-Dateien, auch beim Pre-Warm.
 - **Ein globaler Encode-Lock ausserhalb des Caches** (`addonData`) überlebt Cache-Leeren und dedupliziert Requests und Pre-Warm. Requests warten nicht (bei Lock belegt: Original-Fallback), das Pre-Warm wartet und prüft den Cache danach erneut. Obergrenze: ein animiertes Encoding pro Host gleichzeitig; ein kleiner Semaphor erhöht bei Bedarf den Durchsatz.
 - **Original-Fallback statt 404:** Ein gültig signierter Request für eine animierte Variante, die nicht erzeugt werden kann, liefert die Original-Bytes mit dem Content-Type des Originals und `Cache-Control: no-store`. Das gilt bei belegtem Lock, überschrittenem Budget, nicht unterstützter Breite oder Quelle und fehlender WebP-Encodierung. Auch Legacy-`animated.webp`-URLs und Legacy-Glide-Transform-URLs animierter Quellen erhalten bei Cache-Miss die Originaldatei statt 404; fehlende Originale liefern weiterhin 404, ungültige Signaturen bleiben 403.
-- Glide-Decoding bei Cache-Miss wird für GIF und animierte WebP-Quellen umgangen, auch für externe Quellen. Animierte WebPs erhalten weder LQIP noch dominante Farbe.
+- Glide-Decoding bei Cache-Miss wird für GIF und animierte WebP-Quellen umgangen, auch für externe Quellen. Animierte WebPs erhalten kein LQIP.
 - **Art-Direction-Varianten (`art:`) animierter Quellen werden nicht unterstützt** und still übersprungen, auch bei statischem Hauptbild. Animierte Hauptbilder ignorieren Art Direction.
 - **Passthrough (SVG, GIF, animiertes WebP):** `<img src>` und `Image::url()` tragen jetzt `?v=<cacheBust>`. Aufrufer, die selbst Query-Parameter anhängen, müssen `&` verwenden.
 - Passthrough mit nur `width`: die Höhe folgt jetzt dem intrinsischen Seitenverhältnis.

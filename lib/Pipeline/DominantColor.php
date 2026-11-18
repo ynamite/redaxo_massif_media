@@ -40,9 +40,16 @@ final class DominantColor
      */
     private const CACHE_VERSION = 'v1';
 
+    /**
+     * Sidecar content for images with transparent pixels. A background colour
+     * stays visible behind them after load, so they get none; the sidecar
+     * remembers that so the file is not decoded again on every render.
+     */
+    private const NO_COLOR = 'transparent';
+
     public function generate(ResolvedImage $image): string
     {
-        if (!Config::colorEnabled() || $image->isPassthrough()) {
+        if (!Config::colorEnabled() || $image->sourceFormat === 'svg') {
             return '';
         }
 
@@ -50,7 +57,7 @@ final class DominantColor
         if (is_file($cachePath)) {
             $cached = (string) file_get_contents($cachePath);
             if ($cached !== '') {
-                return $cached;
+                return $cached === self::NO_COLOR ? '' : $cached;
             }
         }
 
@@ -70,9 +77,16 @@ final class DominantColor
             // size instead of full resolution (~100ms+ for a multi-MP photo,
             // which dwarfs the quantize below). Ignored by non-JPEG decoders.
             $im->setOption('jpeg:size', '100x100');
-            $im->readImage($absolutePath);
+            // [0]: first frame only. Without it an animation decodes every
+            // frame (~28 MB per source megapixel).
+            $im->readImage($absolutePath . '[0]');
             // Tiny working copy so quantize is fast on 6000×4000 sources.
             $im->scaleImage(50, 0);
+            if (self::hasTransparency($im)) {
+                $im->clear();
+                rex_file::put($cachePath, self::NO_COLOR);
+                return '';
+            }
             // COLORSPACE_SRGB (not COLORSPACE_RGB!) — Imagick's "RGB" is
             // linear-light space; quantizing there produces gamma-incorrect
             // averages that come back as much darker than the perceived
@@ -96,6 +110,16 @@ final class DominantColor
 
         rex_file::put($cachePath, $hex);
         return $hex;
+    }
+
+    private static function hasTransparency(Imagick $im): bool
+    {
+        if (!$im->getImageAlphaChannel()) {
+            return false;
+        }
+        $opaque = Imagick::getQuantumRange()['quantumRangeLong'];
+        // 0.999: scaling an opaque image can leave float noise just under opaque.
+        return $im->getImageChannelRange(Imagick::CHANNEL_ALPHA)['minima'] < $opaque * 0.999;
     }
 
     public static function cachePathFor(SourceInterface $source): string

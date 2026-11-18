@@ -122,6 +122,81 @@ final class DominantColorTest extends TestCase
         self::assertSame('#112233', (new DominantColor())->generate($image));
     }
 
+    public function testAnimatedGifGetsColorOfFirstFrame(): void
+    {
+        // animated-3frame.gif: frames #ff0000, #00ff00, #0000ff.
+        $hex = (new DominantColor())->generate($this->fixture('animated-3frame.gif', 'gif', animated: true));
+
+        $this->assertChannelsClose($hex, '#ff0000', tolerance: 8);
+    }
+
+    public function testAnimatedWebpGetsColorOfFirstFrame(): void
+    {
+        $hex = (new DominantColor())->generate($this->fixture('animated-3frame.webp', 'webp', animated: true));
+
+        $this->assertChannelsClose($hex, '#ff0000', tolerance: 16);
+    }
+
+    public function testStaticGifGetsColor(): void
+    {
+        $hex = (new DominantColor())->generate($this->fixture('tiny-32x32.gif', 'gif'));
+
+        $this->assertChannelsClose($hex, '#aaaa33', tolerance: 8);
+    }
+
+    public function testSvgGetsNoColor(): void
+    {
+        $image = $this->fixture('vector.svg', 'svg');
+
+        self::assertSame('', (new DominantColor())->generate($image));
+        self::assertFileDoesNotExist(DominantColor::cachePathFor($image->source));
+    }
+
+    public function testTransparentImageGetsNoColorAndIsNotDecodedAgain(): void
+    {
+        // background-color stays visible behind transparent pixels after load.
+        $path = $this->tmpBase . '/transparent.png';
+        @mkdir($this->tmpBase, 0777, true);
+        $im = new \Imagick();
+        $im->newImage(200, 100, new \ImagickPixel('transparent'));
+        $draw = new \ImagickDraw();
+        $draw->setFillColor(new \ImagickPixel('#3366aa'));
+        $draw->rectangle(0, 0, 99, 99);
+        $im->drawImage($draw);
+        $im->setImageFormat('png');
+        $im->writeImage($path);
+        $im->clear();
+        $image = new ResolvedImage(
+            source: new MediapoolSource(filename: 'transparent.png', absolutePath: $path, mtime: 1_700_000_000),
+            intrinsicWidth: 200,
+            intrinsicHeight: 100,
+            mime: 'image/png',
+            sourceFormat: 'png',
+        );
+
+        self::assertSame('', (new DominantColor())->generate($image));
+        // Remembered, so the next render does not decode the file again.
+        self::assertSame('transparent', file_get_contents(DominantColor::cachePathFor($image->source)));
+        RenderBudget::spend(RenderBudget::BUDGET_MS);
+        self::assertSame('', (new DominantColor())->generate($image));
+    }
+
+    private function fixture(string $filename, string $format, bool $animated = false): ResolvedImage
+    {
+        return new ResolvedImage(
+            source: new MediapoolSource(
+                filename: $filename,
+                absolutePath: $this->fixturesDir . '/' . $filename,
+                mtime: 1_700_000_000,
+            ),
+            intrinsicWidth: 64,
+            intrinsicHeight: 64,
+            mime: 'image/' . $format,
+            sourceFormat: $format,
+            isAnimated: $animated,
+        );
+    }
+
     private function landscapeImage(): ResolvedImage
     {
         return new ResolvedImage(

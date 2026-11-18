@@ -7,11 +7,13 @@ namespace Tests\Massif\Media\Unit\View;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use rex_config;
+use rex_file;
 use rex_path;
 use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Loading;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\UrlBuilder;
 use Ynamite\Media\Source\MediapoolSource;
@@ -48,6 +50,28 @@ final class PassthroughRendererTest extends TestCase
             sourceFormat: 'gif',
             isAnimated: true,
         );
+    }
+
+    public function testDominantColorReachesImgBeforeFocalPoint(): void
+    {
+        $tmp = sys_get_temp_dir() . '/massif_media_pt_' . uniqid('', true);
+        rex_path::_setBase($tmp);
+        rex_config::set(Config::ADDON, Config::KEY_COLOR_ENABLED, 1);
+        $image = $this->animatedGif()->withFocal('25% 75%');
+        $sidecar = DominantColor::cachePathFor($image->source);
+        rex_file::put($sidecar, '#112233');
+
+        $html = (new PassthroughRenderer(null, new DominantColor()))->render($image, alt: 'x');
+
+        @unlink($sidecar);
+        self::assertStringContainsString('style="background-color:#112233;object-position:25% 75%"', $html);
+    }
+
+    public function testNoStyleWithoutColorAndFocalPoint(): void
+    {
+        $html = (new PassthroughRenderer(null, new DominantColor()))->render($this->svg(), alt: 'x');
+
+        self::assertStringNotContainsString('style=', $html);
     }
 
     public function testEmitsImgTagWithIntrinsicDimsByDefault(): void

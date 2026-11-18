@@ -1174,7 +1174,7 @@ Technische Details:
 
 - Breiten: 640, 1280 und die intrinsische Breite, nie hochskaliert. Alle Frames, Delays und die Loop-Zahl bleiben erhalten.
 - Encoding läuft beim ersten Zugriff über `Imagick::coalesceImages() + writeImages($path, true)`. Die coalesceten, skalierten Frames werden direkt geschrieben, `deconstructImages()` wird nicht aufgerufen; Transparenz bleibt erhalten (spätere Frames können frühere opake Pixel wieder transparent machen). Die Dateien werden atomar veröffentlicht, mit 0755-Verzeichnissen und 0644-Dateien unabhängig von der umask des Aufrufers.
-- Glides Standard-Encoder behält nur das erste Frame, deshalb laufen animierte Quellen nie durch Glide (kein LQIP, keine dominante Farbe).
+- Glides Standard-Encoder behält nur das erste Frame, deshalb laufen animierte Quellen nie durch Glide (kein LQIP; die dominante Farbe wird aus dem ersten Frame berechnet).
 - Ein globaler Lock im Daten-Verzeichnis des Addons (`animated-encode.lock`) erlaubt ein animiertes Encoding pro Host gleichzeitig, geteilt zwischen Requests und Upload-Pre-Warm. Er überlebt eine Cache-Invalidierung. Requests erwerben ihn ohne zu warten; das Pre-Warm wartet und prüft den Cache nach dem Erwerb erneut. Upgrade-Pfad bei Durchsatzproblemen: ein kleiner Semaphor.
 - Cache: die grösste Breite liegt unter `cache/{src}/animated.webp` (alter Name, von 1.0.18 gecachtes HTML bleibt gültig), kleinere unter `cache/{src}/animated-{w}.webp`. Bereits gecachte Varianten werden zuerst ausgeliefert; encodiert wird nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
 - Kann eine animierte Variante gerade nicht erzeugt werden (Lock belegt, Budget überschritten, nicht unterstützte Quelle oder Breite, WebP-Encoder nicht verfügbar oder Encoding-Fehler), liefert ein gültig signierter Request die **Original-Bytes** mit dem Content-Type des Originals und `Cache-Control: no-store`. Fehlende oder unlesbare Originale liefern weiterhin 404, ungültige Signaturen 403.
@@ -1236,6 +1236,8 @@ Technische Berechnung:
 - Cache liegt unter `cache/_color/<2-char>/<xxh64>.txt`
 - Wird beim Upload berechnet; fehlt der Eintrag, entsteht er beim Rendern
 - Beim Rendern teilen sich Farbe und LQIP ein Zeitbudget von 200 ms pro Request. Ist es aufgebraucht, wird das Bild ohne Platzhalter ausgegeben und bei einem späteren Request ergänzt
+- GIFs und animierte WebPs: nur das erste Frame wird gelesen. SVGs erhalten keine Farbe
+- Bilder mit transparenten Pixeln erhalten keine Farbe, weil die Hintergrundfarbe hinter ihnen sichtbar bliebe. Der Sidecar merkt sich das (`transparent`), damit die Datei nicht bei jedem Rendern neu dekodiert wird
 - Erfordert die `imagick` PHP-Extension
 - Ohne Imagick wird die Farbe still übersprungen
 

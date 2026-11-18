@@ -8,6 +8,7 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Enum\Decoding;
 use Ynamite\Media\Enum\FetchPriority;
 use Ynamite\Media\Enum\Loading;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ResolvedImage;
 use Ynamite\Media\Pipeline\UrlBuilder;
 
@@ -18,8 +19,10 @@ final class PassthroughRenderer
      * animated-WebP wrap (eg. simple test setups) can skip it. When omitted,
      * even animated sources fall through to the plain <img> path.
      */
-    public function __construct(private ?UrlBuilder $urlBuilder = null)
-    {
+    public function __construct(
+        private ?UrlBuilder $urlBuilder = null,
+        private ?DominantColor $dominantColor = null,
+    ) {
     }
 
     /**
@@ -88,8 +91,16 @@ final class PassthroughRenderer
         if ($class !== null && $class !== '') {
             $attrs['class'] = $class;
         }
+        $style = [];
+        $color = $this->dominantColor?->generate($image) ?? '';
+        if ($color !== '') {
+            $style[] = 'background-color:' . $color;
+        }
         if ($image->focalPoint !== null) {
-            $attrs['style'] = 'object-position:' . $image->focalPoint;
+            $style[] = 'object-position:' . $image->focalPoint;
+        }
+        if ($style !== []) {
+            $attrs['style'] = implode(';', $style);
         }
 
         $tag = '<img';

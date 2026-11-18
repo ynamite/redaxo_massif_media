@@ -320,7 +320,7 @@ final class ImageBuilder
                     Preloader::queueLink(UrlBuilder::originalUrl($image), 'image', $image->mime);
                 }
             }
-            return (new PassthroughRenderer(new UrlBuilder()))->render(
+            return (new PassthroughRenderer(new UrlBuilder(), new DominantColor()))->render(
                 $image,
                 $this->width,
                 $this->height,

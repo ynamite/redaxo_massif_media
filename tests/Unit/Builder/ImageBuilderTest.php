@@ -46,7 +46,7 @@ final class ImageBuilderTest extends TestCase
         self::assertSame('/media/' . $fixture . '?v=1700000000', $builder->url());
         self::assertStringContainsString('src="/media/' . $fixture . '?v=1700000000"', $html);
         self::assertStringContainsString('fetchpriority="high"', $html);
-        self::assertStringContainsString('style="object-position:25% 75%"', $html);
+        self::assertStringContainsString('object-position:25% 75%"', $html);
         $preload = Preloader::drain();
         if (str_starts_with($fixture, 'animated-')) {
             self::assertStringContainsString('as="image" imagesrcset="', $preload);
