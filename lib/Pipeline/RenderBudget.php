@@ -18,22 +18,28 @@ namespace Ynamite\Media\Pipeline;
  * can't be interrupted. The first miss of a request always runs, so every
  * request makes progress. Cache hits never go through here.
  *
- * Static state = per request under FPM/mod_php. The upload hook (boot.php)
- * bypasses it with {@see unlimited()}.
+ * Static state = per request under FPM/mod_php. A CLI process has no TTFB to
+ * protect and may render many pages in one run, so it is unlimited unless
+ * {@see reset()} starts a budgeted job. The upload hook (boot.php) bypasses
+ * the budget with {@see unlimited()}; bypassed work is not charged.
  */
 final class RenderBudget
 {
     public const BUDGET_MS = 200;
 
     private static float $spentMs = 0.0;
-    private static bool $unlimited = false;
+    /** null = not decided yet: unlimited in CLI, budgeted otherwise. */
+    private static ?bool $unlimited = null;
 
     /**
      * @param callable(): string $generate
      */
     public static function run(callable $generate): string
     {
-        if (!self::$unlimited && self::$spentMs >= self::BUDGET_MS) {
+        if (self::isUnlimited()) {
+            return $generate();
+        }
+        if (self::$spentMs >= self::BUDGET_MS) {
             return '';
         }
         $start = hrtime(true);
@@ -58,7 +64,7 @@ final class RenderBudget
      */
     public static function unlimited(callable $fn): mixed
     {
-        $previous = self::$unlimited;
+        $previous = self::isUnlimited();
         self::$unlimited = true;
         try {
             return $fn();
@@ -67,9 +73,18 @@ final class RenderBudget
         }
     }
 
+    /**
+     * Start a fresh budgeted job: nothing spent, bypass off (also in CLI —
+     * the test suite relies on that).
+     */
     public static function reset(): void
     {
         self::$spentMs = 0.0;
         self::$unlimited = false;
+    }
+
+    private static function isUnlimited(): bool
+    {
+        return self::$unlimited ??= PHP_SAPI === 'cli';
     }
 }

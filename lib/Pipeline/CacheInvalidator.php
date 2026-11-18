@@ -25,12 +25,13 @@ use Ynamite\Media\Source\MediapoolSource;
  * variant. Wiping the meta entry plus the path-keyed variants directory
  * forces a clean rebuild on the next render.
  *
- * The colour and LQIP sidecars are NOT dropped here: both are pure functions
- * of the image bytes (LQIP additionally of config values folded into its
- * cache key), not of media metadata, and regenerating them costs an image
- * decode. A replaced file gets new keys through its mtime; a deleted file
- * leaves two tiny orphans (7 bytes / ~600 bytes) that only the full
- * {@see clear()} removes.
+ * The colour and LQIP sidecars are only dropped when the file itself was
+ * replaced (`$fileReplaced`): both are pure functions of the image bytes
+ * (LQIP additionally of config values folded into its cache key), not of
+ * media metadata, and regenerating them costs an image decode. A replaced
+ * file normally gets new keys through its mtime anyway; the explicit drop
+ * covers a replacement that keeps the mtime. A deleted file leaves two tiny
+ * orphans (7 bytes / ~600 bytes) that only the full {@see clear()} removes.
  *
  * For file-replacement updates, mtime has changed by the time the hook fires,
  * so the "current" hash points at a future entry. The old meta/lqip/color
@@ -78,17 +79,17 @@ final class CacheInvalidator
             if ($name === '_color' || $name === '_lqip') {
                 continue;
             }
-            if ($name !== '_external' || !is_dir($entry)) {
+            if ($name !== '_external' || !self::isRealDir($entry)) {
                 self::deleteEntry($entry);
                 continue;
             }
             foreach (self::entries($entry) as $bucket) {
-                if (!is_dir($bucket)) {
+                if (!self::isRealDir($bucket)) {
                     self::deleteEntry($bucket);
                     continue;
                 }
                 foreach (self::entries($bucket) as $item) {
-                    if (is_dir($item) || !in_array(basename($item), self::EXTERNAL_KEPT_FILES, true)) {
+                    if (!is_file($item) || is_link($item) || !in_array(basename($item), self::EXTERNAL_KEPT_FILES, true)) {
                         self::deleteEntry($item);
                     }
                 }
@@ -113,12 +114,25 @@ final class CacheInvalidator
         return $paths;
     }
 
+    /**
+     * Symlinks are removed as links, never descended into — following one
+     * would delete files outside the cache.
+     */
     private static function deleteEntry(string $path): void
     {
+        if (is_link($path)) {
+            @unlink($path);
+            return;
+        }
         is_dir($path) ? rex_dir::delete($path, true) : rex_file::delete($path);
     }
 
-    public static function invalidate(string $filename): void
+    private static function isRealDir(string $path): bool
+    {
+        return is_dir($path) && !is_link($path);
+    }
+
+    public static function invalidate(string $filename, bool $fileReplaced = false): void
     {
         if ($filename === '') {
             return;
@@ -136,6 +150,13 @@ final class CacheInvalidator
         );
 
         rex_file::delete(MetadataReader::metaCachePath($source));
+        if ($fileReplaced) {
+            // New bytes under an unchanged mtime (same-second replacement,
+            // mtime-preserving import) keep the cache keys — without this the
+            // placeholders of the old bytes would be served indefinitely.
+            rex_file::delete(Placeholder::cachePathFor($source));
+            rex_file::delete(DominantColor::cachePathFor($source));
+        }
 
         $variantsDir = rex_path::addonAssets(Config::ADDON, 'cache/' . $filename);
         if (is_dir($variantsDir)) {

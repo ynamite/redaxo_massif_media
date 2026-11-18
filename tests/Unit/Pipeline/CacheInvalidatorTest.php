@@ -254,4 +254,41 @@ final class CacheInvalidatorTest extends TestCase
 
         self::assertNotSame(1, rex_config::get(Config::ADDON, Config::KEY_CACHE_GENERATION));
     }
+
+    public function testClearKeepModeDoesNotFollowSymlinks(): void
+    {
+        // A symlink inside the cache must be removed as a link — never
+        // descended into, or the wipe would delete files outside the cache.
+        $outside = $this->tmpBase . '/outside';
+        $sentinel = $outside . '/keep.txt';
+        $this->seedFile($sentinel);
+        @mkdir($this->cacheDir . '/_external', 0777, true);
+        symlink($outside, $this->cacheDir . '/_external/linked');
+        symlink($outside, $this->cacheDir . '/toplink');
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        self::assertFileExists($sentinel);
+        self::assertFalse(is_link($this->cacheDir . '/_external/linked'));
+        self::assertFalse(is_link($this->cacheDir . '/toplink'));
+    }
+
+    public function testFileReplacementDropsPlaceholdersAtCurrentMtime(): void
+    {
+        // A replacement that keeps the mtime (same second, mtime-preserving
+        // import) keeps the cache keys, so the sidecars of the OLD bytes
+        // would be served forever — a replaced file must drop them.
+        $filename = 'foo.jpg';
+        $mtime = 1_700_000_000;
+        $this->seedSourceFile($filename, $mtime);
+        $lqipPath = Placeholder::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $colorPath = DominantColor::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $this->seedFile($lqipPath, 'data:image/webp;base64,AAAA');
+        $this->seedFile($colorPath, '#abcdef');
+
+        CacheInvalidator::invalidate($filename, fileReplaced: true);
+
+        self::assertFileDoesNotExist($lqipPath);
+        self::assertFileDoesNotExist($colorPath);
+    }
 }

@@ -140,7 +140,12 @@ rex_extension::register('CACHE_DELETED', static function (): void {
 $invalidateMediaCache = static function (rex_extension_point $ep): void {
     $filename = $ep->getParam('filename');
     if (is_string($filename) && $filename !== '') {
-        CacheInvalidator::invalidate($filename);
+        // Placeholders only go when the file itself was replaced (filetype
+        // param set) — metadata-only saves can't make them stale.
+        CacheInvalidator::invalidate(
+            $filename,
+            fileReplaced: $ep->getName() === 'MEDIA_UPDATED' && $ep->getParam('filetype') !== null,
+        );
     }
 };
 rex_extension::register('MEDIA_UPDATED', $invalidateMediaCache);
@@ -162,8 +167,8 @@ rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
 // Must not break an upload: exceptions are swallowed (fatals/timeouts can't be).
 // MEDIA_UPDATED also fires on metadata-only saves (filetype param null) — only
 // act when the file itself was replaced: metadata-only saves no longer drop
-// the placeholders (CacheInvalidator::invalidate keeps them), and a replaced
-// file gets new cache keys through its mtime.
+// the placeholders (CacheInvalidator::invalidate keeps them); a replacement
+// drops them above and they are rewritten here.
 $prewarmMedia = static function (rex_extension_point $ep): void {
     $filename = $ep->getParam('filename');
     if (!is_string($filename) || $filename === '') {

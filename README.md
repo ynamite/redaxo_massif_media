@@ -1190,7 +1190,9 @@ Gemessener Aufwand auf ImageMagick 7 Q16-HDRI: ≈ 28 MB RAM und ≈ 0,14 s pro 
 
 ## Pre-Warm beim Upload
 
-Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die Varianten vorab encodiert, damit der erste Besucher nicht wartet. Für Rasterbilder werden im selben Schritt dominante Farbe und LQIP geschrieben (auch im CDN-Modus). Das gilt nur für Quellen innerhalb des Budgets und läuft mit `set_time_limit(120)`. Der gemeinsame Encoder wartet auf den globalen Lock und prüft danach, ob die Variante schon existiert. Das Pre-Warm läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt. Im CDN-Modus kehrt es sofort zurück.
+Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden die animierten Varianten vorab encodiert, damit der erste Besucher nicht wartet. Das gilt nur für Quellen innerhalb des Budgets `animated_max_megapixels` und läuft mit `set_time_limit(120)`. Der gemeinsame Encoder wartet auf den globalen Lock und prüft danach, ob die Variante schon existiert. Das Pre-Warm läuft auch im CLI; fehlt dem dortigen Imagick der WebP-Delegate, wird nur geloggt. Im CDN-Modus entfällt das Pre-Warm der animierten Varianten.
+
+Unabhängig davon werden bei denselben Ereignissen für Rasterbilder die dominante Farbe und das LQIP geschrieben, auch im CDN-Modus und ohne das Zeitbudget, das beim Rendern gilt.
 
 ## Preload
 
