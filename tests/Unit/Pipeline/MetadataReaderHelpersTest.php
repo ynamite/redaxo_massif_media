@@ -47,4 +47,18 @@ final class MetadataReaderHelpersTest extends TestCase
         self::assertSame('100% 0%', $this->reader->formatFocal(150.0, -10.0));
         self::assertSame('50% 50%', $this->reader->formatFocal(0.5, 0.5)); // 0..1 input scaled to %
     }
+
+    public function testFormatFocalIgnoresNumericLocale(): void
+    {
+        $previous = setlocale(LC_NUMERIC, '0');
+        if (setlocale(LC_NUMERIC, 'de_DE.UTF-8', 'de_DE', 'fr_FR.UTF-8') === false) {
+            self::markTestSkipped('No comma-decimal locale installed.');
+        }
+        try {
+            self::assertSame('49.4% 18%', $this->reader->formatFocal(49.4, 18.0));
+            self::assertSame('49.4% 18%', $this->reader->formatFocal(0.494, 0.18));
+        } finally {
+            setlocale(LC_NUMERIC, $previous);
+        }
+    }
 }

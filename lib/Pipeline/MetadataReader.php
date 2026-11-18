@@ -35,7 +35,7 @@ final class MetadataReader
     public static function metaCachePath(SourceInterface $source): string
     {
         // Recompute sidecars that classified animated WebP as static without Imagick.
-        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v3');
+        $hash = hash('xxh64', $source->key() . ':' . $source->cacheBust() . ':v4');
         return rex_path::addonAssets(
             Config::ADDON,
             'cache/_meta/' . substr($hash, 0, 2) . '/' . $hash . '.json'
@@ -201,6 +201,8 @@ final class MetadataReader
         }
         $x = max(0.0, min(100.0, $x));
         $y = max(0.0, min(100.0, $y));
-        return sprintf('%g%% %g%%', $x, $y);
+        // Not sprintf('%g'): it follows LC_NUMERIC (de_DE → "49,4%"), which breaks
+        // object-position and the crop parser. PHP 8 float→string is locale-free.
+        return round($x, 2) . '% ' . round($y, 2) . '%';
     }
 }
