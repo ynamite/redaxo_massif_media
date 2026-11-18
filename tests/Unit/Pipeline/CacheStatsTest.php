@@ -167,4 +167,22 @@ final class CacheStatsTest extends TestCase
         self::assertSame(1_000_000, $stats['oldest_mtime']);
         self::assertSame(3_000_000, $stats['newest_mtime']);
     }
+
+    public function testBookkeepingFilesAreNotCounted(): void
+    {
+        // Encode locks (`<variant>.lock`, one per generated variant, never
+        // removed) and slow-failure markers (`_failed/`) are bookkeeping, not
+        // cache content — counting them inflated the variant count.
+        $this->writeFile('hero.jpg/avif-1080-50.avif', 50_000);
+        $this->writeFile('hero.jpg/avif-1080-50.avif.lock', 0);
+        $this->writeFile('_external/abc/webp-640-75.webp.lock', 0);
+        $this->writeFile('_failed/abcdef0123456789.txt', 0);
+
+        $stats = (new CacheStats())->compute(forceRefresh: true);
+
+        self::assertSame(1, $stats['file_count']);
+        self::assertSame(50_000, $stats['total_bytes']);
+        self::assertSame(1, $stats['by_kind']['variants']['count']);
+        self::assertSame(0, $stats['by_kind']['external']['count']);
+    }
 }

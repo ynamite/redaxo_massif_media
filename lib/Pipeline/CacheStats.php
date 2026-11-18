@@ -116,8 +116,14 @@ final class CacheStats
             if (!$file->isFile()) {
                 continue;
             }
-            // Don't count our own memo against the cache size.
-            if ($file->getFilename() === '_stats.json') {
+            // Don't count bookkeeping against the cache: our own memo, the
+            // per-variant encode locks (`<variant>.lock`, never removed) and
+            // RenderBudget's slow-failure markers (`_failed/`).
+            if (
+                $file->getFilename() === '_stats.json'
+                || $file->getExtension() === 'lock'
+                || str_starts_with(ltrim(substr($file->getPathname(), strlen($cacheDir)), '/'), '_failed/')
+            ) {
                 continue;
             }
             $bytes = (int) $file->getSize();
