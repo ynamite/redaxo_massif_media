@@ -54,7 +54,7 @@ final class DominantColor
             }
         }
 
-        return RenderBudget::run(fn (): string => $this->compute($image, $cachePath));
+        return RenderBudget::run(fn (): string => $this->compute($image, $cachePath), $cachePath);
     }
 
     private function compute(ResolvedImage $image, string $cachePath): string

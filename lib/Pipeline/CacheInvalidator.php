@@ -154,8 +154,11 @@ final class CacheInvalidator
             // New bytes under an unchanged mtime (same-second replacement,
             // mtime-preserving import) keep the cache keys — without this the
             // placeholders of the old bytes would be served indefinitely.
-            rex_file::delete(Placeholder::cachePathFor($source));
-            rex_file::delete(DominantColor::cachePathFor($source));
+            // The `.failed` siblings are RenderBudget's slow-failure markers.
+            foreach ([Placeholder::cachePathFor($source), DominantColor::cachePathFor($source)] as $sidecar) {
+                rex_file::delete($sidecar);
+                rex_file::delete($sidecar . '.failed');
+            }
         }
 
         $variantsDir = rex_path::addonAssets(Config::ADDON, 'cache/' . $filename);

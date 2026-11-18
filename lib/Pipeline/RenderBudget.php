@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Pipeline;
 
+use rex_file;
+
 /**
  * Per-request time budget for placeholder generation during render.
  *
@@ -22,34 +24,63 @@ namespace Ynamite\Media\Pipeline;
  * protect and may render many pages in one run, so it is unlimited unless
  * {@see reset()} starts a budgeted job. The upload hook (boot.php) bypasses
  * the budget with {@see unlimited()}; bypassed work is not charged.
+ *
+ * Slow failures: a generation that fails writes no cache file, so it would be
+ * retried on every request. When such a failure is slow it would use up the
+ * budget each time and starve every miss after it on the page. A failure
+ * that took SLOW_FAILURE_MS or more therefore leaves a `<cachePath>.failed`
+ * marker and is not retried for FAILURE_RETRY_SECONDS. Fast failures (no
+ * Imagick, unreadable source) cost nothing and are simply retried.
  */
 final class RenderBudget
 {
     public const BUDGET_MS = 200;
+    public const SLOW_FAILURE_MS = 50;
+    public const FAILURE_RETRY_SECONDS = 3600;
 
     private static float $spentMs = 0.0;
     /** null = not decided yet: unlimited in CLI, budgeted otherwise. */
     private static ?bool $unlimited = null;
 
     /**
-     * @param callable(): string $generate
+     * @param callable(): string $generate returns '' on failure
+     * @param string|null $cachePath the sidecar this generation would write;
+     *   enables the slow-failure marker next to it
      */
-    public static function run(callable $generate): string
+    public static function run(callable $generate, ?string $cachePath = null): string
     {
-        if (self::isUnlimited()) {
-            return $generate();
-        }
-        if (self::$spentMs >= self::BUDGET_MS) {
+        $failedMarker = $cachePath === null ? null : $cachePath . '.failed';
+        if (
+            $failedMarker !== null
+            && is_file($failedMarker)
+            && (int) filemtime($failedMarker) > time() - self::FAILURE_RETRY_SECONDS
+        ) {
             return '';
         }
+
+        $unlimited = self::isUnlimited();
+        if (!$unlimited && self::$spentMs >= self::BUDGET_MS) {
+            return '';
+        }
+
         $start = hrtime(true);
+        $result = '';
         try {
-            return $generate();
+            return $result = $generate();
         } finally {
-            self::$spentMs += (hrtime(true) - $start) / 1_000_000;
+            $elapsedMs = (hrtime(true) - $start) / 1_000_000;
+            if (!$unlimited) {
+                self::$spentMs += $elapsedMs;
+            }
+            if ($result === '' && $failedMarker !== null && $elapsedMs >= self::SLOW_FAILURE_MS) {
+                rex_file::put($failedMarker, '');
+            }
         }
     }
 
+    /**
+     * @internal for tests: charge time without generating anything
+     */
     public static function spend(float $ms): void
     {
         self::$spentMs += $ms;

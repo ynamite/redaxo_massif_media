@@ -81,4 +81,43 @@ final class RenderBudgetTest extends TestCase
         RenderBudget::spend(RenderBudget::BUDGET_MS);
         self::assertSame('', RenderBudget::run(static fn (): string => 'y'));
     }
+
+    public function testSlowFailureIsNotRetriedUntilTheMarkerExpires(): void
+    {
+        // A generation that fails slowly writes no cache file. Retried on
+        // every request it would use up the budget each time and starve the
+        // misses after it — so it is parked behind a marker for an hour.
+        $cachePath = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true) . '/ab/abcd.txt';
+        $slowFailure = static function (): string {
+            usleep((RenderBudget::SLOW_FAILURE_MS + 10) * 1000);
+            return '';
+        };
+
+        self::assertSame('', RenderBudget::run($slowFailure, $cachePath));
+        self::assertFileExists($cachePath . '.failed');
+
+        $called = false;
+        $retry = static function () use (&$called): string {
+            $called = true;
+            return 'x';
+        };
+        self::assertSame('', RenderBudget::run($retry, $cachePath));
+        self::assertFalse($called, 'a fresh marker must skip the generation');
+
+        touch($cachePath . '.failed', time() - RenderBudget::FAILURE_RETRY_SECONDS - 1);
+        clearstatcache();
+        self::assertSame('x', RenderBudget::run($retry, $cachePath));
+
+        unlink($cachePath . '.failed');
+        rmdir(dirname($cachePath));
+        rmdir(dirname($cachePath, 2));
+    }
+
+    public function testFastFailureWritesNoMarker(): void
+    {
+        $cachePath = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true) . '/ab/abcd.txt';
+
+        self::assertSame('', RenderBudget::run(static fn (): string => '', $cachePath));
+        self::assertFileDoesNotExist($cachePath . '.failed');
+    }
 }

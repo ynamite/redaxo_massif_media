@@ -108,6 +108,10 @@ final class SafeAvifEncoder extends GlideEncoder
         // grayscale PNGs) as palette images, which imageavif() rejects
         // ("avif doesn't support palette images").
         imagepalettetotruecolor($gd);
+        // Keep the alpha channel in the output. libgd's AVIF writer is not
+        // known to drop it without this flag, but it costs nothing and is
+        // the documented way to preserve alpha in GD output.
+        imagesavealpha($gd, true);
 
         ob_start();
         imageavif($gd, null, $this->getQuality(), self::AVIF_SPEED);

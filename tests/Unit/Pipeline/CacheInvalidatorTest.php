@@ -285,10 +285,14 @@ final class CacheInvalidatorTest extends TestCase
         $colorPath = DominantColor::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
         $this->seedFile($lqipPath, 'data:image/webp;base64,AAAA');
         $this->seedFile($colorPath, '#abcdef');
+        $this->seedFile($lqipPath . '.failed', '');
+        $this->seedFile($colorPath . '.failed', '');
 
         CacheInvalidator::invalidate($filename, fileReplaced: true);
 
         self::assertFileDoesNotExist($lqipPath);
         self::assertFileDoesNotExist($colorPath);
+        self::assertFileDoesNotExist($lqipPath . '.failed');
+        self::assertFileDoesNotExist($colorPath . '.failed');
     }
 }

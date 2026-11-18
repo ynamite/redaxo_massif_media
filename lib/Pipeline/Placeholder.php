@@ -50,7 +50,7 @@ final class Placeholder
             }
         }
 
-        return RenderBudget::run(fn (): string => $this->encode($image, $cachePath));
+        return RenderBudget::run(fn (): string => $this->encode($image, $cachePath), $cachePath);
     }
 
     private function encode(ResolvedImage $image, string $cachePath): string
