@@ -1113,6 +1113,8 @@ Default-Tuning:
 
 Alle Werte können über die Settings-Seite angepasst werden.
 
+Bilder mit transparenten Bereichen (z. B. freigestellte Logos) erhalten kein LQIP: Der Platzhalter ist ein Hintergrund des `<img>` und bliebe nach dem Laden als unscharfer Schein hinter dem Motiv sichtbar. Es gilt dieselbe Schwelle wie bei der dominanten Farbe (mehr als 5 % durchsichtig); vereinzelte halbtransparente Randpixel zählen nicht.
+
 ---
 
 ## Metadaten werden entfernt

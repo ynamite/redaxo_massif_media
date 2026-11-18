@@ -118,7 +118,8 @@ final class DominantColor
         return $hex;
     }
 
-    private static function hasTransparency(Imagick $im): bool
+    /** Also used by {@see Placeholder} on the decoded LQIP. */
+    public static function hasTransparency(Imagick $im): bool
     {
         if (!$im->getImageAlphaChannel()) {
             return false;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ynamite\Media\Pipeline;
 
+use Imagick;
 use rex_file;
 use rex_logger;
 use rex_path;
@@ -29,6 +30,14 @@ final class Placeholder
     private const CACHE_VERSION = 'v3';
 
     /**
+     * Sidecar content for images with transparent areas: the LQIP is a
+     * background on the <img> and would stay visible behind them as a blurred
+     * halo. An empty data URI on purpose: an older addon version reading the
+     * sidecar emits a harmless `url('data:,')` instead of requesting a URL.
+     */
+    private const NO_LQIP = 'data:,';
+
+    /**
      * Generate (or load cached) an inline base64 LQIP for an image.
      * Returns a `data:image/webp;base64,...` URI, or '' when LQIP is disabled,
      * the source is non-rasterizable (svg/gif), or generation fails.
@@ -46,7 +55,7 @@ final class Placeholder
         if (is_file($cachePath)) {
             $cached = (string) file_get_contents($cachePath);
             if ($cached !== '') {
-                return $cached;
+                return $cached === self::NO_LQIP ? '' : $cached;
             }
         }
 
@@ -69,9 +78,47 @@ final class Placeholder
             return '';
         }
 
+        if (self::isTransparent($bytes)) {
+            rex_file::put($cachePath, self::NO_LQIP);
+            return '';
+        }
+
         $dataUri = 'data:image/webp;base64,' . base64_encode($bytes);
         rex_file::put($cachePath, $dataUri);
         return $dataUri;
+    }
+
+    /**
+     * Judged on the LQIP itself, so it also works on GD-only hosts. Same rule
+     * as {@see DominantColor::hasTransparency()}: a stray semi-transparent
+     * edge keeps its placeholder. Unknown (cannot decode) counts as opaque.
+     */
+    private static function isTransparent(string $webp): bool
+    {
+        try {
+            if (extension_loaded('imagick')) {
+                $im = new Imagick();
+                $im->readImageBlob($webp);
+                $transparent = DominantColor::hasTransparency($im);
+                $im->clear();
+                return $transparent;
+            }
+            $gd = @imagecreatefromstring($webp);
+            if ($gd === false) {
+                return false;
+            }
+            // GD alpha: 0 opaque … 127 transparent. 6 ≈ 5 % see-through.
+            for ($y = imagesy($gd) - 1; $y >= 0; $y--) {
+                for ($x = imagesx($gd) - 1; $x >= 0; $x--) {
+                    if (((imagecolorat($gd, $x, $y) >> 24) & 0x7F) > 6) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public static function cachePathFor(SourceInterface $source): string
