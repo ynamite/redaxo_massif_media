@@ -47,9 +47,23 @@ use League\Glide\Api\Encoder as GlideEncoder;
  *     AVIF entirely (`Config::canServerEncode` already gates that case).
  *   - PNG intermediate or GD decode failure: `parent::run()` — fail-soft,
  *     don't crash the request.
+ *
+ * Speed: the PNG intermediate is written uncompressed (zlib level 0) and
+ * `imageavif()` runs at speed 8. Measured on the target shape (Plesk, PHP
+ * 8.5.12, ImageMagick 7.1.2-35, GD 2.3.3, four sources at 2048 px, q50): the
+ * PNG encode took 510–2515 ms at Imagick's default level vs 171–391 ms at
+ * level 0 — as much as the AVIF encode itself; AVIF took 564–960 ms at
+ * libavif's default speed 6 vs 318–520 ms at speed 8, with files −1 % to
+ * +7.5 % and no measurable quality difference against the lossless reference.
+ * Speed 10 produced the same bytes as 8 there. The level-0 blob is about raw
+ * size (~8 MB at 2048 px, ~28 MB at 3840×2400), so it is freed as soon as GD
+ * has decoded it.
  */
 final class SafeAvifEncoder extends GlideEncoder
 {
+    /** libavif speed for `imageavif()`: 0 slowest … 10 fastest, default 6. */
+    private const AVIF_SPEED = 8;
+
     public function run(ImageInterface $image): EncodedImageInterface
     {
         if (strtolower($this->getFormat($image)) !== 'avif') {
@@ -76,6 +90,8 @@ final class SafeAvifEncoder extends GlideEncoder
             // setImageFormat persists across calls.
             $clone = clone $native;
             $clone->setImageFormat('png');
+            // Lossless transport only — don't pay for zlib.
+            $clone->setOption('png:compression-level', '0');
             $pngBlob = $clone->getImageBlob();
             $clone->clear();
             $clone->destroy();
@@ -84,6 +100,7 @@ final class SafeAvifEncoder extends GlideEncoder
         }
 
         $gd = @imagecreatefromstring($pngBlob);
+        unset($pngBlob);
         if ($gd === false) {
             return parent::run($image);
         }
@@ -93,7 +110,7 @@ final class SafeAvifEncoder extends GlideEncoder
         imagepalettetotruecolor($gd);
 
         ob_start();
-        imageavif($gd, null, $this->getQuality());
+        imageavif($gd, null, $this->getQuality(), self::AVIF_SPEED);
         $avif = (string) ob_get_clean();
         imagedestroy($gd);
 
