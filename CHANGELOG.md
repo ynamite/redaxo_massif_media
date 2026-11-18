@@ -5,24 +5,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Platzhalter blockieren das Rendern nicht mehr.** Dominante Farbe und LQIP teilen sich pro Request ein Zeitbudget von 200 ms. Ist es aufgebraucht, werden weitere fehlende Platzhalter in diesem Request ausgelassen und bei einem späteren Request erzeugt. Der erste fehlende Platzhalter wird immer erzeugt; eine laufende Berechnung wird nicht abgebrochen. Schlägt eine Berechnung langsam fehl (ab 50 ms), wird sie eine Stunde lang nicht wiederholt. CLI-Prozesse haben kein Budget.
-- **Platzhalter entstehen beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden dominante Farbe und LQIP für Rasterbilder vorab geschrieben, auch im CDN-Modus.
-- **AVIF wird schneller encodiert.** Das PNG-Zwischenbild ist unkomprimiert und `imageavif()` läuft mit Speed 8. Gemessen bei 2048 px: 52–77 % weniger AVIF-Aufwand, Dateien −1 % bis +7,5 %, kein messbarer Qualitätsverlust. Gilt für Hosts mit Imagick und GD-AVIF; bestehende Varianten bleiben gültig.
-- **Cache leeren behält, was nicht veralten kann.** Das REDAXO-weite Cache-Leeren und das automatische Leeren nach dem Speichern von Einstellungen behalten `_color/`, `_lqip/`, `_meta/` sowie die Originale externer Quellen (`_origin.bin`, `_manifest.json`). «Addon Cache jetzt leeren» löscht weiterhin alles.
-- **Dominante Farbe auch für GIFs und animierte WebPs.** Sie wird aus dem ersten Frame berechnet und als `background-color` auf das `<img>` gesetzt. SVGs bleiben ohne Farbe, ein LQIP gibt es für diese Quellen weiterhin nicht.
-- **Der Fokuspunkt wird nicht mehr gecacht**, sondern bei jedem Rendern aus dem Medienpool gelesen. Dadurch hängt `_meta/` nur noch von den Bilddaten ab und übersteht das Cache-Leeren. Vorher wurde nach jedem Deploy oder Cache-Leeren die Frame-Anzahl animierter Bilder neu bestimmt; bei einem 249-MB-GIF kostete das den nächsten Seitenaufruf rund 4 Sekunden.
-- Metadaten-Änderungen im Medienpool (z. B. Fokuspunkt) löschen dominante Farbe und LQIP nicht mehr. Nach dem Löschen einer Datei bleiben zwei kleine Sidecars zurück, bis der Addon-Cache geleert wird.
-
-### Fixed
-
-- **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg. Schlägt ein Abruf fehl, während ein paralleler gelingt, wird dessen Ergebnis verwendet und nicht mehr als fehlgeschlagen überschrieben.
-- **Bilder mit transparenten Bereichen erhalten keine Platzhalter mehr.** Dominante Farbe und LQIP sind Hintergründe des `<img>` und blieben nach dem Laden hinter den transparenten Bereichen sichtbar, das LQIP als unscharfer Schein um freigestellte Motive. Vereinzelte halbtransparente Randpixel zählen nicht als Transparenz. Bereits berechnete Platzhalter bleiben bestehen, bis der Addon-Cache geleert wird («Addon Cache jetzt leeren»).
-- Lässt sich eine Datei für die dominante Farbe nicht dekodieren, wird der Fehler nur noch einmal pro Stunde protokolliert statt bei jedem Rendern.
-- **Die Cache-Statistik zählt nur noch Cache-Inhalte.** Lock-Dateien (`<Variante>.lock`, eine pro erzeugter Variante) und Fehlermarker (`_failed/`) wurden als Varianten mitgezählt.
-
-## [1.0.19] — 2026-11-17
+## [1.0.19] — 2026-11-18
 
 ### Added
 
@@ -42,8 +25,15 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 - **Passthrough (SVG, GIF, animiertes WebP):** `<img src>` und `Image::url()` tragen jetzt `?v=<cacheBust>`. Aufrufer, die selbst Query-Parameter anhängen, müssen `&` verwenden.
 - Passthrough mit nur `width`: die Höhe folgt jetzt dem intrinsischen Seitenverhältnis.
 - Passthrough-`<img>` trägt `object-position` aus dem Fokuspunkt und gibt `fetchpriority` weiter.
-- `_meta`-Sidecars aus 1.0.18 sind verwaist: Sie werden unter einem neuen Pfad neu berechnet, ein Cache-Leeren entfernt die alten.
+- `_meta`-Sidecars aus 1.0.18 sind verwaist: Sie werden unter einem neuen Pfad neu berechnet, «Addon Cache jetzt leeren» entfernt die alten.
 - Der Endpoint liefert gecachte Animationen zuerst aus und encodiert nur, wenn die Quelle encodierbar ist und die Breite kanonisch und im Pool liegt.
+- **Platzhalter blockieren das Rendern nicht mehr.** Dominante Farbe und LQIP teilen sich pro Request ein Zeitbudget von 200 ms. Ist es aufgebraucht, werden weitere fehlende Platzhalter in diesem Request ausgelassen und bei einem späteren Request erzeugt. Der erste fehlende Platzhalter wird immer erzeugt; eine laufende Berechnung wird nicht abgebrochen. Schlägt eine Berechnung langsam fehl (ab 50 ms), wird sie eine Stunde lang nicht wiederholt. CLI-Prozesse haben kein Budget.
+- **Platzhalter entstehen beim Upload.** Bei `MEDIA_ADDED` und bei `MEDIA_UPDATED` (nur wenn die Datei ersetzt wurde) werden dominante Farbe und LQIP für Rasterbilder vorab geschrieben, auch im CDN-Modus.
+- **AVIF wird schneller encodiert.** Das PNG-Zwischenbild ist unkomprimiert und `imageavif()` läuft mit Speed 8. Gemessen bei 2048 px: 52–77 % weniger AVIF-Aufwand, Dateien −1 % bis +7,5 %, kein messbarer Qualitätsverlust. Gilt für Hosts mit Imagick und GD-AVIF; bestehende Varianten bleiben gültig.
+- **Cache leeren behält, was nicht veralten kann.** Das REDAXO-weite Cache-Leeren und das automatische Leeren nach dem Speichern von Einstellungen behalten `_color/`, `_lqip/`, `_meta/` sowie die Originale externer Quellen (`_origin.bin`, `_manifest.json`). «Addon Cache jetzt leeren» löscht weiterhin alles.
+- **Dominante Farbe auch für GIFs und animierte WebPs.** Sie wird aus dem ersten Frame berechnet und als `background-color` auf das `<img>` gesetzt. SVGs bleiben ohne Farbe, ein LQIP gibt es für diese Quellen weiterhin nicht.
+- **Der Fokuspunkt wird nicht mehr gecacht**, sondern bei jedem Rendern aus dem Medienpool gelesen. Dadurch hängt `_meta/` nur noch von den Bilddaten ab und übersteht das Cache-Leeren. Vorher wurde nach jedem Deploy oder Cache-Leeren die Frame-Anzahl animierter Bilder neu bestimmt; bei einem 249-MB-GIF kostete das den nächsten Seitenaufruf rund 4 Sekunden.
+- Metadaten-Änderungen im Medienpool (z. B. Fokuspunkt) löschen dominante Farbe und LQIP nicht mehr. Nach dem Löschen einer Datei bleiben zwei kleine Sidecars zurück, bis der Addon-Cache geleert wird.
 
 ### Fixed
 
@@ -53,6 +43,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 - **Leerer Sign-Key heilt sich selbst** (race-sicheres Insert-if-absent in der DB, bestätigter DB-Gewinner), z. B. wenn eine ydeploy-Migration das Addon aktiviert hat, ohne dass `install.php` lief. Schlägt die Gewinner-Abfrage fehl, wird sie einmal wiederholt; unbestätigte Kandidaten werden nie zurückgegeben oder zum Speichern vorgemerkt. Schlägt die Persistenz fehl, wird einmal pro Request geloggt, es wird nicht signiert und Requests werden abgelehnt (auch vorhersagbare HMACs mit leerem Key).
 - Fehlgeschlagene Metadaten-Pings animierter Quellen werden mit null Frames und einem kurzlebigen Fehler-Marker gespeichert statt als cachebare statische Metadaten.
 - Video-`<source type>` nutzt den korrekten MIME-Typ (`mov` → `video/quicktime`).
+- **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg. Schlägt ein Abruf fehl, während ein paralleler gelingt, wird dessen Ergebnis verwendet und nicht mehr als fehlgeschlagen überschrieben.
+- **Bilder mit transparenten Bereichen erhalten keine Platzhalter mehr.** Dominante Farbe und LQIP sind Hintergründe des `<img>` und blieben nach dem Laden hinter den transparenten Bereichen sichtbar, das LQIP als unscharfer Schein um freigestellte Motive. Vereinzelte halbtransparente Randpixel zählen nicht als Transparenz. Bereits berechnete Platzhalter bleiben bestehen, bis der Addon-Cache geleert wird («Addon Cache jetzt leeren»).
+- Lässt sich eine Datei für die dominante Farbe nicht dekodieren, wird der Fehler nur noch einmal pro Stunde protokolliert statt bei jedem Rendern.
+- **Die Cache-Statistik zählt nur noch Cache-Inhalte.** Lock-Dateien (`<Variante>.lock`, eine pro erzeugter Variante) und Fehlermarker (`_failed/`) wurden als Varianten mitgezählt.
 
 ## [1.0.18] — 2026-11-03
 
