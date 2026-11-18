@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Unit\Pipeline;
 
 use PHPUnit\Framework\TestCase;
+use rex_config;
+use rex_dir;
 use rex_path;
 use Tests\Massif\Media\Helpers\Sources;
 use Ynamite\Media\Config;
@@ -14,9 +16,10 @@ use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
 
 /**
- * Per-asset cache invalidation: when a media-pool entry changes, the four
- * cache locations (variants dir, meta, lqip, color) for that filename should
- * vanish, while sibling assets remain intact.
+ * Per-asset cache invalidation: when a media-pool entry changes, the variants
+ * dir and the meta entry for that filename should vanish, while its colour /
+ * LQIP sidecars (pure functions of the image bytes) and sibling assets remain
+ * intact. Plus the whole-cache clear in its two modes.
  */
 final class CacheInvalidatorTest extends TestCase
 {
@@ -36,6 +39,7 @@ final class CacheInvalidatorTest extends TestCase
 
     protected function tearDown(): void
     {
+        rex_config::_reset();
         if (is_dir($this->tmpBase)) {
             $items = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($this->tmpBase, \RecursiveDirectoryIterator::SKIP_DOTS),
@@ -62,11 +66,12 @@ final class CacheInvalidatorTest extends TestCase
         file_put_contents($absPath, $content);
     }
 
-    public function testInvalidatesAllFourBucketsForFocalPointEdit(): void
+    public function testFocalPointEditDropsMetaAndVariantsButKeepsPlaceholders(): void
     {
         // Focal-point edit: file on disk is untouched, mtime stable. We seed
         // cache entries at the *current* mtime hash, then call invalidate().
-        // All four buckets should disappear.
+        // Variants + meta disappear; colour and LQIP don't depend on media
+        // metadata and must survive (regenerating them costs an image decode).
         $filename = 'foo.jpg';
         $mtime = 1_700_000_000;
         $this->seedSourceFile($filename, $mtime);
@@ -89,8 +94,8 @@ final class CacheInvalidatorTest extends TestCase
         self::assertFileDoesNotExist($animatedPath);
         self::assertDirectoryDoesNotExist(dirname($variantPath));
         self::assertFileDoesNotExist($metaPath);
-        self::assertFileDoesNotExist($lqipPath);
-        self::assertFileDoesNotExist($colorPath);
+        self::assertFileExists($lqipPath);
+        self::assertFileExists($colorPath);
     }
 
     public function testLeavesSiblingAssetsUntouched(): void
@@ -118,8 +123,8 @@ final class CacheInvalidatorTest extends TestCase
 
         self::assertFileDoesNotExist($fooVariant);
         self::assertFileDoesNotExist($fooMeta);
-        self::assertFileDoesNotExist($fooLqip);
-        self::assertFileDoesNotExist($fooColor);
+        self::assertFileExists($fooLqip);
+        self::assertFileExists($fooColor);
 
         self::assertFileExists($barVariant, 'bar.jpg variant must survive foo.jpg invalidation');
         self::assertFileExists($barMeta, 'bar.jpg meta must survive foo.jpg invalidation');
@@ -182,5 +187,71 @@ final class CacheInvalidatorTest extends TestCase
 
         self::assertFileExists($oldMetaPath, 'old meta orphan is accepted (documented)');
         self::assertFileDoesNotExist($variantPath, 'variants directory always wiped');
+    }
+
+    public function testClearKeepModeKeepsSourceDerivedData(): void
+    {
+        $kept = [
+            $this->cacheDir . '/_color/ab/abcd.txt',
+            $this->cacheDir . '/_lqip/ab/abcd.txt',
+            $this->cacheDir . '/_external/h1/_origin.bin',
+            $this->cacheDir . '/_external/h1/_manifest.json',
+        ];
+        $removed = [
+            $this->cacheDir . '/_meta/ab/abcd.json',
+            $this->cacheDir . '/foo.jpg/webp-1200-q80.webp',
+            $this->cacheDir . '/_external/h1/webp-1200-q80.webp',
+            $this->cacheDir . '/_external/h1/webp-1200-q80.webp.lock',
+            $this->cacheDir . '/_external/h1/abc123/avif-640-q50.avif',
+        ];
+        foreach ([...$kept, ...$removed] as $p) {
+            $this->seedFile($p);
+        }
+        rex_config::set(Config::ADDON, Config::KEY_CACHE_GENERATION, 1);
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        foreach ($kept as $p) {
+            self::assertFileExists($p);
+        }
+        foreach ($removed as $p) {
+            self::assertFileDoesNotExist($p);
+        }
+        self::assertNotSame(1, rex_config::get(Config::ADDON, Config::KEY_CACHE_GENERATION));
+    }
+
+    public function testClearKeepModeHandlesIncompleteExternalEntries(): void
+    {
+        $manifestOnly = $this->cacheDir . '/_external/h2/_manifest.json';
+        $stray = $this->cacheDir . '/_external/stray.tmp';
+        $this->seedFile($manifestOnly, '{"failedAt":1700000000}');
+        $this->seedFile($stray);
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        self::assertSame('{"failedAt":1700000000}', file_get_contents($manifestOnly));
+        self::assertFileDoesNotExist($stray);
+    }
+
+    public function testClearFullModeRemovesEverything(): void
+    {
+        foreach (['/_color/ab/abcd.txt', '/_lqip/ab/abcd.txt', '/_external/h1/_origin.bin', '/foo.jpg/webp-1200-q80.webp'] as $rel) {
+            $this->seedFile($this->cacheDir . $rel);
+        }
+
+        CacheInvalidator::clear(keepSourceDerived: false);
+
+        self::assertDirectoryExists($this->cacheDir);
+        self::assertSame([], glob($this->cacheDir . '/*'));
+    }
+
+    public function testClearWithoutCacheDirStillBumpsGeneration(): void
+    {
+        rex_dir::delete($this->cacheDir, true);
+        rex_config::set(Config::ADDON, Config::KEY_CACHE_GENERATION, 1);
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        self::assertNotSame(1, rex_config::get(Config::ADDON, Config::KEY_CACHE_GENERATION));
     }
 }

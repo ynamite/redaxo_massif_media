@@ -112,17 +112,13 @@ if (rex_addon::get('block_peek')->isAvailable()) {
 // inlined into the markup). MEDIA_UPDATED/MEDIA_DELETED, `cacheBust` and the
 // CACHE_VERSION tokens handle real invalidation; the addon's own clear-cache
 // button (settings.security.php) still nukes everything.
+//
+// External origins (`_external/<hash>/_origin.bin` + `_manifest.json`) survive
+// as well: their staleness is handled by TTL / ETag revalidation, and wiping
+// them forces a re-download of every original during the next render. The
+// external variants next to them are wiped like any other variant.
 rex_extension::register('CACHE_DELETED', static function (): void {
-    $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
-    if (is_dir($cacheDir)) {
-        foreach (glob($cacheDir . '*') ?: [] as $entry) {
-            if (in_array(basename($entry), ['_color', '_lqip'], true)) {
-                continue;
-            }
-            is_dir($entry) ? rex_dir::delete($entry) : rex_file::delete($entry);
-        }
-    }
-    Config::bumpCacheGeneration();
+    CacheInvalidator::clear(keepSourceDerived: true);
 });
 
 // Auto-clear-on-content-affecting-save lives in {@see \Ynamite\Media\Backend\ConfigForm}

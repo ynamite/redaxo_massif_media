@@ -25,6 +25,13 @@ use Ynamite\Media\Source\MediapoolSource;
  * variant. Wiping the meta entry plus the path-keyed variants directory
  * forces a clean rebuild on the next render.
  *
+ * The colour and LQIP sidecars are NOT dropped here: both are pure functions
+ * of the image bytes (LQIP additionally of config values folded into its
+ * cache key), not of media metadata, and regenerating them costs an image
+ * decode. A replaced file gets new keys through its mtime; a deleted file
+ * leaves two tiny orphans (7 bytes / ~600 bytes) that only the full
+ * {@see clear()} removes.
+ *
  * For file-replacement updates, mtime has changed by the time the hook fires,
  * so the "current" hash points at a future entry. The old meta/lqip/color
  * entries are left orphaned — accepted: each is 50 bytes – 2 KB, and the bulky
@@ -36,6 +43,81 @@ use Ynamite\Media\Source\MediapoolSource;
  */
 final class CacheInvalidator
 {
+    /** Per-bucket files in `_external/<hash>/` that keep mode preserves. */
+    private const EXTERNAL_KEPT_FILES = ['_origin.bin', '_manifest.json'];
+
+    /**
+     * Wipe the addon cache (the `cache/` directory itself stays) and bump the
+     * cache-generation token so already-emitted URLs get a new `&g=` segment.
+     *
+     * `$keepSourceDerived = true` (generic REDAXO clear, settings save) keeps
+     * what a clear cannot cure and what is expensive to rebuild: `_color/`,
+     * `_lqip/` (pure functions of the image bytes plus, for LQIP, config that
+     * is part of its key) and each external bucket's fetched origin +
+     * manifest (staleness is handled by TTL / ETag revalidation). Kept
+     * manifests are not rewritten. `false` (the addon's own clear button)
+     * deletes everything — the escape hatch.
+     */
+    public static function clear(bool $keepSourceDerived): void
+    {
+        $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
+        if (is_dir($cacheDir)) {
+            if ($keepSourceDerived) {
+                self::clearKeepingSourceDerived($cacheDir);
+            } else {
+                rex_dir::delete($cacheDir, false);
+            }
+        }
+        Config::bumpCacheGeneration();
+    }
+
+    private static function clearKeepingSourceDerived(string $cacheDir): void
+    {
+        foreach (self::entries($cacheDir) as $entry) {
+            $name = basename($entry);
+            if ($name === '_color' || $name === '_lqip') {
+                continue;
+            }
+            if ($name !== '_external' || !is_dir($entry)) {
+                self::deleteEntry($entry);
+                continue;
+            }
+            foreach (self::entries($entry) as $bucket) {
+                if (!is_dir($bucket)) {
+                    self::deleteEntry($bucket);
+                    continue;
+                }
+                foreach (self::entries($bucket) as $item) {
+                    if (is_dir($item) || !in_array(basename($item), self::EXTERNAL_KEPT_FILES, true)) {
+                        self::deleteEntry($item);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Direct children of a directory, dotfiles included (glob('*') skips them).
+     *
+     * @return list<string>
+     */
+    private static function entries(string $dir): array
+    {
+        $dir = rtrim($dir, '/');
+        $paths = [];
+        foreach (scandir($dir) ?: [] as $name) {
+            if ($name !== '.' && $name !== '..') {
+                $paths[] = $dir . '/' . $name;
+            }
+        }
+        return $paths;
+    }
+
+    private static function deleteEntry(string $path): void
+    {
+        is_dir($path) ? rex_dir::delete($path, true) : rex_file::delete($path);
+    }
+
     public static function invalidate(string $filename): void
     {
         if ($filename === '') {
@@ -54,8 +136,6 @@ final class CacheInvalidator
         );
 
         rex_file::delete(MetadataReader::metaCachePath($source));
-        rex_file::delete(Placeholder::cachePathFor($source));
-        rex_file::delete(DominantColor::cachePathFor($source));
 
         $variantsDir = rex_path::addonAssets(Config::ADDON, 'cache/' . $filename);
         if (is_dir($variantsDir)) {

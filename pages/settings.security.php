@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Ynamite\Media\Backend\ConfigForm;
 use Ynamite\Media\Config;
+use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\CacheStats;
 
 $csrfToken = rex_csrf_token::factory('massif_media_security');
@@ -18,16 +19,13 @@ if (rex_request_method() === 'post' && (string) rex_post('massif_media_action', 
             Config::set(Config::KEY_SIGN_KEY, Config::generateSignKey());
             echo rex_view::success('Sign Key neu generiert. Bestehende URLs sind ungültig.');
         } elseif ($action === 'clear_cache') {
-            $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
-            if (is_dir($cacheDir)) {
-                rex_dir::delete($cacheDir, false);
-            }
-            // Bump the cache-generation token alongside the wipe so already-
-            // emitted browser cache entries (immutable Cache-Control) get a
-            // new `&g=` segment on the next render and refetch fresh.
+            // Full wipe, placeholders and external origins included — the
+            // escape hatch. clear() also bumps the cache-generation token so
+            // already-emitted browser cache entries (immutable Cache-Control)
+            // get a new `&g=` segment on the next render and refetch fresh.
             // Without this, browsers happily serve the deleted variant from
             // their local cache and the server never sees a regen request.
-            Config::bumpCacheGeneration();
+            CacheInvalidator::clear(keepSourceDerived: false);
             echo rex_view::success('Addon Cache geleert.');
         } elseif ($action === 'refresh_stats') {
             (new CacheStats())->compute(forceRefresh: true);

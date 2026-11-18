@@ -6,9 +6,8 @@ namespace Ynamite\Media\Backend;
 
 use rex_config;
 use rex_config_form;
-use rex_dir;
-use rex_path;
 use Ynamite\Media\Config;
+use Ynamite\Media\Pipeline\CacheInvalidator;
 
 /**
  * Drop-in replacement for `rex_config_form::factory()` on this addon's
@@ -64,12 +63,13 @@ final class ConfigForm extends rex_config_form
         return $snapshot;
     }
 
+    /**
+     * Variants and metadata go; colour, LQIP and external origins stay — none
+     * of the cache-invalidating settings can make those stale (see
+     * {@see CacheInvalidator::clear()}).
+     */
     private static function onContentAffectingChange(): void
     {
-        $cacheDir = rex_path::addonAssets(Config::ADDON, 'cache/');
-        if (is_dir($cacheDir)) {
-            rex_dir::delete($cacheDir, false);
-        }
-        Config::bumpCacheGeneration();
+        CacheInvalidator::clear(keepSourceDerived: true);
     }
 }
