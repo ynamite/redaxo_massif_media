@@ -30,6 +30,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Fixed
 
+- **AVIF für Bilder mit wenigen Farben.** Imagick schreibt solche Bilder als PNG8, GD liest sie als Palettenbild, und `imageavif()` lehnt Palettenbilder ab („avif doesn’t support palette images“). Auf Hosts mit defektem Imagick-AVIF endete das mit 404. Das GD-Bild wird jetzt vor dem Encodieren in Truecolor umgewandelt.
 - **Fokuspunkt unabhängig von der Locale.** Mit `LC_NUMERIC` auf z. B. `de_DE` wurde der Fokuspunkt als `49,4% 18%` ausgegeben: `object-position` war ungültig, und der Glide-Zuschnitt fiel auf die Bildmitte zurück. Der Metadaten-Cache-Schlüssel steht neu auf `v4`, damit gecachte Werte neu berechnet werden.
 - Der Original-Fallback verweigert Pfadtraversierung, Quellen ausserhalb des Medienverzeichnisses beziehungsweise ihres externen Ursprungsordners und Dateien ohne unterstützten Bild-MIME-Typ mit 404.
 - **Leerer Sign-Key heilt sich selbst** (race-sicheres Insert-if-absent in der DB, bestätigter DB-Gewinner), z. B. wenn eine ydeploy-Migration das Addon aktiviert hat, ohne dass `install.php` lief. Schlägt die Gewinner-Abfrage fehl, wird sie einmal wiederholt; unbestätigte Kandidaten werden nie zurückgegeben oder zum Speichern vorgemerkt. Schlägt die Persistenz fehl, wird einmal pro Request geloggt, es wird nicht signiert und Requests werden abgelehnt (auch vorhersagbare HMACs mit leerem Key).

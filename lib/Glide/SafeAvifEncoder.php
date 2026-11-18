@@ -87,6 +87,10 @@ final class SafeAvifEncoder extends GlideEncoder
         if ($gd === false) {
             return parent::run($image);
         }
+        // Imagick writes few-colour images as PNG8 and GD decodes those (and
+        // grayscale PNGs) as palette images, which imageavif() rejects
+        // ("avif doesn't support palette images").
+        imagepalettetotruecolor($gd);
 
         ob_start();
         imageavif($gd, null, $this->getQuality());

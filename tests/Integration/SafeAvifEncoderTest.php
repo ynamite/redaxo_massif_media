@@ -74,6 +74,28 @@ final class SafeAvifEncoderTest extends TestCase
         self::assertSame('ftypavif', substr($blob, 4, 8), 'Encoded blob is not a well-formed AVIF.');
     }
 
+    public function testEncodesFewColourImageViaGdWithoutPaletteWarning(): void
+    {
+        if (!function_exists('imageavif')) {
+            self::markTestSkipped('GD with AVIF support required.');
+        }
+        // Two flat colours → Imagick's PNG writer picks PNG8 → GD palette image.
+        $im = new Imagick();
+        $im->newImage(64, 40, 'white');
+        $draw = new \ImagickDraw();
+        $draw->setFillColor('red');
+        $draw->rectangle(0, 0, 31, 39);
+        $im->drawImage($draw);
+        $im->setImageFormat('jpeg');
+
+        $encoder = new SafeAvifEncoder();
+        $encoder->setParams(['fm' => 'avif', 'q' => 50]);
+        $encoded = $encoder->run(ImageManager::imagick()->read($im->getImageBlob()));
+
+        // failOnWarning turns imageavif()'s palette warning into a failure.
+        self::assertSame('ftypavif', substr((string) $encoded, 4, 8));
+    }
+
     public function testFallsThroughToParentForNonAvifFormat(): void
     {
         $encoder = new SafeAvifEncoder();
