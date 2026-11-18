@@ -7,6 +7,10 @@ namespace Tests\Massif\Media\Unit\Source;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpClient\Response\ResponseStream;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
+use Symfony\Contracts\HttpClient\ResponseStreamInterface;
 use Ynamite\Media\Exception\ImageNotFoundException;
 use Ynamite\Media\Source\HttpFetcher;
 
@@ -173,5 +177,83 @@ final class HttpFetcherTest extends TestCase
         }
         self::assertTrue($hasIfNoneMatch, 'If-None-Match header should be sent');
         self::assertTrue($hasIfModifiedSince, 'If-Modified-Since header should be sent');
+    }
+
+    public function testOverlappingFetchesOfSameUrlBothSucceed(): void
+    {
+        // Two requests fetching the same URL at once (cold cache, two page
+        // loads). Simulated deterministically: after the outer fetch has
+        // written its first body chunk, a second fetch of the same
+        // destination runs to completion. Both must succeed and the body must
+        // be intact — with a shared tmp file the slower one lost the rename
+        // ("External fetch could not finalize").
+        $body = str_repeat('0123456789', 1000);
+        $innerRan = false;
+        $overlap = function () use ($body, &$innerRan): void {
+            $inner = new HttpFetcher(new MockHttpClient(new MockResponse($body, ['http_code' => 200])));
+            $inner->fetch(url: 'https://example.com/hero.jpg', resolvedIp: '1.1.1.1', destPath: $this->destPath);
+            $innerRan = true;
+        };
+        $mock = new MockHttpClient(new MockResponse([substr($body, 0, 5000), substr($body, 5000)], ['http_code' => 200]));
+        $client = new class ($mock, $overlap) implements HttpClientInterface {
+            public function __construct(private HttpClientInterface $mock, private \Closure $overlap)
+            {
+            }
+
+            public function request(string $method, string $url, array $options = []): ResponseInterface
+            {
+                return $this->mock->request($method, $url, $options);
+            }
+
+            public function stream(ResponseInterface|iterable $responses, ?float $timeout = null): ResponseStreamInterface
+            {
+                return new ResponseStream((function () use ($responses, $timeout) {
+                    $fired = false;
+                    foreach ($this->mock->stream($responses, $timeout) as $response => $chunk) {
+                        yield $response => $chunk;
+                        // Resumed here once the consumer has written the chunk.
+                        if (!$fired && !$chunk->isFirst() && !$chunk->isLast() && $chunk->getContent() !== '') {
+                            $fired = true;
+                            ($this->overlap)();
+                        }
+                    }
+                })());
+            }
+
+            public function withOptions(array $options): static
+            {
+                return $this;
+            }
+        };
+
+        $result = (new HttpFetcher($client))->fetch(
+            url: 'https://example.com/hero.jpg',
+            resolvedIp: '1.1.1.1',
+            destPath: $this->destPath,
+        );
+
+        self::assertTrue($innerRan);
+        self::assertFalse($result->notModified);
+        self::assertSame($body, (string) file_get_contents($this->destPath));
+        self::assertSame([], glob($this->tmpBase . '/*.tmp'));
+    }
+
+    public function testFailedStreamLeavesNoTmpFile(): void
+    {
+        // An empty chunk makes MockResponse report an idle timeout mid-stream.
+        $chunks = (static function () {
+            yield 'partial-body';
+            yield '';
+        })();
+        $fetcher = new HttpFetcher(new MockHttpClient(new MockResponse($chunks, ['http_code' => 200])));
+
+        try {
+            $fetcher->fetch(url: 'https://example.com/hero.jpg', resolvedIp: '1.1.1.1', destPath: $this->destPath);
+            self::fail('expected ImageNotFoundException');
+        } catch (ImageNotFoundException) {
+        }
+
+        self::assertFileDoesNotExist($this->destPath);
+        self::assertSame([], glob($this->tmpBase . '/*.tmp'));
     }
 }

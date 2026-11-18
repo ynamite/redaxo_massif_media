@@ -103,32 +103,48 @@ final class HttpFetcher
                 throw new ImageNotFoundException(sprintf('External fetch %s returned HTTP %d', $url, $status));
             }
 
-            // Stream chunks into a tmp file, atomic rename on success.
-            $tmpPath = $destPath . '.tmp';
+            // Stream chunks into a tmp file, atomic rename on success. The
+            // tmp name is unique per fetch: two requests fetching the same
+            // URL at once (cold cache, two page loads) used to share
+            // `<dest>.tmp` — the second open truncated the first one's data,
+            // and whoever renamed last found the file gone and failed
+            // ("could not finalize"), which also wrote a failure manifest
+            // over the winner's. Now each writes its own file and the last
+            // rename wins; both bodies are complete.
+            $tmpPath = $destPath . '.' . bin2hex(random_bytes(6)) . '.tmp';
             self::ensureDir(dirname($destPath));
             $fh = @fopen($tmpPath, 'wb');
             if ($fh === false) {
                 throw new ImageNotFoundException('External fetch could not open tmp file: ' . $tmpPath);
             }
+            $finalized = false;
             try {
-                foreach ($client->stream($response) as $chunk) {
-                    if ($chunk->isTimeout()) {
-                        throw new TransportException('External fetch timed out');
+                try {
+                    foreach ($client->stream($response) as $chunk) {
+                        if ($chunk->isTimeout()) {
+                            throw new TransportException('External fetch timed out');
+                        }
+                        if ($chunk->isLast()) {
+                            break;
+                        }
+                        $bytes = $chunk->getContent();
+                        if ($bytes !== '') {
+                            fwrite($fh, $bytes);
+                        }
                     }
-                    if ($chunk->isLast()) {
-                        break;
-                    }
-                    $bytes = $chunk->getContent();
-                    if ($bytes !== '') {
-                        fwrite($fh, $bytes);
-                    }
+                } finally {
+                    fclose($fh);
                 }
+                if (!@rename($tmpPath, $destPath)) {
+                    throw new ImageNotFoundException('External fetch could not finalize: ' . $destPath);
+                }
+                $finalized = true;
             } finally {
-                fclose($fh);
-            }
-            if (!@rename($tmpPath, $destPath)) {
-                @unlink($tmpPath);
-                throw new ImageNotFoundException('External fetch could not finalize: ' . $destPath);
+                // Unique names don't get overwritten by the next attempt, so
+                // a failed fetch must not leave its partial body behind.
+                if (!$finalized) {
+                    @unlink($tmpPath);
+                }
             }
 
             $newEtag = self::firstHeader($response->getHeaders(false), 'etag');

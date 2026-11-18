@@ -13,6 +13,10 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 - **Cache leeren behält, was nicht veralten kann.** Das REDAXO-weite Cache-Leeren und das automatische Leeren nach dem Speichern von Einstellungen behalten `_color/`, `_lqip/` sowie die Originale externer Quellen (`_origin.bin`, `_manifest.json`). «Addon Cache jetzt leeren» löscht weiterhin alles.
 - Metadaten-Änderungen im Medienpool (z. B. Fokuspunkt) löschen dominante Farbe und LQIP nicht mehr. Nach dem Löschen einer Datei bleiben zwei kleine Sidecars zurück, bis der Addon-Cache geleert wird.
 
+### Fixed
+
+- **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg.
+
 ## [1.0.19] — 2026-11-17
 
 ### Added
