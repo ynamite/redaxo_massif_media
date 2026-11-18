@@ -15,7 +15,7 @@ Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0
 
 ### Fixed
 
-- **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg.
+- **Gleichzeitige Abrufe derselben externen URL schlagen nicht mehr fehl.** Zwei Requests, die dasselbe externe Original gleichzeitig luden (kalter Cache, zwei Seitenaufrufe), teilten sich eine temporäre Datei. Der langsamere scheiterte mit «External fetch could not finalize», das Bild fehlte in dieser Antwort, und der Abruf wurde als fehlgeschlagen markiert. Jeder Abruf schreibt jetzt in eine eigene temporäre Datei; fehlgeschlagene Abrufe räumen sie wieder weg. Schlägt ein Abruf fehl, während ein paralleler gelingt, wird dessen Ergebnis verwendet und nicht mehr als fehlgeschlagen überschrieben.
 
 ## [1.0.19] — 2026-11-17
 

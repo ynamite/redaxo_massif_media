@@ -14,6 +14,9 @@ use Ynamite\Media\Pipeline\CacheInvalidator;
 use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\MetadataReader;
 use Ynamite\Media\Pipeline\Placeholder;
+use Ynamite\Media\Pipeline\RenderBudget;
+use Ynamite\Media\Source\ExternalManifest;
+use Ynamite\Media\Source\ExternalSource;
 
 /**
  * Per-asset cache invalidation: when a media-pool entry changes, the variants
@@ -285,14 +288,101 @@ final class CacheInvalidatorTest extends TestCase
         $colorPath = DominantColor::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
         $this->seedFile($lqipPath, 'data:image/webp;base64,AAAA');
         $this->seedFile($colorPath, '#abcdef');
-        $this->seedFile($lqipPath . '.failed', '');
-        $this->seedFile($colorPath . '.failed', '');
+        $this->seedFile(RenderBudget::failedMarkerFor($lqipPath), '');
+        $this->seedFile(RenderBudget::failedMarkerFor($colorPath), '');
 
         CacheInvalidator::invalidate($filename, fileReplaced: true);
 
         self::assertFileDoesNotExist($lqipPath);
         self::assertFileDoesNotExist($colorPath);
-        self::assertFileDoesNotExist($lqipPath . '.failed');
-        self::assertFileDoesNotExist($colorPath . '.failed');
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($lqipPath));
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($colorPath));
+    }
+
+    public function testMetadataOnlyInvalidateForgetsFailureMarkersButKeepsSidecars(): void
+    {
+        // A marker can come from a transient failure (e.g. the variants dir
+        // vanishing mid-generation). Any invalidation is a reason to retry.
+        $filename = 'foo.jpg';
+        $mtime = 1_700_000_000;
+        $this->seedSourceFile($filename, $mtime);
+        $lqipPath = Placeholder::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $colorPath = DominantColor::cachePathFor(Sources::mediapool(filename: $filename, mtime: $mtime));
+        $this->seedFile($colorPath, '#abcdef');
+        $this->seedFile(RenderBudget::failedMarkerFor($lqipPath), '');
+        $this->seedFile(RenderBudget::failedMarkerFor($colorPath), '');
+
+        CacheInvalidator::invalidate($filename);
+
+        self::assertFileExists($colorPath);
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($lqipPath));
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($colorPath));
+    }
+
+    public function testInvalidateUrlForgetsFailureMarkers(): void
+    {
+        $url = 'https://images.example.com/hero.jpg';
+        $hash = ExternalSource::hashFor($url);
+        ExternalManifest::write($hash, [
+            'url' => $url, 'etag' => null, 'lastModified' => null,
+            'fetchedAt' => 1_700_000_000, 'ttl' => 86_400, 'failedAt' => null,
+        ]);
+        $source = new ExternalSource(
+            url: $url,
+            hash: $hash,
+            absolutePath: ExternalManifest::originPath($hash),
+            fetchedAt: 1_700_000_000,
+            etag: null,
+            remoteLastModified: null,
+            ttlSeconds: 86_400,
+        );
+        $markers = [
+            RenderBudget::failedMarkerFor(Placeholder::cachePathFor($source)),
+            RenderBudget::failedMarkerFor(DominantColor::cachePathFor($source)),
+        ];
+        foreach ($markers as $marker) {
+            $this->seedFile($marker, '');
+        }
+
+        CacheInvalidator::invalidateUrl($url);
+
+        foreach ($markers as $marker) {
+            self::assertFileDoesNotExist($marker);
+        }
+    }
+
+    public function testClearKeepModeRemovesFailureMarkers(): void
+    {
+        // The admin fixed the cause (e.g. enabled Imagick) and cleared the
+        // cache: the next render must retry, not wait out the marker.
+        $colorPath = $this->cacheDir . '/_color/ab/abcd.txt';
+        $marker = RenderBudget::failedMarkerFor($colorPath);
+        $this->seedFile($colorPath, '#abcdef');
+        $this->seedFile($marker, '');
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        self::assertFileExists($colorPath);
+        self::assertFileDoesNotExist($marker);
+    }
+
+    public function testClearKeepModeWorksThroughSymlinkedCacheRoot(): void
+    {
+        // Deployers share the cache across releases by symlinking `cache/`
+        // itself. The root link must be traversed, not refused or removed.
+        $shared = $this->tmpBase . '/shared-cache';
+        rmdir($this->cacheDir);
+        @mkdir($shared, 0777, true);
+        symlink($shared, $this->cacheDir);
+        $this->seedFile($shared . '/_color/ab/abcd.txt');
+        $this->seedFile($shared . '/_external/h1/_origin.bin');
+        $this->seedFile($shared . '/foo.jpg/webp-1200-q80.webp');
+
+        CacheInvalidator::clear(keepSourceDerived: true);
+
+        self::assertTrue(is_link($this->cacheDir));
+        self::assertFileExists($shared . '/_color/ab/abcd.txt');
+        self::assertFileExists($shared . '/_external/h1/_origin.bin');
+        self::assertFileDoesNotExist($shared . '/foo.jpg/webp-1200-q80.webp');
     }
 }

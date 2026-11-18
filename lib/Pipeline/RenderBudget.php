@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ynamite\Media\Pipeline;
 
 use rex_file;
+use rex_path;
+use Ynamite\Media\Config;
 
 /**
  * Per-request time budget for placeholder generation during render.
@@ -28,9 +30,12 @@ use rex_file;
  * Slow failures: a generation that fails writes no cache file, so it would be
  * retried on every request. When such a failure is slow it would use up the
  * budget each time and starve every miss after it on the page. A failure
- * that took SLOW_FAILURE_MS or more therefore leaves a `<cachePath>.failed`
- * marker and is not retried for FAILURE_RETRY_SECONDS. Fast failures (no
- * Imagick, unreadable source) cost nothing and are simply retried.
+ * that took SLOW_FAILURE_MS or more therefore leaves a marker under
+ * `cache/_failed/` and is not retried for FAILURE_RETRY_SECONDS. Fast
+ * failures (no Imagick, unreadable source) cost nothing and are simply
+ * retried. Markers live outside `_color/` / `_lqip/` on purpose: every cache
+ * clear removes them (a clear is what an admin does after fixing the cause),
+ * and {@see CacheInvalidator} forgets them per asset.
  */
 final class RenderBudget
 {
@@ -49,7 +54,7 @@ final class RenderBudget
      */
     public static function run(callable $generate, ?string $cachePath = null): string
     {
-        $failedMarker = $cachePath === null ? null : $cachePath . '.failed';
+        $failedMarker = $cachePath === null ? null : self::failedMarkerFor($cachePath);
         if (
             $failedMarker !== null
             && is_file($failedMarker)
@@ -76,6 +81,17 @@ final class RenderBudget
                 rex_file::put($failedMarker, '');
             }
         }
+    }
+
+    public static function failedMarkerFor(string $cachePath): string
+    {
+        return rex_path::addonAssets(Config::ADDON, 'cache/_failed/' . hash('xxh64', $cachePath) . '.txt');
+    }
+
+    /** Drop the slow-failure marker of a sidecar so its generation is retried. */
+    public static function forgetFailure(string $cachePath): void
+    {
+        rex_file::delete(self::failedMarkerFor($cachePath));
     }
 
     /**

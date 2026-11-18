@@ -90,6 +90,22 @@ final class ExternalSourceFactory
                 maxBytes: Config::externalMaxBytes(),
             );
         } catch (ImageNotFoundException $e) {
+            // Another request may have fetched this URL successfully while
+            // ours failed (cold cache, two page loads, one of them timing
+            // out). Its body and manifest are good: serve them instead of
+            // throwing, and don't write our stale snapshot + failure over its
+            // manifest.
+            $current = ExternalManifest::read($hash);
+            clearstatcache(true, $originPath);
+            if (
+                $current !== null
+                && ($current['failedAt'] ?? null) === null
+                && $current['fetchedAt'] > ($manifest['fetchedAt'] ?? 0)
+                && is_file($originPath) && filesize($originPath) > 0
+            ) {
+                return $this->fromManifest($current, $hash, $originPath, $ttl);
+            }
+
             // Persist the failure sentinel so the next renders within the
             // sentinel TTL don't re-pay the transport timeout.
             ExternalManifest::write($hash, [

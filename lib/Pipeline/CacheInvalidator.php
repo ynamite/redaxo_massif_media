@@ -150,14 +150,15 @@ final class CacheInvalidator
         );
 
         rex_file::delete(MetadataReader::metaCachePath($source));
-        if ($fileReplaced) {
-            // New bytes under an unchanged mtime (same-second replacement,
-            // mtime-preserving import) keep the cache keys — without this the
-            // placeholders of the old bytes would be served indefinitely.
-            // The `.failed` siblings are RenderBudget's slow-failure markers.
-            foreach ([Placeholder::cachePathFor($source), DominantColor::cachePathFor($source)] as $sidecar) {
+        foreach ([Placeholder::cachePathFor($source), DominantColor::cachePathFor($source)] as $sidecar) {
+            // Any invalidation is a reason to retry a parked slow failure.
+            RenderBudget::forgetFailure($sidecar);
+            if ($fileReplaced) {
+                // New bytes under an unchanged mtime (same-second replacement,
+                // mtime-preserving import) keep the cache keys — without this
+                // the placeholders of the old bytes would be served
+                // indefinitely.
                 rex_file::delete($sidecar);
-                rex_file::delete($sidecar . '.failed');
             }
         }
 
@@ -203,8 +204,10 @@ final class CacheInvalidator
                     ttlSeconds: isset($raw['ttl']) ? (int) $raw['ttl'] : 0,
                 );
                 rex_file::delete(MetadataReader::metaCachePath($source));
-                rex_file::delete(Placeholder::cachePathFor($source));
-                rex_file::delete(DominantColor::cachePathFor($source));
+                foreach ([Placeholder::cachePathFor($source), DominantColor::cachePathFor($source)] as $sidecar) {
+                    rex_file::delete($sidecar);
+                    RenderBudget::forgetFailure($sidecar);
+                }
             }
         }
 

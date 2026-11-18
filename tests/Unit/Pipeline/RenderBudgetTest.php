@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Massif\Media\Unit\Pipeline;
 
 use PHPUnit\Framework\TestCase;
+use rex_dir;
+use rex_path;
 use Ynamite\Media\Pipeline\RenderBudget;
 
 final class RenderBudgetTest extends TestCase
@@ -87,14 +89,20 @@ final class RenderBudgetTest extends TestCase
         // A generation that fails slowly writes no cache file. Retried on
         // every request it would use up the budget each time and starve the
         // misses after it — so it is parked behind a marker for an hour.
-        $cachePath = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true) . '/ab/abcd.txt';
+        $tmpBase = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true);
+        rex_path::_setBase($tmpBase);
+        $cachePath = $tmpBase . '/cache/_color/ab/abcd.txt';
+        $marker = RenderBudget::failedMarkerFor($cachePath);
         $slowFailure = static function (): string {
             usleep((RenderBudget::SLOW_FAILURE_MS + 10) * 1000);
             return '';
         };
 
         self::assertSame('', RenderBudget::run($slowFailure, $cachePath));
-        self::assertFileExists($cachePath . '.failed');
+        self::assertFileExists($marker);
+        // Markers live outside _color/ and _lqip/, so a clear that keeps
+        // those directories still removes them.
+        self::assertStringContainsString('/cache/_failed/', $marker);
 
         $called = false;
         $retry = static function () use (&$called): string {
@@ -104,20 +112,22 @@ final class RenderBudgetTest extends TestCase
         self::assertSame('', RenderBudget::run($retry, $cachePath));
         self::assertFalse($called, 'a fresh marker must skip the generation');
 
-        touch($cachePath . '.failed', time() - RenderBudget::FAILURE_RETRY_SECONDS - 1);
+        touch($marker, time() - RenderBudget::FAILURE_RETRY_SECONDS - 1);
         clearstatcache();
         self::assertSame('x', RenderBudget::run($retry, $cachePath));
 
-        unlink($cachePath . '.failed');
-        rmdir(dirname($cachePath));
-        rmdir(dirname($cachePath, 2));
+        RenderBudget::forgetFailure($cachePath);
+        self::assertFileDoesNotExist($marker);
+        rex_dir::delete($tmpBase, true);
     }
 
     public function testFastFailureWritesNoMarker(): void
     {
-        $cachePath = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true) . '/ab/abcd.txt';
+        $tmpBase = sys_get_temp_dir() . '/massif_budget_' . uniqid('', true);
+        rex_path::_setBase($tmpBase);
+        $cachePath = $tmpBase . '/cache/_color/ab/abcd.txt';
 
         self::assertSame('', RenderBudget::run(static fn (): string => '', $cachePath));
-        self::assertFileDoesNotExist($cachePath . '.failed');
+        self::assertFileDoesNotExist(RenderBudget::failedMarkerFor($cachePath));
     }
 }

@@ -256,4 +256,22 @@ final class HttpFetcherTest extends TestCase
         self::assertFileDoesNotExist($this->destPath);
         self::assertSame([], glob($this->tmpBase . '/*.tmp'));
     }
+
+    public function testSuccessfulFetchRemovesAbandonedTmpFilesOnly(): void
+    {
+        // A fetch killed mid-stream (fatal, FPM kill) can't clean up after
+        // itself. Its tmp file is removed by a later successful fetch — but a
+        // young one may belong to a request still downloading.
+        $abandoned = $this->destPath . '.aaaaaaaaaaaa.tmp';
+        $inFlight = $this->destPath . '.bbbbbbbbbbbb.tmp';
+        file_put_contents($abandoned, 'partial');
+        touch($abandoned, time() - 7200);
+        file_put_contents($inFlight, 'partial');
+
+        $fetcher = new HttpFetcher(new MockHttpClient(new MockResponse('body', ['http_code' => 200])));
+        $fetcher->fetch(url: 'https://example.com/hero.jpg', resolvedIp: '1.1.1.1', destPath: $this->destPath);
+
+        self::assertFileDoesNotExist($abandoned);
+        self::assertFileExists($inFlight);
+    }
 }

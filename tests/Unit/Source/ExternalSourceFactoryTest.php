@@ -252,4 +252,35 @@ final class ExternalSourceFactoryTest extends TestCase
             ExternalSource::hashFor('https://example.com/foo.png'),
         );
     }
+
+    public function testFailureAfterAnotherRequestSucceededServesThatBody(): void
+    {
+        // Two requests fetch the same cold URL; the other one succeeds while
+        // ours fails (timeout, 5xx). Ours must not throw or record a failure
+        // over the good manifest — the body is on disk.
+        $url = 'http://1.1.1.1/hero.jpg';
+        $hash = ExternalSource::hashFor($url);
+        $originPath = ExternalManifest::originPath($hash);
+        $otherFetchedAt = time() + 5;
+
+        $client = new MockHttpClient(static function () use ($url, $hash, $originPath, $otherFetchedAt): MockResponse {
+            // The other request finishes while ours is in flight.
+            @mkdir(dirname($originPath), 0777, true);
+            file_put_contents($originPath, 'body-from-the-other-request');
+            ExternalManifest::write($hash, [
+                'url' => $url, 'etag' => '"other"', 'lastModified' => null,
+                'fetchedAt' => $otherFetchedAt, 'ttl' => 86_400, 'failedAt' => null,
+            ]);
+            return new MockResponse('', ['http_code' => 500]);
+        });
+
+        $source = (new ExternalSourceFactory(new HttpFetcher($client)))->resolve($url);
+
+        self::assertSame($otherFetchedAt, $source->fetchedAt);
+        self::assertSame('"other"', $source->etag);
+        $manifest = ExternalManifest::read($hash);
+        self::assertNotNull($manifest);
+        self::assertNull($manifest['failedAt'] ?? null);
+        self::assertSame($otherFetchedAt, $manifest['fetchedAt']);
+    }
 }

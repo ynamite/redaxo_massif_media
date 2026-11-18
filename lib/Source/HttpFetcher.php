@@ -30,6 +30,8 @@ use Ynamite\Media\Exception\ImageNotFoundException;
  */
 final class HttpFetcher
 {
+    private const ABANDONED_TMP_SECONDS = 3600;
+
     /**
      * Optional override (tests inject MockHttpClient). Null = lazy-create
      * via HttpClient::create() with our default options.
@@ -139,6 +141,7 @@ final class HttpFetcher
                     throw new ImageNotFoundException('External fetch could not finalize: ' . $destPath);
                 }
                 $finalized = true;
+                self::removeAbandonedTmpFiles($destPath);
             } finally {
                 // Unique names don't get overwritten by the next attempt, so
                 // a failed fetch must not leave its partial body behind.
@@ -164,6 +167,21 @@ final class HttpFetcher
                 throw $e;
             }
             throw new ImageNotFoundException('External fetch failure: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * A fetch killed mid-stream (fatal error, FPM kill) never reaches its
+     * cleanup, and unique tmp names are not overwritten by the next attempt.
+     * Old ones are removed here; young ones may belong to a request that is
+     * still downloading.
+     */
+    private static function removeAbandonedTmpFiles(string $destPath): void
+    {
+        foreach (glob($destPath . '.*.tmp') ?: [] as $tmp) {
+            if ((int) @filemtime($tmp) < time() - self::ABANDONED_TMP_SECONDS) {
+                @unlink($tmp);
+            }
         }
     }
 
