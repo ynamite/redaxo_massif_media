@@ -8,9 +8,12 @@ use Ynamite\Media\Config;
 use Ynamite\Media\Glide\RequestHandler;
 use Ynamite\Media\Pipeline\AnimatedWebpEncoder;
 use Ynamite\Media\Pipeline\CacheInvalidator;
+use Ynamite\Media\Pipeline\DominantColor;
 use Ynamite\Media\Pipeline\ImageResolver;
 use Ynamite\Media\Pipeline\MetadataReader;
+use Ynamite\Media\Pipeline\Placeholder;
 use Ynamite\Media\Pipeline\Preloader;
+use Ynamite\Media\Pipeline\RenderBudget;
 use Ynamite\Media\Var\RexPic;
 use Ynamite\Media\Var\RexVideo;
 use Ynamite\Media\View\EditorContentScanner;
@@ -143,18 +146,25 @@ $invalidateMediaCache = static function (rex_extension_point $ep): void {
 rex_extension::register('MEDIA_UPDATED', $invalidateMediaCache);
 rex_extension::register('MEDIA_DELETED', $invalidateMediaCache);
 
-// MEDIA_ADDED / MEDIA_UPDATED → pre-warm animated WebP encodes so the first
-// visitor doesn't pay for them. Registered AFTER the invalidation above:
-// rex_extension runs same-level callbacks in registration order, so on
-// MEDIA_UPDATED the stale cache is dropped before re-encoding. MEDIA_ADDED
-// carries the filename in params['filename'] (mediapool service_media).
+// MEDIA_ADDED / MEDIA_UPDATED → pre-warm what the first visitor would
+// otherwise pay for:
+//   - dominant colour + LQIP for raster images. Both are inlined into the
+//     markup, so a miss costs an image decode during the HTML render; written
+//     here, the render only reads them. Runs outside the render budget
+//     (RenderBudget::unlimited — this is not a render path) and in CDN mode
+//     too (placeholders are inlined either way). generate() itself returns ''
+//     for disabled features and passthrough sources (svg, gif, animated webp).
+//   - animated WebP encodes (gif/webp only, not in CDN mode).
+// Registered AFTER the invalidation above: rex_extension runs same-level
+// callbacks in registration order, so on MEDIA_UPDATED the stale cache is
+// dropped before re-encoding. MEDIA_ADDED carries the filename in
+// params['filename'] (mediapool service_media).
 // Must not break an upload: exceptions are swallowed (fatals/timeouts can't be).
 // MEDIA_UPDATED also fires on metadata-only saves (filetype param null) — only
-// re-encode when the file itself was replaced. Only gif/webp can be animated.
+// act when the file itself was replaced: metadata-only saves no longer drop
+// the placeholders (CacheInvalidator::invalidate keeps them), and a replaced
+// file gets new cache keys through its mtime.
 $prewarmMedia = static function (rex_extension_point $ep): void {
-    if (Config::cdnEnabled()) {
-        return;
-    }
     $filename = $ep->getParam('filename');
     if (!is_string($filename) || $filename === '') {
         return;
@@ -162,12 +172,22 @@ $prewarmMedia = static function (rex_extension_point $ep): void {
     if ($ep->getName() === 'MEDIA_UPDATED' && $ep->getParam('filetype') === null) {
         return;
     }
-    if (!in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['gif', 'webp'], true)) {
+    $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    // Non-images (pdf, video, svg, …) never reach the resolver.
+    if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'], true)) {
         return;
     }
     try {
         $image = (new ImageResolver(new MetadataReader()))->resolve($filename);
-        if ($image->isAnimatedEncodable()) {
+        RenderBudget::unlimited(static function () use ($image): void {
+            (new DominantColor())->generate($image);
+            (new Placeholder())->generate($image);
+        });
+        if (
+            !Config::cdnEnabled()
+            && in_array($extension, ['gif', 'webp'], true)
+            && $image->isAnimatedEncodable()
+        ) {
             @set_time_limit(120);
             (new AnimatedWebpEncoder())->prewarm($image);
         }
