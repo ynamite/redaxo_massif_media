@@ -199,9 +199,10 @@ final class CacheInvalidatorTest extends TestCase
             $this->cacheDir . '/_lqip/ab/abcd.txt',
             $this->cacheDir . '/_external/h1/_origin.bin',
             $this->cacheDir . '/_external/h1/_manifest.json',
+            // Frame count of a large GIF costs seconds; nothing in it goes stale.
+            $this->cacheDir . '/_meta/ab/abcd.json',
         ];
         $removed = [
-            $this->cacheDir . '/_meta/ab/abcd.json',
             $this->cacheDir . '/foo.jpg/webp-1200-q80.webp',
             $this->cacheDir . '/_external/h1/webp-1200-q80.webp',
             $this->cacheDir . '/_external/h1/webp-1200-q80.webp.lock',

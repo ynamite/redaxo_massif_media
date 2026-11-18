@@ -1438,9 +1438,10 @@ hängt sich das Addon an `CACHE_DELETED` und leert den eigenen Cache mit.
 Erhalten bleibt, was durch ein Cache-Leeren nicht aktueller wird und teuer neu zu berechnen ist:
 
 - `_color/` und `_lqip/` (hängen nur von den Bilddaten ab, LQIP zusätzlich von Einstellungen, die Teil des Cache-Keys sind)
+- `_meta/` (Masse, MIME-Typ, Frame-Anzahl: hängen nur von den Bilddaten ab; die Frame-Anzahl eines grossen GIFs zu bestimmen dauert Sekunden). Der Fokuspunkt wird nicht gecacht, sondern bei jedem Rendern aus dem Medienpool gelesen
 - die geladenen Originale externer Quellen (`_external/<hash>/_origin.bin` und `_manifest.json`; TTL und ETag regeln ihre Aktualität)
 
-Varianten und Metadaten (`_meta/`) werden gelöscht. Dasselbe gilt für das automatische Leeren nach dem Speichern von Einstellungen, die Varianten betreffen (Formate, Qualitäten, Breiten).
+Varianten werden gelöscht. Dasselbe gilt für das automatische Leeren nach dem Speichern von Einstellungen, die Varianten betreffen (Formate, Qualitäten, Breiten).
 
 ---
 
@@ -1473,9 +1474,9 @@ Bei Bedarf:
 
 ## Metadaten-TTL und Sentinel-TTL
 
-Asset-Metadaten (intrinsische Maße, MIME-Typ, Animations-Flag, Focal-Point) werden pro Quelle in einem `_meta`-Sidecar gecacht, damit nicht bei jedem Render erneut `getimagesize()` und ein Imagick-Ping laufen. Zwei Einstellungen auf dem Tab **Sicherheit & Cache** steuern, wie lange ein solcher Sidecar gilt:
+Asset-Metadaten (intrinsische Maße, MIME-Typ, Animations-Flag, Frame-Anzahl) werden pro Quelle in einem `_meta`-Sidecar gecacht, damit nicht bei jedem Render erneut `getimagesize()` und ein Imagick-Ping laufen. Zwei Einstellungen auf dem Tab **Sicherheit & Cache** steuern, wie lange ein solcher Sidecar gilt:
 
-- **Metadata TTL** (`metadata_ttl_seconds`, Default 90 Tage): Maximale Lebensdauer eines **gültigen** Metadaten-Sidecars, bevor er neu berechnet wird. Das ist ein Backstop — Focal-Point- und Datei-Änderungen invalidieren den Sidecar ohnehin sofort über `MEDIA_UPDATED` / `MEDIA_DELETED`. `0` deaktiviert die Alters-Prüfung (Cache gilt bis zur expliziten Invalidierung).
+- **Metadata TTL** (`metadata_ttl_seconds`, Default 90 Tage): Maximale Lebensdauer eines **gültigen** Metadaten-Sidecars, bevor er neu berechnet wird. Das ist ein Backstop — Datei-Änderungen invalidieren den Sidecar ohnehin sofort über `MEDIA_UPDATED` / `MEDIA_DELETED`, und der Fokuspunkt wird gar nicht gecacht. `0` deaktiviert die Alters-Prüfung (Cache gilt bis zur expliziten Invalidierung).
 - **Sentinel TTL** (`sentinel_ttl_seconds`, Default 60 s): Kurze TTL für **fehlgeschlagene** Reads. Lässt sich eine Quelle nicht decodieren (kaputtes / unlesbares Asset, `getimagesize()` scheitert ohne erkennbares Format), wird das Ergebnis als `failed`-Sentinel im Sidecar markiert. Innerhalb dieser TTL wird der Fehler wiederverwendet, ohne das Asset erneut zu prüfen — das verhindert, dass ein kaputtes Asset bei jedem Request neu geprüft wird (Hammering). Nach Ablauf wird die Quelle erneut versucht, statt dauerhaft als `0×0` festzuhängen. `0` deaktiviert die Prüfung.
 
 Ein **SVG** liest sich zwar ebenfalls als `0×0` (keine Raster-Maße), löst aber zu Format `svg` auf und gilt damit als gültiger Eintrag — er bekommt die lange Metadata-TTL, nicht die kurze Sentinel-TTL.

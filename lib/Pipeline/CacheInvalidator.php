@@ -53,8 +53,8 @@ final class CacheInvalidator
      *
      * `$keepSourceDerived = true` (generic REDAXO clear, settings save) keeps
      * what a clear cannot cure and what is expensive to rebuild: `_color/`,
-     * `_lqip/` (pure functions of the image bytes plus, for LQIP, config that
-     * is part of its key) and each external bucket's fetched origin +
+     * `_lqip/`, `_meta/` (pure functions of the image bytes plus, for LQIP,
+     * config that is part of its key) and each external bucket's fetched origin +
      * manifest (staleness is handled by TTL / ETag revalidation). Kept
      * manifests are not rewritten. `false` (the addon's own clear button)
      * deletes everything — the escape hatch.
@@ -76,7 +76,7 @@ final class CacheInvalidator
     {
         foreach (self::entries($cacheDir) as $entry) {
             $name = basename($entry);
-            if ($name === '_color' || $name === '_lqip') {
+            if ($name === '_color' || $name === '_lqip' || $name === '_meta') {
                 continue;
             }
             if ($name !== '_external' || !self::isRealDir($entry)) {

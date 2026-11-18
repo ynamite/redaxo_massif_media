@@ -26,10 +26,24 @@ final class MetadataReader
             intrinsicHeight: (int) ($cached['height'] ?? 0),
             mime: (string) ($cached['mime'] ?? 'application/octet-stream'),
             sourceFormat: (string) ($cached['source_format'] ?? 'unknown'),
-            focalPoint: isset($cached['focal']) && $cached['focal'] !== '' ? (string) $cached['focal'] : null,
+            focalPoint: $this->focalOf($source),
             isAnimated: (bool) ($cached['is_animated'] ?? false),
             frameCount: (int) ($cached['frames'] ?? 1),
         );
+    }
+
+    /**
+     * Read from the already loaded rex_media, never cached: the `_meta`
+     * sidecar survives cache clears, so it may only hold what follows from
+     * the file's bytes. The focal point lives in the database.
+     */
+    private function focalOf(SourceInterface $source): ?string
+    {
+        if (!$source instanceof MediapoolSource || $source->media === null) {
+            return null;
+        }
+        $raw = $source->media->getValue('med_focuspoint');
+        return is_string($raw) && $raw !== '' ? $this->normalizeFocal($raw) : null;
     }
 
     public static function metaCachePath(SourceInterface $source): string
@@ -86,20 +100,11 @@ final class MetadataReader
         // metadata TTL, so the discriminator hinges on the unknown format.
         $failed = $frames === 0 || ($width === 0 && $height === 0 && $sourceFormat === 'unknown');
 
-        $focal = null;
-        if ($source instanceof MediapoolSource && $source->media !== null) {
-            $raw = $source->media->getValue('med_focuspoint');
-            if (is_string($raw) && $raw !== '') {
-                $focal = $this->normalizeFocal($raw);
-            }
-        }
-
         return [
             'width' => $width,
             'height' => $height,
             'mime' => $mime,
             'source_format' => $sourceFormat,
-            'focal' => $focal,
             'frames' => $frames,
             'is_animated' => $frames > 1,
             'failed' => $failed,

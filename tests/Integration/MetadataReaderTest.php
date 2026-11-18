@@ -49,6 +49,25 @@ final class MetadataReaderTest extends TestCase
         );
     }
 
+    public function testFocalPointComesFromMediapoolNotFromTheSidecar(): void
+    {
+        // The sidecar survives cache clears, so it must hold nothing that the
+        // database can change. The focal point is read from rex_media on
+        // every read instead.
+        $withFocal = fn (string $focal): MediapoolSource => new MediapoolSource(
+            filename: 'landscape-800x600.jpg',
+            absolutePath: $this->fixturesDir . '/landscape-800x600.jpg',
+            mtime: 1_700_000_000,
+            media: new \rex_media('landscape-800x600.jpg', ['med_focuspoint' => $focal]),
+        );
+
+        self::assertSame('30% 70%', $this->reader->read($withFocal('30,70'))->focalPoint);
+        self::assertFileExists(MetadataReader::metaCachePath($withFocal('30,70')));
+        // Same file, focal changed in the database without a media event.
+        self::assertSame('10% 20%', $this->reader->read($withFocal('10,20'))->focalPoint);
+        self::assertNull($this->reader->read($withFocal(''))->focalPoint);
+    }
+
     public function testReadsLandscapeIntrinsicDims(): void
     {
         $resolved = $this->reader->read($this->source('landscape-800x600.jpg'));
